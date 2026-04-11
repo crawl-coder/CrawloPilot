@@ -21,24 +21,39 @@ class GitCloneRequest(BaseModel):
     """Git 克隆请求"""
     git_url: str
     branch: Optional[str] = None
+    # 密码/Token认证
     username: Optional[str] = None
     password: Optional[str] = None
+    # SSH认证
+    auth_type: str = "password"  # password 或 ssh
+    ssh_key: Optional[str] = None  # SSH私钥内容
+    passphrase: Optional[str] = None  # SSH私钥密码
 
 
 class GitPullRequest(BaseModel):
     """Git 拉取请求"""
     remote: str = "origin"
     branch: Optional[str] = None
+    # 密码/Token认证
     username: Optional[str] = None
     password: Optional[str] = None
+    # SSH认证
+    auth_type: str = "password"
+    ssh_key: Optional[str] = None
+    passphrase: Optional[str] = None
 
 
 class GitPushRequest(BaseModel):
     """Git 推送请求"""
     remote: str = "origin"
     branch: Optional[str] = None
+    # 密码/Token认证
     username: Optional[str] = None
     password: Optional[str] = None
+    # SSH认证
+    auth_type: str = "password"
+    ssh_key: Optional[str] = None
+    passphrase: Optional[str] = None
 
 
 class GitBranchRequest(BaseModel):
@@ -89,7 +104,10 @@ def git_clone(
             url=request.git_url,
             branch=request.branch,
             username=request.username,
-            password=request.password
+            password=request.password,
+            auth_type=request.auth_type,
+            ssh_key=request.ssh_key,
+            passphrase=request.passphrase
         )
         
         # 更新项目的 git_url
@@ -153,7 +171,10 @@ def git_push(
             remote=request.remote,
             branch=request.branch,
             username=request.username,
-            password=request.password
+            password=request.password,
+            auth_type=request.auth_type,
+            ssh_key=request.ssh_key,
+            passphrase=request.passphrase
         )
         
         return {

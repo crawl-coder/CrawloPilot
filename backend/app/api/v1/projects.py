@@ -10,7 +10,7 @@ from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectInDB, Proje
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.get("/", response_model=List[ProjectInDB])
+@router.get("", response_model=List[ProjectInDB])
 def list_projects(
     skip: int = 0,
     limit: int = 20,
@@ -21,7 +21,7 @@ def list_projects(
     return projects
 
 
-@router.post("/", response_model=ProjectInDB, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProjectInDB, status_code=status.HTTP_201_CREATED)
 def create_project(
     project_data: ProjectCreate,
     db: Session = Depends(get_db),

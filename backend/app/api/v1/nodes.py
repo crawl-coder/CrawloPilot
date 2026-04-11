@@ -53,7 +53,7 @@ class NodeTestResult(BaseModel):
 
 # ==================== API Endpoints ====================
 
-@router.post("/", response_model=NodeResponse)
+@router.post("", response_model=NodeResponse)
 async def create_node(
     node_data: NodeCreate,
     db: Session = Depends(get_db),
@@ -84,7 +84,7 @@ async def create_node(
         raise HTTPException(status_code=500, detail=f"创建节点失败: {str(e)}")
 
 
-@router.get("/", response_model=List[NodeResponse])
+@router.get("", response_model=List[NodeResponse])
 async def list_nodes(
     status: Optional[NodeStatus] = None,
     limit: int = 100,

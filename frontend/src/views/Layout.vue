@@ -19,6 +19,11 @@
           <span>项目管理</span>
         </el-menu-item>
         
+        <el-menu-item index="/spiders">
+          <el-icon><Aim /></el-icon>
+          <span>爬虫管理</span>
+        </el-menu-item>
+        
         <el-menu-item index="/deploys">
           <el-icon><Upload /></el-icon>
           <span>部署管理</span>
@@ -126,7 +131,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Odometer, Files, User, ArrowDown, Monitor, Clock, List, TrendCharts, Bell, Upload, Connection, Link, Document } from '@element-plus/icons-vue'
+import { Odometer, Files, User, ArrowDown, Monitor, Clock, List, TrendCharts, Bell, Upload, Connection, Link, Document, Aim } from '@element-plus/icons-vue'
 import { getCurrentUser } from '@/api/auth'
 
 const router = useRouter()

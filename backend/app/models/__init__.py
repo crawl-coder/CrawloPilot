@@ -113,6 +113,7 @@ class Project(Base):
     schedules = relationship("Schedule", back_populates="project")
     alert_rules = relationship("AlertRule", back_populates="project")
     api_configs = relationship("ApiConfig", back_populates="project")
+    spiders = relationship("Spider", back_populates="project")
 
 
 class ProjectVersionStatus(str, enum.Enum):
@@ -135,6 +136,64 @@ class ProjectVersion(Base):
     
     # Relationships
     project = relationship("Project", back_populates="versions")
+
+
+class SpiderType(str, enum.Enum):
+    CRAWLO = "crawlo"              # Crawlo 框架(主打)
+    SCRAPY = "scrapy"              # Scrapy 框架
+    SELENIUM = "selenium"          # Selenium
+    PLAYWRIGHT = "playwright"      # Playwright
+    REQUESTS = "requests"          # Requests
+    CUSTOM = "custom"              # 自定义
+
+
+class SpiderStatus(str, enum.Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    ERROR = "error"
+
+
+class Spider(Base):
+    __tablename__ = "spider"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False, index=True)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    description = Column(Text)
+    spider_type = Column(Enum(SpiderType, values_callable=lambda e: [x.value for x in e]), default=SpiderType.SCRAPY)
+    status = Column(Enum(SpiderStatus), default=SpiderStatus.DRAFT)
+    
+    # Git相关
+    git_url = Column(String(512))  # Git仓库地址
+    git_auth_type = Column(String(32), default="password")  # password 或 ssh
+    git_username = Column(String(128))  # Git用户名
+    git_password = Column(String(256))  # Git密码/Token
+    git_ssh_key = Column(Text)  # SSH私钥
+    git_passphrase = Column(String(256))  # SSH私钥密码
+    git_branch = Column(String(128), default="main")  # 分支
+    
+    # 代码相关
+    code_path = Column(String(512))  # 代码目录路径
+    entry_file = Column(String(256))  # 入口文件
+    
+    # 配置
+    config = Column(JSON)  # 爬虫配置
+    schedule_config = Column(JSON)  # 调度配置
+    
+    # 统计
+    last_run_at = Column(DateTime)
+    last_run_status = Column(String(32))
+    run_count = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    project = relationship("Project", back_populates="spiders")
+    task_instances = relationship("TaskInstance", back_populates="spider")
 
 
 class ScheduleType(str, enum.Enum):
@@ -180,6 +239,7 @@ class TaskInstance(Base):
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     schedule_id = Column(BigInteger, ForeignKey("schedule.id"), nullable=False)
+    spider_id = Column(BigInteger, ForeignKey("spider.id"), nullable=True)
     spider_name = Column(String(128), nullable=False)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING)
     worker_node = Column(String(64))
@@ -192,6 +252,7 @@ class TaskInstance(Base):
     
     # Relationships
     schedule = relationship("Schedule", back_populates="task_instances")
+    spider = relationship("Spider", back_populates="task_instances")
 
 
 class AlertRuleType(str, enum.Enum):

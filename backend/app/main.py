@@ -1,4 +1,4 @@
-from app.api.v1 import auth, projects, deploy, nodes, schedules, tasks, monitoring, alerts, data_quality, proxy_pool, api_management, audit, project_git
+from app.api.v1 import auth, projects, deploy, nodes, schedules, tasks, monitoring, alerts, data_quality, proxy_pool, api_management, audit, project_git, users, project_files, spiders, spider_git
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -96,8 +96,12 @@ app.add_middleware(RateLimitMiddleware)
 
 # Include routers
 app.include_router(auth.router, prefix=settings.API_PREFIX)
+app.include_router(users.router, prefix=settings.API_PREFIX)
 app.include_router(projects.router, prefix=settings.API_PREFIX)
 app.include_router(project_git.router, prefix=settings.API_PREFIX)
+app.include_router(project_files.router, prefix=settings.API_PREFIX)
+app.include_router(spiders.router, prefix=settings.API_PREFIX)
+app.include_router(spider_git.router, prefix=settings.API_PREFIX)
 app.include_router(deploy.router, prefix=settings.API_PREFIX)
 app.include_router(nodes.router, prefix=settings.API_PREFIX)
 app.include_router(schedules.router, prefix=settings.API_PREFIX)

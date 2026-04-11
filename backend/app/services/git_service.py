@@ -1,9 +1,9 @@
-"""
-Git 操作服务
+"""Git 操作服务
 提供完整的 Git 功能：克隆、拉取、推送、分支管理、提交历史等
 """
 import os
 import git
+import tempfile
 from typing import List, Dict, Optional
 from datetime import datetime
 import logging
@@ -41,7 +41,10 @@ class GitService:
     
     def clone_repository(self, url: str, branch: Optional[str] = None, 
                         username: Optional[str] = None, 
-                        password: Optional[str] = None) -> Dict:
+                        password: Optional[str] = None,
+                        auth_type: str = "password",
+                        ssh_key: Optional[str] = None,
+                        passphrase: Optional[str] = None) -> Dict:
         """
         克隆远程仓库
         
@@ -50,14 +53,48 @@ class GitService:
             branch: 分支名（可选）
             username: 用户名（可选）
             password: 密码（可选）
+            auth_type: 认证类型 (password 或 ssh)
+            ssh_key: SSH私钥内容（可选）
+            passphrase: SSH私钥密码（可选）
         
         Returns:
             克隆信息
         """
+        ssh_key_path = None
+        original_env = None
+        
         try:
-            # 处理认证 URL
+            # 处理SSH认证
+            if auth_type == "ssh" and ssh_key:
+                # 创建临时SSH密钥文件
+                with tempfile.NamedTemporaryFile(
+                    mode='w',
+                    delete=False,
+                    prefix='ssh_key_',
+                    suffix='.pem'
+                ) as f:
+                    f.write(ssh_key)
+                    ssh_key_path = f.name
+                
+                # 设置权限（必须是600）
+                os.chmod(ssh_key_path, 0o600)
+                
+                # 构建SSH命令
+                ssh_command = f'ssh -i {ssh_key_path} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+                
+                # 如果有passphrase，使用sshpass
+                if passphrase:
+                    ssh_command = f'sshpass -p "{passphrase}" ' + ssh_command
+                
+                # 保存原始环境变量
+                original_env = os.environ.get('GIT_SSH_COMMAND')
+                
+                # 设置环境变量
+                os.environ['GIT_SSH_COMMAND'] = ssh_command
+            
+            # 处理密码认证
             clone_url = url
-            if username and password:
+            if auth_type == "password" and username and password:
                 from urllib.parse import urlparse, urlunparse
                 parsed = urlparse(url)
                 clone_url = urlunparse((
@@ -80,7 +117,7 @@ class GitService:
             
             self.repo = git.Repo.clone_from(**clone_options)
             
-            logger.info(f"Cloned repository from {url}")
+            logger.info(f"Cloned repository from {url} with {auth_type} auth")
             return {
                 'success': True,
                 'message': f'成功克隆仓库: {url}',
@@ -90,6 +127,20 @@ class GitService:
         except git.GitCommandError as e:
             logger.error(f"Failed to clone repository: {e}")
             raise Exception(f"克隆失败: {str(e)}")
+        finally:
+            # 清理SSH密钥文件
+            if ssh_key_path and os.path.exists(ssh_key_path):
+                try:
+                    os.remove(ssh_key_path)
+                    logger.info(f"Removed temporary SSH key file: {ssh_key_path}")
+                except Exception as e:
+                    logger.error(f"Failed to remove SSH key file: {e}")
+            
+            # 恢复环境变量
+            if original_env is not None:
+                os.environ['GIT_SSH_COMMAND'] = original_env
+            elif 'GIT_SSH_COMMAND' in os.environ:
+                del os.environ['GIT_SSH_COMMAND']
     
     def pull(self, remote: str = 'origin', branch: Optional[str] = None) -> Dict:
         """
@@ -122,7 +173,9 @@ class GitService:
             raise Exception(f"拉取失败: {str(e)}")
     
     def push(self, remote: str = 'origin', branch: Optional[str] = None,
-            username: Optional[str] = None, password: Optional[str] = None) -> Dict:
+            username: Optional[str] = None, password: Optional[str] = None,
+            auth_type: str = "password", ssh_key: Optional[str] = None,
+            passphrase: Optional[str] = None) -> Dict:
         """
         推送到远程仓库
         
@@ -131,10 +184,16 @@ class GitService:
             branch: 分支名
             username: 用户名
             password: 密码
+            auth_type: 认证类型
+            ssh_key: SSH私钥内容
+            passphrase: SSH私钥密码
         
         Returns:
             推送结果
         """
+        ssh_key_path = None
+        original_env = None
+        
         try:
             if not self.repo:
                 self.repo = git.Repo(self.repo_dir)
@@ -142,8 +201,32 @@ class GitService:
             current_branch = self.repo.active_branch.name
             push_branch = branch or current_branch
             
-            # 设置认证
-            if username and password:
+            # 处理SSH认证
+            if auth_type == "ssh" and ssh_key:
+                # 创建临时SSH密钥文件
+                with tempfile.NamedTemporaryFile(
+                    mode='w',
+                    delete=False,
+                    prefix='ssh_key_',
+                    suffix='.pem'
+                ) as f:
+                    f.write(ssh_key)
+                    ssh_key_path = f.name
+                
+                # 设置权限
+                os.chmod(ssh_key_path, 0o600)
+                
+                # 构建SSH命令
+                ssh_command = f'ssh -i {ssh_key_path} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+                
+                if passphrase:
+                    ssh_command = f'sshpass -p "{passphrase}" ' + ssh_command
+                
+                # 保存原始环境变量
+                original_env = os.environ.get('GIT_SSH_COMMAND')
+                os.environ['GIT_SSH_COMMAND'] = ssh_command
+            elif auth_type == "password" and username and password:
+                # 设置密码认证
                 self._set_credentials(remote, username, password)
             
             result = self.repo.remotes[remote].push(push_branch)
@@ -156,6 +239,19 @@ class GitService:
         except Exception as e:
             logger.error(f"Failed to push: {e}")
             raise Exception(f"推送失败: {str(e)}")
+        finally:
+            # 清理SSH密钥文件
+            if ssh_key_path and os.path.exists(ssh_key_path):
+                try:
+                    os.remove(ssh_key_path)
+                except Exception as e:
+                    logger.error(f"Failed to remove SSH key file: {e}")
+            
+            # 恢复环境变量
+            if original_env is not None:
+                os.environ['GIT_SSH_COMMAND'] = original_env
+            elif 'GIT_SSH_COMMAND' in os.environ:
+                del os.environ['GIT_SSH_COMMAND']
     
     def get_branches(self, remote: bool = False) -> List[str]:
         """获取分支列表"""

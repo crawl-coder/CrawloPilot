@@ -36,7 +36,7 @@ class TaskInstanceResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("/", response_model=List[TaskInstanceResponse])
+@router.get("", response_model=List[TaskInstanceResponse])
 async def list_task_instances(
     schedule_id: Optional[int] = None,
     status: Optional[str] = None,

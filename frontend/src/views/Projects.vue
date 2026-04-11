@@ -20,8 +20,10 @@
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column label="操作" width="200">
+      <el-table-column label="操作" width="300">
         <template #default="{ row }">
+          <el-button size="small" type="primary" @click="viewProject(row)">详情</el-button>
+          <el-button size="small" type="success" @click="viewSpiders(row)">爬虫</el-button>
           <el-button size="small" @click="handleEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
@@ -38,10 +40,6 @@
         <el-form-item label="描述" prop="description">
           <el-input v-model="projectForm.description" type="textarea" :rows="3" />
         </el-form-item>
-        
-        <el-form-item label="Git 地址" prop="git_url">
-          <el-input v-model="projectForm.git_url" placeholder="https://github.com/..." />
-        </el-form-item>
       </el-form>
       
       <template #footer>
@@ -54,9 +52,12 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { getProjects, createProject, updateProject, deleteProject } from '@/api/project'
 
+const router = useRouter()
 const projects = ref([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
@@ -66,7 +67,6 @@ const formRef = ref(null)
 const projectForm = reactive({
   name: '',
   description: '',
-  git_url: '',
   team_id: 1
 })
 
@@ -89,10 +89,38 @@ const loadProjects = async () => {
   }
 }
 
+const handleSubmit = async () => {
+  try {
+    await formRef.value.validate()
+    
+    if (editingProject.value) {
+      await updateProject(editingProject.value.id, projectForm)
+      ElMessage.success('更新成功')
+    } else {
+      await createProject(projectForm)
+      ElMessage.success('创建成功')
+    }
+    
+    showCreateDialog.value = false
+    resetProjectForm()
+    loadProjects()
+  } catch (error) {
+    ElMessage.error('操作失败')
+  }
+}
+
 const handleEdit = (row) => {
   editingProject.value = row
   Object.assign(projectForm, row)
   showCreateDialog.value = true
+}
+
+const viewProject = (row) => {
+  router.push(`/projects/${row.id}`)
+}
+
+const viewSpiders = (row) => {
+  router.push(`/spiders?project_id=${row.id}`)
 }
 
 const handleDelete = async (row) => {
@@ -110,31 +138,14 @@ const handleDelete = async (row) => {
   }
 }
 
-const handleSubmit = async () => {
-  try {
-    await formRef.value.validate()
-    if (editingProject.value) {
-      await updateProject(editingProject.value.id, projectForm)
-      ElMessage.success('更新成功')
-    } else {
-      await createProject(projectForm)
-      ElMessage.success('创建成功')
-    }
-    showCreateDialog.value = false
-    resetForm()
-    loadProjects()
-  } catch (error) {
-    ElMessage.error('操作失败')
-  }
-}
-
-const resetForm = () => {
-  editingProject.value = null
+const resetProjectForm = () => {
   Object.assign(projectForm, {
     name: '',
     description: '',
-    git_url: '',
     team_id: 1
   })
 }
 </script>
+
+<style scoped>
+</style>

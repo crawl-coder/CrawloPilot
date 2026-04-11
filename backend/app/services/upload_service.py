@@ -160,6 +160,17 @@ class UploadService:
         extract_dirs.sort(key=lambda x: os.path.getctime(x), reverse=True)
         return extract_dirs[0]
     
+    def get_spider_code_dir(self, project_id: int, spider_id: int) -> Optional[str]:
+        """获取爬虫的代码目录"""
+        # 爬虫代码存储在 project_{project_id}/spider_{spider_id}/
+        spider_dir = os.path.join(self.upload_base_dir, f"project_{project_id}", f"spider_{spider_id}")
+        
+        if not os.path.exists(spider_dir):
+            # 如果不存在，尝试使用项目的代码目录
+            return self.get_project_code_dir(project_id)
+        
+        return spider_dir
+    
     def delete_uploaded_file(self, project_id: int, filename: str) -> bool:
         """删除上传的文件"""
         file_path = os.path.join(self.upload_base_dir, f"project_{project_id}", filename)

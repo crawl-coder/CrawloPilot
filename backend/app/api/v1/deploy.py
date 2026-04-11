@@ -48,7 +48,7 @@ class DeployResponse(BaseModel):
 
 # ==================== API Endpoints ====================
 
-@router.post("/", response_model=DeployResponse)
+@router.post("", response_model=DeployResponse)
 async def create_deploy(
     deploy_data: DeployCreate,
     background_tasks: BackgroundTasks,
@@ -88,7 +88,7 @@ async def create_deploy(
         raise HTTPException(status_code=500, detail=f"创建部署失败: {str(e)}")
 
 
-@router.get("/", response_model=List[DeployResponse])
+@router.get("", response_model=List[DeployResponse])
 async def list_deploys(
     project_id: Optional[int] = None,
     status: Optional[DeployStatus] = None,

@@ -65,7 +65,7 @@ class ScheduleResponse(BaseModel):
         from_attributes = True
 
 
-@router.post("/", response_model=ScheduleResponse)
+@router.post("", response_model=ScheduleResponse)
 async def create_schedule(
     schedule_data: ScheduleCreate,
     background_tasks: BackgroundTasks,
@@ -115,7 +115,7 @@ async def create_schedule(
         raise HTTPException(status_code=500, detail=f"创建调度失败: {str(e)}")
 
 
-@router.get("/", response_model=List[ScheduleResponse])
+@router.get("", response_model=List[ScheduleResponse])
 async def list_schedules(
     project_id: Optional[int] = None,
     enabled: Optional[bool] = None,
