@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+.qoder/
+
+# Node
+node_modules/
+dist/
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.local
+
+# Docker
+*.pid
+*.sock
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# MinIO
+minio-data/
+
+# Docker volumes
+mysql-data/
+redis-data/
+prometheus-data/
+grafana-data/

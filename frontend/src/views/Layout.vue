@@ -1,0 +1,201 @@
+<template>
+  <el-container class="layout-container">
+    <el-aside width="200px">
+      <div class="logo">CrawloPilot</div>
+      <el-menu
+        :default-active="$route.path"
+        router
+        background-color="#304156"
+        text-color="#bfcbd9"
+        active-text-color="#409EFF"
+      >
+        <el-menu-item index="/dashboard">
+          <el-icon><Odometer /></el-icon>
+          <span>仪表盘</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/projects">
+          <el-icon><Files /></el-icon>
+          <span>项目管理</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/deploys">
+          <el-icon><Upload /></el-icon>
+          <span>部署管理</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/nodes">
+          <el-icon><Monitor /></el-icon>
+          <span>节点管理</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/schedules">
+          <el-icon><Clock /></el-icon>
+          <span>调度管理</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/tasks">
+          <el-icon><List /></el-icon>
+          <span>任务实例</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/monitoring">
+          <el-icon><TrendCharts /></el-icon>
+          <span>监控中心</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/alerts">
+          <el-icon><Bell /></el-icon>
+          <span>告警管理</span>
+        </el-menu-item>
+        
+        <el-sub-menu index="data">
+          <template #title>
+            <el-icon><Connection /></el-icon>
+            <span>数据管理</span>
+          </template>
+          <el-menu-item index="/data-quality">
+            <el-icon><Bell /></el-icon>
+            <span>数据质量</span>
+          </el-menu-item>
+          <el-menu-item index="/data-statistics">
+            <el-icon><TrendCharts /></el-icon>
+            <span>统计报表</span>
+          </el-menu-item>
+        </el-sub-menu>
+        
+        <el-sub-menu index="resources">
+          <template #title>
+            <el-icon><Connection /></el-icon>
+            <span>资源管理</span>
+          </template>
+          <el-menu-item index="/proxy-pool">
+            <el-icon><Monitor /></el-icon>
+            <span>代理池</span>
+          </el-menu-item>
+          <el-menu-item index="/api-management">
+            <el-icon><Link /></el-icon>
+            <span>API 管理</span>
+          </el-menu-item>
+        </el-sub-menu>
+        
+        <el-menu-item index="/audit-logs">
+          <el-icon><Document /></el-icon>
+          <span>审计日志</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/users">
+          <el-icon><User /></el-icon>
+          <span>用户管理</span>
+        </el-menu-item>
+      </el-menu>
+    </el-aside>
+    
+    <el-container>
+      <el-header>
+        <div class="header-content">
+          <el-breadcrumb separator="/">
+            <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
+            <el-breadcrumb-item>{{ $route.name }}</el-breadcrumb-item>
+          </el-breadcrumb>
+          <div class="user-info">
+            <el-dropdown @command="handleCommand">
+              <span class="user-name">
+                {{ currentUser?.username || '用户' }}
+                <el-icon><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="profile">个人信息</el-dropdown-item>
+                  <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </div>
+      </el-header>
+      
+      <el-main>
+        <router-view />
+      </el-main>
+    </el-container>
+  </el-container>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { Odometer, Files, User, ArrowDown, Monitor, Clock, List, TrendCharts, Bell, Upload, Connection, Link, Document } from '@element-plus/icons-vue'
+import { getCurrentUser } from '@/api/auth'
+
+const router = useRouter()
+const currentUser = ref(null)
+
+onMounted(async () => {
+  try {
+    currentUser.value = await getCurrentUser()
+  } catch (error) {
+    console.error('获取用户信息失败', error)
+  }
+})
+
+const handleCommand = (command) => {
+  if (command === 'logout') {
+    localStorage.removeItem('token')
+    ElMessage.success('已退出登录')
+    router.push('/login')
+  } else if (command === 'profile') {
+    ElMessage.info('个人信息页面开发中')
+  }
+}
+</script>
+
+<style scoped>
+.layout-container {
+  min-height: 100vh;
+}
+
+.el-aside {
+  background-color: #304156;
+  color: #fff;
+}
+
+.logo {
+  height: 60px;
+  line-height: 60px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: bold;
+  color: #fff;
+  background-color: #2b3a4a;
+}
+
+.el-header {
+  background-color: #fff;
+  box-shadow: 0 1px 4px rgba(0,21,41,.08);
+  padding: 0 20px;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 100%;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+}
+
+.user-name {
+  cursor: pointer;
+  color: #606266;
+}
+
+.el-main {
+  background-color: #f0f2f5;
+  padding: 20px;
+}
+</style>

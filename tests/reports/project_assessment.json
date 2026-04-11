@@ -1,0 +1,181 @@
+{
+  "project_info": {
+    "project_name": "CrawloPilot",
+    "description": "Crawlo 爬虫框架管理平台",
+    "structure": {
+      "backend_files": 54,
+      "frontend_files": 0,
+      "docker_files": 11,
+      "config_files": 0,
+      "test_files": 18,
+      "total_lines": 8785
+    },
+    "analyzed_at": "2026-04-11T18:22:08.112296"
+  },
+  "code_analysis": {
+    "backend": {
+      "total_functions": 291,
+      "total_classes": 126,
+      "total_imports": 357,
+      "average_function_length": 0
+    },
+    "frontend": {
+      "total_components": 17,
+      "total_api_calls": 296
+    }
+  },
+  "architecture": {
+    "backend": {
+      "framework": "FastAPI",
+      "architecture_pattern": "分层架构",
+      "layers": [
+        "API层",
+        "Service层",
+        "Model层",
+        "Schema层"
+      ],
+      "database": "MySQL 8.0",
+      "cache": "Redis 7.x",
+      "message_queue": "Celery + Redis"
+    },
+    "frontend": {
+      "framework": "Vue 3",
+      "ui_library": "Element Plus",
+      "state_management": "Pinia",
+      "http_client": "Axios"
+    },
+    "infrastructure": {
+      "containerization": "Docker",
+      "orchestration": "Docker Compose",
+      "reverse_proxy": "Nginx",
+      "monitoring": "Prometheus + Grafana",
+      "object_storage": "MinIO"
+    },
+    "modules": [
+      "用户认证模块",
+      "项目管理模块",
+      "任务调度模块",
+      "运行监控模块",
+      "数据质量模块",
+      "代理池管理模块",
+      "API配置管理模块",
+      "安全审计模块"
+    ]
+  },
+  "test_coverage": {
+    "unit_tests": {
+      "count": 7,
+      "status": "已创建"
+    },
+    "integration_tests": {
+      "count": 6,
+      "status": "已创建"
+    },
+    "scenario_tests": {
+      "count": 6,
+      "status": "已创建"
+    },
+    "total_test_cases": 50,
+    "estimated_coverage": "70%",
+    "report_files": 1
+  },
+  "security": {
+    "authentication": {
+      "method": "JWT Token",
+      "password_hashing": "bcrypt",
+      "status": "已实现"
+    },
+    "authorization": {
+      "model": "RBAC",
+      "roles": [
+        "超级管理员",
+        "项目管理员",
+        "开发工程师",
+        "运维工程师",
+        "数据分析师",
+        "只读用户"
+      ],
+      "status": "已实现"
+    },
+    "data_protection": {
+      "sensitive_field_encryption": true,
+      "https_enabled": true,
+      "cors_configured": true
+    },
+    "audit": {
+      "audit_logging": true,
+      "operation_tracking": true
+    },
+    "security_tests": [
+      "SQL注入防护",
+      "XSS防护",
+      "CSRF防护"
+    ]
+  },
+  "performance": {
+    "backend": {
+      "async_support": true,
+      "connection_pooling": true,
+      "caching": true,
+      "api_instances": 2
+    },
+    "database": {
+      "indexing": true,
+      "connection_pool": true
+    },
+    "frontend": {
+      "lazy_loading": true,
+      "code_splitting": true,
+      "build_tool": "Vite"
+    },
+    "infrastructure": {
+      "load_balancing": "Nginx",
+      "container_scaling": "支持多实例"
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "高",
+      "area": "测试",
+      "recommendation": "增加单元测试覆盖率，目标达到80%以上",
+      "details": "为核心业务逻辑添加更多边界条件测试和异常处理测试"
+    },
+    {
+      "priority": "高",
+      "area": "安全",
+      "recommendation": "添加API请求频率限制",
+      "details": "使用Redis实现API限流，防止恶意请求"
+    },
+    {
+      "priority": "中",
+      "area": "性能",
+      "recommendation": "实现数据库查询优化",
+      "details": "添加慢查询日志分析，优化热点查询"
+    },
+    {
+      "priority": "中",
+      "area": "监控",
+      "recommendation": "完善Grafana监控面板",
+      "details": "添加业务指标监控，如任务成功率、数据采集量等"
+    },
+    {
+      "priority": "中",
+      "area": "文档",
+      "recommendation": "补充API文档",
+      "details": "使用Swagger/OpenAPI生成完整API文档"
+    },
+    {
+      "priority": "低",
+      "area": "CI/CD",
+      "recommendation": "建立持续集成流程",
+      "details": "配置GitHub Actions或Jenkins实现自动化测试和部署"
+    },
+    {
+      "priority": "低",
+      "area": "日志",
+      "recommendation": "集成ELK日志系统",
+      "details": "实现日志聚合和全文检索功能"
+    }
+  ],
+  "health_score": 94
+}

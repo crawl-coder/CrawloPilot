@@ -1,0 +1,401 @@
+from app.core.database import Base
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+
+
+class User(Base):
+    __tablename__ = "user"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    username = Column(String(64), unique=True, nullable=False, index=True)
+    email = Column(String(128), unique=True, nullable=False, index=True)
+    password_hash = Column(String(256), nullable=False)
+    full_name = Column(String(128))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    teams = relationship("TeamMember", back_populates="user")
+    roles = relationship("Role", secondary="user_role", back_populates="users")
+    audit_logs = relationship("AuditLog", back_populates="user")
+
+
+class Team(Base):
+    __tablename__ = "team"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), unique=True, nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    members = relationship("TeamMember", back_populates="team")
+    projects = relationship("Project", back_populates="team")
+
+
+class TeamMember(Base):
+    __tablename__ = "team_member"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False)
+    team_id = Column(BigInteger, ForeignKey("team.id"), nullable=False)
+    role = Column(String(32), default="member")  # admin/member
+    joined_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", back_populates="teams")
+    team = relationship("Team", back_populates="members")
+
+
+class Role(Base):
+    __tablename__ = "role"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(64), unique=True, nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    users = relationship("User", secondary="user_role", back_populates="roles")
+    permissions = relationship("Permission", secondary="role_permission")
+
+
+class UserRole(Base):
+    __tablename__ = "user_role"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False)
+    role_id = Column(BigInteger, ForeignKey("role.id"), nullable=False)
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permission"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    role_id = Column(BigInteger, ForeignKey("role.id"), nullable=False)
+    permission_id = Column(BigInteger, ForeignKey("permission.id"), nullable=False)
+
+
+class Permission(Base):
+    __tablename__ = "permission"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    code = Column(String(128), unique=True, nullable=False, index=True)
+    name = Column(String(128), nullable=False)
+    description = Column(Text)
+
+
+class ProjectStatus(str, enum.Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    DELETED = "deleted"
+
+
+class Project(Base):
+    __tablename__ = "project"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False, index=True)
+    team_id = Column(BigInteger, ForeignKey("team.id"), nullable=False)
+    description = Column(Text)
+    git_url = Column(String(512))
+    status = Column(Enum(ProjectStatus), default=ProjectStatus.ACTIVE)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    team = relationship("Team", back_populates="projects")
+    versions = relationship("ProjectVersion", back_populates="project")
+    schedules = relationship("Schedule", back_populates="project")
+    alert_rules = relationship("AlertRule", back_populates="project")
+    api_configs = relationship("ApiConfig", back_populates="project")
+
+
+class ProjectVersionStatus(str, enum.Enum):
+    BUILDING = "building"
+    READY = "ready"
+    DEPLOYED = "deployed"
+
+
+class ProjectVersion(Base):
+    __tablename__ = "project_version"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    version = Column(String(32), nullable=False, index=True)
+    package_url = Column(String(512))
+    config_snapshot = Column(JSON)
+    image_tag = Column(String(128))
+    status = Column(Enum(ProjectVersionStatus), default=ProjectVersionStatus.BUILDING)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    project = relationship("Project", back_populates="versions")
+
+
+class ScheduleType(str, enum.Enum):
+    CRON = "cron"
+    INTERVAL = "interval"
+    ONCE = "once"
+    DEPENDENCY = "dependency"
+
+
+class Schedule(Base):
+    __tablename__ = "schedule"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    spider_name = Column(String(128), nullable=False)
+    schedule_type = Column(Enum(ScheduleType), nullable=False)
+    cron_expr = Column(String(64))
+    interval_seconds = Column(Integer)
+    priority = Column(Integer, default=5)
+    max_concurrency = Column(Integer, default=1)
+    timeout_seconds = Column(Integer, default=3600)
+    retry_strategy = Column(JSON)
+    enabled = Column(Boolean, default=True)
+    next_run_time = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    project = relationship("Project", back_populates="schedules")
+    task_instances = relationship("TaskInstance", back_populates="schedule")
+
+
+class TaskStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
+
+
+class TaskInstance(Base):
+    __tablename__ = "task_instance"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    schedule_id = Column(BigInteger, ForeignKey("schedule.id"), nullable=False)
+    spider_name = Column(String(128), nullable=False)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING)
+    worker_node = Column(String(64))
+    container_id = Column(String(64))
+    started_at = Column(DateTime)
+    finished_at = Column(DateTime)
+    stats = Column(JSON)
+    log_url = Column(String(512))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    schedule = relationship("Schedule", back_populates="task_instances")
+
+
+class AlertRuleType(str, enum.Enum):
+    STATUS = "status"
+    THRESHOLD = "threshold"
+    TIMEOUT = "timeout"
+    RESOURCE = "resource"
+    DATA = "data"
+
+
+class AlertRule(Base):
+    __tablename__ = "alert_rule"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    rule_type = Column(Enum(AlertRuleType), nullable=False)
+    condition = Column(JSON)
+    channel = Column(JSON)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    project = relationship("Project", back_populates="alert_rules")
+
+
+class ProxyProtocol(str, enum.Enum):
+    HTTP = "HTTP"
+    HTTPS = "HTTPS"
+    SOCKS5 = "SOCKS5"
+
+
+class ProxyStatus(str, enum.Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    BLOCKED = "blocked"
+
+
+class ProxyPool(Base):
+    __tablename__ = "proxy_pool"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ip = Column(String(64), nullable=False, index=True)
+    port = Column(Integer, nullable=False)
+    protocol = Column(Enum(ProxyProtocol), nullable=False)
+    region = Column(String(64))
+    group_name = Column(String(64), index=True)
+    health_score = Column(DECIMAL(5, 2), default=100.00)
+    status = Column(Enum(ProxyStatus), default=ProxyStatus.ACTIVE)
+    last_checked_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ApiAuthType(str, enum.Enum):
+    NONE = "none"
+    API_KEY = "api_key"
+    OAUTH2 = "oauth2"
+
+
+class ApiConfig(Base):
+    __tablename__ = "api_config"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    name = Column(String(128), nullable=False)
+    base_url = Column(String(512), nullable=False)
+    auth_type = Column(Enum(ApiAuthType), default=ApiAuthType.NONE)
+    api_key = Column(String(256))
+    rate_limit = Column(Integer, default=60)
+    circuit_breaker_threshold = Column(Integer, default=10)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    project = relationship("Project", back_populates="api_configs")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False)
+    action = Column(String(64), nullable=False)
+    resource_type = Column(String(64))
+    resource_id = Column(BigInteger)
+    old_value = Column(JSON)
+    new_value = Column(JSON)
+    ip_address = Column(String(64))
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="audit_logs")
+
+
+class EnvironmentConfig(Base):
+    __tablename__ = "environment_config"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    env_name = Column(String(32), nullable=False)  # dev/test/prod
+    config = Column(JSON)
+    is_active = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ==================== Phase 2: 部署引擎 ====================
+
+class DeployStatus(str, enum.Enum):
+    PENDING = "pending"
+    BUILDING = "building"
+    DEPLOYING = "deploying"
+    SUCCESS = "success"
+    FAILED = "failed"
+    ROLLED_BACK = "rolled_back"
+
+
+class DeployStrategy(str, enum.Enum):
+    BLUE_GREEN = "blue_green"  # 蓝绿部署
+    ROLLING = "rolling"        # 滚动更新
+    RECREATE = "recreate"      # 重新创建
+
+
+class Deploy(Base):
+    __tablename__ = "deploy"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    version_id = Column(BigInteger, ForeignKey("project_version.id"), nullable=False)
+    strategy = Column(Enum(DeployStrategy), nullable=False, default=DeployStrategy.RECREATE)
+    status = Column(Enum(DeployStatus), default=DeployStatus.PENDING)
+    target_env = Column(String(32), default="production")  # production/staging
+    node_id = Column(BigInteger, ForeignKey("node.id"))
+    container_ids = Column(JSON)  # 存储容器 ID 列表
+    error_message = Column(Text)
+    deployed_by = Column(BigInteger, ForeignKey("user.id"))
+    started_at = Column(DateTime)
+    finished_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    project = relationship("Project")
+    version = relationship("ProjectVersion")
+    node = relationship("Node")
+    deployer = relationship("User")
+
+
+class NodeStatus(str, enum.Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    DRAINING = "draining"  # 正在排空
+    MAINTENANCE = "maintenance"
+
+
+class Node(Base):
+    __tablename__ = "node"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), unique=True, nullable=False, index=True)
+    host = Column(String(256), nullable=False)
+    port = Column(Integer, default=2375)  # Docker API 端口
+    docker_host = Column(String(256))  # Docker socket 路径
+    status = Column(Enum(NodeStatus), default=NodeStatus.OFFLINE)
+    labels = Column(JSON)  # 节点标签
+    resources = Column(JSON)  # CPU、内存、磁盘信息
+    container_count = Column(Integer, default=0)
+    last_heartbeat = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    containers = relationship("Container", back_populates="node")
+    deploys = relationship("Deploy", back_populates="node")
+
+
+class ContainerStatus(str, enum.Enum):
+    CREATED = "created"
+    RUNNING = "running"
+    PAUSED = "paused"
+    RESTARTING = "restarting"
+    EXITED = "exited"
+    DEAD = "dead"
+
+
+class Container(Base):
+    __tablename__ = "container"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    container_id = Column(String(128), unique=True, nullable=False, index=True)
+    name = Column(String(256), nullable=False, index=True)
+    node_id = Column(BigInteger, ForeignKey("node.id"), nullable=False)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    version_id = Column(BigInteger, ForeignKey("project_version.id"))
+    image = Column(String(256), nullable=False)
+    status = Column(Enum(ContainerStatus), default=ContainerStatus.CREATED)
+    ports = Column(JSON)  # 端口映射
+    environment = Column(JSON)  # 环境变量
+    resource_limits = Column(JSON)  # 资源限制
+    health_check = Column(JSON)  # 健康检查配置
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime)
+    stopped_at = Column(DateTime)
+    
+    # Relationships
+    node = relationship("Node", back_populates="containers")
+    project = relationship("Project")
+    version = relationship("ProjectVersion")
