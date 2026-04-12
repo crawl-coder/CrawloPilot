@@ -1,7 +1,12 @@
 # CrawloPilot 项目开发规范
 
 ## 项目概述
-CrawloPilot 是一个功能完整的爬虫管理平台，提供项目全生命周期管理能力。
+CrawloPilot 是一个功能完整的爬虫项目部署和管理平台,支持 Crawlo、Scrapy 等多种爬虫框架。
+
+## 项目定位
+- **主要功能**: 部署和管理爬虫项目(类似 Scrapy Cloud)
+- **主打框架**: Crawlo 框架(分布式爬虫框架)
+- **支持框架**: Crawlo ⭐推荐、Scrapy、Selenium、Playwright、Requests、自定义
 
 ## 技术栈
 - **后端**: FastAPI, SQLAlchemy, Alembic, APScheduler, Redis
@@ -38,13 +43,14 @@ CrawloPilot/
 ### 已完成模块 ✅
 1. **用户认证** - JWT Token, 权限控制
 2. **项目管理** - CRUD, Git集成, 本地上传
-3. **部署管理** - Docker容器化, 多节点部署
-4. **任务调度** - Cron/间隔调度, DAG依赖
-5. **监控告警** - Prometheus指标, 多渠道通知
-6. **数据质量** - 检测规则, 统计分析
-7. **代理池** - 健康检查, 智能分配
-8. **API管理** - 配置管理, 限流熔断
-9. **安全审计** - 操作日志, 权限审计
+3. **爬虫管理** - 分步创建向导、卡片/列表视图、代码编辑、Git管理
+4. **部署管理** - Docker容器化, 多节点部署
+5. **任务调度** - Cron/间隔调度, DAG依赖
+6. **监控告警** - Prometheus指标, 多渠道通知
+7. **数据质量** - 检测规则, 统计分析
+8. **代理池** - 健康检查, 智能分配
+9. **API管理** - 配置管理, 限流熔断
+10. **安全审计** - 操作日志, 权限审计
 
 ## 开发规范
 
@@ -60,6 +66,8 @@ CrawloPilot/
 2. **状态管理**: 优先使用局部状态
 3. **样式**: 使用 scoped 样式, 遵循 Element Plus 设计
 4. **API 调用**: 统一封装在 api/ 目录
+5. **Element Plus**: el-radio-button 使用 value 而非 label (3.0兼容)
+6. **ElOption**: value 不能使用 null, 使用空字符串 ""
 
 ### Git 提交规范
 - feat: 新功能
@@ -122,6 +130,15 @@ pytest tests/integration/
 - 具体资源API: `/projects/1`, `/schedules/5`
 
 ### 前端开发注意
-- Element Plus `<el-option>` 的 value 不能使用 `null`，使用空字符串 `""`
+- Element Plus `<el-radio-button>` 使用 `value` 属性而非 `label` (3.0兼容)
+- Element Plus `<el-option>` 的 value 不能使用 `null`,使用空字符串 `""`
 - Axios请求会自动处理307重定向
 - 使用 `Cmd + Shift + R` 强制刷新浏览器缓存
+- Vite代理配置使用 `127.0.0.1` 而非 `localhost` 避免IPv6解析问题
+
+### 爬虫管理注意
+- 爬虫类型枚举: crawlo(主打), scrapy, selenium, playwright, requests, custom
+- Pydantic Schema 和数据库模型枚举值必须保持一致
+- 创建爬虫采用分步向导: 基本信息 → 代码来源 → 运行配置
+- 列表页支持卡片视图和列表视图切换
+- 详情页Tab顺序: 代码结构 → 运行监控 → 调度配置 → Git管理 → 基本信息
