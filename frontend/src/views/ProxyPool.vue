@@ -234,13 +234,17 @@ const proxyForm = ref({
   group_name: ''
 })
 
-const loadData = async () => {
+const loadData = async ({ page: newPage, size } = {}) => {
   loading.value = true
   try {
+    const currentPageNum = newPage || pagination.value.page
+    const pageSizeNum = size || pagination.value.limit
+    const skip = (currentPageNum - 1) * pageSizeNum
+    
     const params = {
       ...queryForm.value,
-      skip: (pagination.value.page - 1) * pagination.value.limit,
-      limit: pagination.value.limit
+      skip,
+      limit: pageSizeNum
     }
     
     const [listData, statsData] = await Promise.all([
@@ -248,8 +252,11 @@ const loadData = async () => {
       getProxyStats({ days: 30 })
     ])
     
-    proxyList.value = listData
+    proxyList.value = listData.items || []
     stats.value = statsData
+    pagination.value.total = listData.total || 0
+    pagination.value.page = currentPageNum
+    pagination.value.limit = pageSizeNum
   } catch (error) {
     ElMessage.error('加载数据失败')
   } finally {

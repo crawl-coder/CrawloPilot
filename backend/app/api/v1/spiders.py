@@ -16,7 +16,7 @@ router = APIRouter(prefix="/spiders", tags=["爬虫管理"])
 
 # ==================== 爬虫管理 ====================
 
-@router.get("", response_model=List[SpiderInDB])
+@router.get("")
 async def list_spiders(
     project_id: Optional[int] = None,
     status: Optional[str] = None,
@@ -25,7 +25,7 @@ async def list_spiders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取爬虫列表"""
+    """获取爬虫列表(带分页)"""
     query = db.query(Spider)
     
     if project_id:
@@ -33,8 +33,18 @@ async def list_spiders(
     if status:
         query = query.filter(Spider.status == status)
     
+    # 获取总数
+    total = query.count()
+    
+    # 获取分页数据
     spiders = query.offset(skip).limit(limit).all()
-    return spiders
+    
+    return {
+        "total": total,
+        "items": spiders,
+        "skip": skip,
+        "limit": limit
+    }
 
 
 @router.get("/{spider_id}", response_model=SpiderInDB)

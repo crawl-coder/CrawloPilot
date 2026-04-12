@@ -115,14 +115,16 @@ async def create_schedule(
         raise HTTPException(status_code=500, detail=f"创建调度失败: {str(e)}")
 
 
-@router.get("", response_model=List[ScheduleResponse])
+@router.get("")
 async def list_schedules(
     project_id: Optional[int] = None,
     enabled: Optional[bool] = None,
+    skip: int = 0,
+    limit: int = 50,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取调度列表"""
+    """获取调度列表(带分页)"""
     query = db.query(Schedule)
     
     if project_id:
@@ -131,8 +133,9 @@ async def list_schedules(
     if enabled is not None:
         query = query.filter(Schedule.enabled == enabled)
     
-    schedules = query.order_by(Schedule.created_at.desc()).all()
-    return schedules
+    total = query.count()
+    schedules = query.order_by(Schedule.created_at.desc()).offset(skip).limit(limit).all()
+    return {"total": total, "items": schedules, "skip": skip, "limit": limit}
 
 
 @router.get("/{schedule_id}", response_model=ScheduleResponse)

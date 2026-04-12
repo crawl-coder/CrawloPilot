@@ -5,7 +5,7 @@
         <div class="card-header">
           <span>爬虫管理</span>
           <div style="display: flex; gap: 10px; align-items: center">
-            <!-- 视图切换 -->
+            <!-- 视图切换(主视图) -->
             <el-radio-group v-model="viewMode" size="small">
               <el-radio-button value="card">
                 <el-icon><Grid /></el-icon> 卡片
@@ -14,6 +14,22 @@
                 <el-icon><List /></el-icon> 列表
               </el-radio-button>
             </el-radio-group>
+            <!-- 更多视图下拉菜单 -->
+            <el-dropdown trigger="click">
+              <el-button size="small">
+                <el-icon><MoreFilled /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="viewMode = 'dashboard'">
+                    <el-icon><DataLine /></el-icon> 仪表盘
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="viewMode = 'kanban'">
+                    <el-icon><Rank /></el-icon> 看板
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button type="primary" @click="showCreateDialog">
               <el-icon><Plus /></el-icon> 创建爬虫
             </el-button>
@@ -49,6 +65,10 @@
 
       <!-- 爬虫列表 -->
       <div v-loading="loading">
+        <!-- 统计信息 -->
+        <div v-if="total > 0" style="margin-bottom: 15px; color: #909399; font-size: 13px">
+          共 {{ total }} 个爬虫
+        </div>
         <!-- 卡片视图 -->
         <div v-if="viewMode === 'card'" class="card-view">
           <el-row :gutter="20">
@@ -59,13 +79,15 @@
                     <el-tag 
                       :color="getSpiderTypeColor(spider.spider_type)" 
                       size="small" 
-                      style="color: white; border: none"
+                      style="color: white; border: none; flex-shrink: 0"
                     >
                       {{ spider.spider_type === 'crawlo' ? 'Crawlo⭐' : spider.spider_type }}
                     </el-tag>
-                    <span class="spider-name">{{ spider.name }}</span>
+                    <el-tooltip :content="spider.name" placement="top" :show-after="300">
+                      <span class="spider-name">{{ spider.name }}</span>
+                    </el-tooltip>
                   </div>
-                  <el-tag :type="getStatusType(spider.status)" size="small">
+                  <el-tag :type="getStatusType(spider.status)" size="small" style="flex-shrink: 0">
                     {{ getStatusText(spider.status) }}
                   </el-tag>
                 </div>
@@ -124,8 +146,180 @@
           <el-empty v-if="spiders.length === 0" description="暂无爬虫数据" />
         </div>
 
+        <!-- 仪表盘视图 -->
+        <div v-else-if="viewMode === 'dashboard'" class="dashboard-view">
+          <!-- 统计卡片行 -->
+          <el-row :gutter="20" class="stats-row">
+            <el-col :span="6">
+              <el-card class="stat-card" shadow="hover">
+                <div class="stat-value">{{ spiders.length }}</div>
+                <div class="stat-label">总爬虫数</div>
+              </el-card>
+            </el-col>
+            <el-col :span="6">
+              <el-card class="stat-card" shadow="hover">
+                <div class="stat-value" style="color: #67C23A">{{ runningCount }}</div>
+                <div class="stat-label">运行中</div>
+              </el-card>
+            </el-col>
+            <el-col :span="6">
+              <el-card class="stat-card" shadow="hover">
+                <div class="stat-value" style="color: #E6A23C">{{ draftCount }}</div>
+                <div class="stat-label">草稿</div>
+              </el-card>
+            </el-col>
+            <el-col :span="6">
+              <el-card class="stat-card" shadow="hover">
+                <div class="stat-value" :style="{ color: avgSuccessRate >= 90 ? '#67C23A' : avgSuccessRate >= 70 ? '#E6A23C' : '#F56C6C' }">{{ avgSuccessRate }}%</div>
+                <div class="stat-label">平均成功率</div>
+              </el-card>
+            </el-col>
+          </el-row>
+
+          <!-- 框架分布和最近运行 -->
+          <el-row :gutter="20" style="margin-top: 20px">
+            <el-col :span="12">
+              <el-card shadow="hover">
+                <template #header>
+                  <span>框架分布</span>
+                </template>
+                <div class="framework-stats">
+                  <div v-for="(count, type) in frameworkStats" :key="type" class="framework-item">
+                    <el-tag :color="getSpiderTypeColor(type)" size="small" style="color: white; border: none">
+                      {{ type === 'crawlo' ? 'Crawlo⭐' : type }}
+                    </el-tag>
+                    <el-progress 
+                      :percentage="(count / spiders.length * 100).toFixed(0)" 
+                      :stroke-width="8"
+                      :color="getSpiderTypeColor(type)"
+                    />
+                    <span class="count">{{ count }}个</span>
+                  </div>
+                </div>
+              </el-card>
+            </el-col>
+            <el-col :span="12">
+              <el-card shadow="hover">
+                <template #header>
+                  <span>最近运行记录</span>
+                </template>
+                <el-timeline>
+                  <el-timeline-item 
+                    v-for="spider in recentRunSpiders" 
+                    :key="spider.id"
+                    :type="spider.last_run_status === 'success' ? 'success' : 'danger'"
+                    :timestamp="formatDate(spider.last_run_at)"
+                  >
+                    {{ spider.name }}
+                    <el-tag :type="spider.last_run_status === 'success' ? 'success' : 'danger'" size="small">
+                      {{ spider.last_run_status === 'success' ? '成功' : '失败' }}
+                    </el-tag>
+                  </el-timeline-item>
+                </el-timeline>
+                <el-empty v-if="recentRunSpiders.length === 0" description="暂无运行记录" />
+              </el-card>
+            </el-col>
+          </el-row>
+        </div>
+
+        <!-- 看板视图 -->
+        <div v-else-if="viewMode === 'kanban'" class="kanban-view">
+          <el-row :gutter="20">
+            <!-- 草稿列 -->
+            <el-col :span="8">
+              <div class="kanban-column">
+                <div class="kanban-header" style="background: #909399">
+                  <span>草稿</span>
+                  <el-tag type="info" size="small">{{ draftSpiders.length }}</el-tag>
+                </div>
+                <div class="kanban-content">
+                  <el-card 
+                    v-for="spider in draftSpiders" 
+                    :key="spider.id" 
+                    class="kanban-card"
+                    shadow="hover"
+                    @click="viewSpider(spider)"
+                  >
+                    <div class="kanban-card-header">
+                      <el-tag :color="getSpiderTypeColor(spider.spider_type)" size="small" style="color: white; border: none">
+                        {{ spider.spider_type === 'crawlo' ? 'Crawlo⭐' : spider.spider_type }}
+                      </el-tag>
+                    </div>
+                    <div class="kanban-card-title">{{ spider.name }}</div>
+                    <div class="kanban-card-project">{{ getProjectName(spider.project_id) }}</div>
+                  </el-card>
+                  <el-empty v-if="draftSpiders.length === 0" description="暂无草稿" />
+                </div>
+              </div>
+            </el-col>
+
+            <!-- 运行中列 -->
+            <el-col :span="8">
+              <div class="kanban-column">
+                <div class="kanban-header" style="background: #67C23A">
+                  <span>运行中</span>
+                  <el-tag type="success" size="small">{{ activeSpiders.length }}</el-tag>
+                </div>
+                <div class="kanban-content">
+                  <el-card 
+                    v-for="spider in activeSpiders" 
+                    :key="spider.id" 
+                    class="kanban-card"
+                    shadow="hover"
+                    @click="viewSpider(spider)"
+                  >
+                    <div class="kanban-card-header">
+                      <el-tag :color="getSpiderTypeColor(spider.spider_type)" size="small" style="color: white; border: none">
+                        {{ spider.spider_type === 'crawlo' ? 'Crawlo⭐' : spider.spider_type }}
+                      </el-tag>
+                      <el-tag v-if="isRunning(spider)" type="danger" size="small" effect="plain" class="running-badge">
+                        <el-icon class="is-loading"><Loading /></el-icon> 运行中
+                      </el-tag>
+                    </div>
+                    <div class="kanban-card-title">{{ spider.name }}</div>
+                    <div class="kanban-card-stats">
+                      成功率: {{ ((spider.success_count / spider.run_count) * 100).toFixed(1) }}%
+                    </div>
+                  </el-card>
+                  <el-empty v-if="activeSpiders.length === 0" description="暂无运行中" />
+                </div>
+              </div>
+            </el-col>
+
+            <!-- 已禁用列 -->
+            <el-col :span="8">
+              <div class="kanban-column">
+                <div class="kanban-header" style="background: #E6A23C">
+                  <span>已禁用/错误</span>
+                  <el-tag type="warning" size="small">{{ disabledSpiders.length }}</el-tag>
+                </div>
+                <div class="kanban-content">
+                  <el-card 
+                    v-for="spider in disabledSpiders" 
+                    :key="spider.id" 
+                    class="kanban-card"
+                    shadow="hover"
+                    @click="viewSpider(spider)"
+                  >
+                    <div class="kanban-card-header">
+                      <el-tag :color="getSpiderTypeColor(spider.spider_type)" size="small" style="color: white; border: none">
+                        {{ spider.spider_type === 'crawlo' ? 'Crawlo⭐' : spider.spider_type }}
+                      </el-tag>
+                      <el-tag :type="spider.status === 'error' ? 'danger' : 'warning'" size="small">
+                        {{ getStatusText(spider.status) }}
+                      </el-tag>
+                    </div>
+                    <div class="kanban-card-title">{{ spider.name }}</div>
+                  </el-card>
+                  <el-empty v-if="disabledSpiders.length === 0" description="暂无禁用" />
+                </div>
+              </div>
+            </el-col>
+          </el-row>
+        </div>
+
         <!-- 列表视图 -->
-        <el-table v-else :data="spiders" border stripe>
+        <el-table v-else-if="viewMode === 'list'" :data="spiders" border stripe>
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="name" label="爬虫名称" width="180" />
           <el-table-column label="所属项目" width="180">
@@ -187,6 +381,19 @@
             </template>
           </el-table-column>
         </el-table>
+        
+        <!-- 分页组件 -->
+        <el-pagination
+          v-if="total > 0"
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          style="margin-top: 20px; justify-content: flex-end"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
       </div>
     </el-card>
 
@@ -452,10 +659,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, UploadFilled, Grid, List, VideoPlay, Document, More, CircleCheck, CircleClose } from '@element-plus/icons-vue'
+import { Plus, UploadFilled, Grid, List, VideoPlay, Document, More, CircleCheck, CircleClose, DataLine, Rank, Loading, MoreFilled } from '@element-plus/icons-vue'
 import { getSpiders, createSpider, updateSpider, deleteSpider, runSpider } from '@/api/spider'
 import { getProjects } from '@/api/project'
 
@@ -468,13 +675,74 @@ const submitting = ref(false)
 const showDialog = ref(false)
 const editingSpider = ref(null)
 const formRef = ref(null)
+const total = ref(0) // 总数
+const currentPage = ref(1) // 当前页
+const pageSize = ref(10) // 每页数量
 
 // 分步向导
 const currentStep = ref(0)
 const uploadFile = ref(null)
 
-// 视图模式
-const viewMode = ref('card') // 'card' 或 'list'
+// 视图模式 - 从localStorage读取或根据数据量智能选择
+const viewMode = ref(localStorage.getItem('spiderViewMode') || null) // null 表示需要根据数据量选择
+
+// 视图选择阈值
+const VIEW_THRESHOLD = 12 // 超过12个爬虫时默认使用列表视图
+
+// 智能选择视图模式
+const calculateViewMode = (count) => {
+  return count > VIEW_THRESHOLD ? 'list' : 'card'
+}
+
+// 监听爬虫数据变化,自动调整视图(仅首次)
+let isViewModeInitialized = false
+watch(spiders, (newSpiders) => {
+  if (!isViewModeInitialized && newSpiders.length > 0) {
+    const savedMode = localStorage.getItem('spiderViewMode')
+    if (!savedMode) {
+      viewMode.value = calculateViewMode(newSpiders.length)
+    }
+    isViewModeInitialized = true
+  }
+})
+
+// 监听视图模式变化,保存到localStorage
+watch(viewMode, (newMode) => {
+  localStorage.setItem('spiderViewMode', newMode)
+})
+
+// 计算属性 - 仪表盘数据
+const runningCount = computed(() => spiders.value.filter(s => s.status === 'active').length)
+const draftCount = computed(() => spiders.value.filter(s => s.status === 'draft').length)
+const avgSuccessRate = computed(() => {
+  const totalRuns = spiders.value.reduce((sum, s) => sum + s.run_count, 0)
+  const totalSuccess = spiders.value.reduce((sum, s) => sum + s.success_count, 0)
+  return totalRuns > 0 ? ((totalSuccess / totalRuns) * 100).toFixed(1) : 0
+})
+const frameworkStats = computed(() => {
+  const stats = {}
+  spiders.value.forEach(s => {
+    stats[s.spider_type] = (stats[s.spider_type] || 0) + 1
+  })
+  return stats
+})
+const recentRunSpiders = computed(() => {
+  return spiders.value
+    .filter(s => s.last_run_at)
+    .sort((a, b) => new Date(b.last_run_at) - new Date(a.last_run_at))
+    .slice(0, 5)
+})
+
+// 计算属性 - 看板数据
+const draftSpiders = computed(() => spiders.value.filter(s => s.status === 'draft'))
+const activeSpiders = computed(() => spiders.value.filter(s => s.status === 'active'))
+const disabledSpiders = computed(() => spiders.value.filter(s => s.status === 'disabled' || s.status === 'error'))
+
+// 判断是否正在运行
+const isRunning = (spider) => {
+  // 这里可以根据实际情况判断,比如检查是否有正在运行的任务
+  return spider.status === 'active' && spider.last_run_status === 'running'
+}
 
 const searchForm = reactive({
   project_id: null,
@@ -548,7 +816,15 @@ const loadProjects = async () => {
 const loadSpiders = async () => {
   try {
     loading.value = true
-    spiders.value = await getSpiders(searchForm)
+    const skip = (currentPage.value - 1) * pageSize.value
+    const params = {
+      ...searchForm,
+      skip,
+      limit: pageSize.value
+    }
+    const response = await getSpiders(params)
+    spiders.value = response.items || []
+    total.value = response.total || 0
   } catch (error) {
     ElMessage.error('加载爬虫列表失败')
   } finally {
@@ -556,9 +832,22 @@ const loadSpiders = async () => {
   }
 }
 
+// 分页处理
+const handleSizeChange = (size) => {
+  pageSize.value = size
+  currentPage.value = 1 // 重置到第一页
+  loadSpiders()
+}
+
+const handleCurrentChange = (page) => {
+  currentPage.value = page
+  loadSpiders()
+}
+
 const resetSearch = () => {
   searchForm.project_id = null
   searchForm.status = null
+  currentPage.value = 1 // 重置到第一页
   loadSpiders()
 }
 
@@ -829,11 +1118,20 @@ const handleDelete = async (row) => {
   margin-bottom: 20px;
   cursor: pointer;
   transition: all 0.3s;
+  height: 100%; /* 确保卡片高度一致 */
+  display: flex;
+  flex-direction: column;
 }
 
 .spider-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+:deep(.spider-card .el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .card-header-row {
@@ -848,7 +1146,7 @@ const handleDelete = async (row) => {
   align-items: center;
   gap: 8px;
   flex: 1;
-  overflow: hidden;
+  min-width: 0; /* 重要: 允许flex子项收缩 */
 }
 
 .spider-name {
@@ -858,6 +1156,8 @@ const handleDelete = async (row) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  min-width: 0; /* 重要: 允许文本截断 */
 }
 
 .card-info {
@@ -892,5 +1192,132 @@ const handleDelete = async (row) => {
 
 .card-actions .el-button {
   flex: 1;
+}
+
+/* 仪表盘视图样式 */
+.dashboard-view {
+  min-height: 400px;
+}
+
+.stats-row {
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  text-align: center;
+  padding: 20px;
+}
+
+.stat-value {
+  font-size: 36px;
+  font-weight: bold;
+  color: #303133;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #909399;
+}
+
+.framework-stats {
+  padding: 10px 0;
+}
+
+.framework-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.framework-item .el-progress {
+  flex: 1;
+}
+
+.framework-item .count {
+  min-width: 50px;
+  text-align: right;
+  color: #606266;
+}
+
+/* 看板视图样式 */
+.kanban-view {
+  min-height: 500px;
+}
+
+.kanban-column {
+  background: #f5f7fa;
+  border-radius: 8px;
+  padding: 15px;
+  min-height: 400px;
+}
+
+.kanban-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  border-radius: 6px;
+  color: white;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.kanban-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kanban-card {
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.kanban-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.kanban-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.kanban-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 8px;
+}
+
+.kanban-card-project {
+  font-size: 12px;
+  color: #909399;
+}
+
+.kanban-card-stats {
+  font-size: 13px;
+  color: #67C23A;
+  margin-top: 8px;
+}
+
+.running-badge {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 </style>

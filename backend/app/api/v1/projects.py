@@ -10,15 +10,22 @@ from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectInDB, Proje
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.get("", response_model=List[ProjectInDB])
+@router.get("")
 def list_projects(
     skip: int = 0,
     limit: int = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """获取项目列表(带分页)"""
+    total = db.query(Project).count()
     projects = db.query(Project).offset(skip).limit(limit).all()
-    return projects
+    return {
+        "total": total,
+        "items": projects,
+        "skip": skip,
+        "limit": limit
+    }
 
 
 @router.post("", response_model=ProjectInDB, status_code=status.HTTP_201_CREATED)

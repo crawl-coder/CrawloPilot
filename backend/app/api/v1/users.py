@@ -28,7 +28,7 @@ async def get_roles(
 # ==================== 用户管理 ====================
 
 
-@router.get("", response_model=List[UserInDB])
+@router.get("")
 async def list_users(
     skip: int = 0,
     limit: int = 20,
@@ -38,7 +38,7 @@ async def list_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取用户列表"""
+    """获取用户列表(带分页)"""
     query = db.query(User).options(joinedload(User.roles))
     
     # 过滤条件
@@ -49,8 +49,9 @@ async def list_users(
     if role_id:
         query = query.filter(User.roles.any(Role.id == role_id))
     
+    total = query.count()
     users = query.offset(skip).limit(limit).all()
-    return users
+    return {"total": total, "items": users, "skip": skip, "limit": limit}
 
 
 @router.get("/{user_id}", response_model=UserInDB)

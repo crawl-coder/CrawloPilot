@@ -88,7 +88,7 @@ async def create_deploy(
         raise HTTPException(status_code=500, detail=f"创建部署失败: {str(e)}")
 
 
-@router.get("", response_model=List[DeployResponse])
+@router.get("")
 async def list_deploys(
     project_id: Optional[int] = None,
     status: Optional[DeployStatus] = None,
@@ -97,7 +97,7 @@ async def list_deploys(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取部署列表"""
+    """获取部署列表(带分页)"""
     try:
         deploy_service = DeployService(db)
         deploys = deploy_service.get_deploys(
@@ -106,7 +106,8 @@ async def list_deploys(
             limit=limit,
             offset=offset
         )
-        return deploys
+        total = deploy_service.get_deploy_count(project_id=project_id, status=status)
+        return {"total": total, "items": deploys, "skip": offset, "limit": limit}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取部署列表失败: {str(e)}")
 

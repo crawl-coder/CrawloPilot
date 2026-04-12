@@ -166,12 +166,16 @@ const filters = reactive({
 const logDialogVisible = ref(false)
 const logs = ref('')
 
-const loadData = async () => {
+const loadData = async ({ page: newPage, size } = {}) => {
   loading.value = true
   try {
+    const currentPageNum = newPage || page.value
+    const pageSizeNum = size || pageSize.value
+    const offset = (currentPageNum - 1) * pageSizeNum
+    
     const params = {
-      limit: pageSize.value,
-      offset: (page.value - 1) * pageSize.value
+      limit: pageSizeNum,
+      offset
     }
     
     if (filters.scheduleId) {
@@ -181,7 +185,12 @@ const loadData = async () => {
       params.status = filters.status
     }
     
-    tasks.value = await getTaskInstances(params)
+    const response = await getTaskInstances(params)
+    tasks.value = response.items || []
+    total.value = response.total || 0
+    
+    page.value = currentPageNum
+    pageSize.value = pageSizeNum
   } catch (error) {
     ElMessage.error('加载任务列表失败')
   } finally {

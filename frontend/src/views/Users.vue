@@ -82,6 +82,14 @@
       </el-table-column>
     </el-table>
 
+    <!-- 分页 -->
+    <Pagination
+      v-model:current-page="currentPage"
+      v-model:page-size="pageSize"
+      :total="total"
+      @change="loadUsers"
+    />
+
     <!-- 创建/编辑对话框 -->
     <el-dialog v-model="showUserDialog" :title="editingUser ? '编辑用户' : '创建用户'" width="500px">
       <el-form :model="userForm" :rules="rules" ref="formRef" label-width="100px">
@@ -156,6 +164,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getUsers, createUser, updateUser, deleteUser, resetPassword, toggleUserStatus, getRoles } from '@/api/user'
+import Pagination from '@/components/Pagination.vue'
 
 const users = ref([])
 const roles = ref([])
@@ -165,6 +174,9 @@ const showPasswordDialog = ref(false)
 const editingUser = ref(null)
 const formRef = ref(null)
 const passwordFormRef = ref(null)
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
 const targetUser = ref(null)
 
 const searchForm = reactive({
@@ -226,10 +238,24 @@ const loadRoles = async () => {
   }
 }
 
-const loadUsers = async () => {
+const loadUsers = async ({ page, size } = {}) => {
   try {
     loading.value = true
-    users.value = await getUsers(searchForm)
+    const currentPageNum = page || currentPage.value
+    const pageSizeNum = size || pageSize.value
+    const skip = (currentPageNum - 1) * pageSizeNum
+    
+    const params = {
+      ...searchForm,
+      skip,
+      limit: pageSizeNum
+    }
+    const response = await getUsers(params)
+    users.value = response.items || []
+    total.value = response.total || 0
+    
+    currentPage.value = currentPageNum
+    pageSize.value = pageSizeNum
   } catch (error) {
     ElMessage.error('加载用户列表失败')
   } finally {
@@ -240,6 +266,7 @@ const loadUsers = async () => {
 const resetSearch = () => {
   searchForm.username = ''
   searchForm.is_active = null
+  currentPage.value = 1
   loadUsers()
 }
 

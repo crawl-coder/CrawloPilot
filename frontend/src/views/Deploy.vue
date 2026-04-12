@@ -135,6 +135,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { createDeploy, getDeploys, rollbackDeploy, retryDeploy } from '@/api/deploy'
 import request from '@/api/request'
+import Pagination from '@/components/Pagination.vue'
 
 const loading = ref(false)
 const deploying = ref(false)
@@ -142,6 +143,9 @@ const showDeployDialog = ref(false)
 const deploys = ref([])
 const projects = ref([])
 const nodes = ref([])
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const filters = reactive({
   project_id: null,
@@ -167,18 +171,25 @@ const formatDate = (dateStr) => {
   return new Date(dateStr).toLocaleString('zh-CN')
 }
 
-const loadDeploys = async () => {
+const loadDeploys = async ({ page, size } = {}) => {
   loading.value = true
   try {
+    const currentPageNum = page || pagination.page
+    const pageSizeNum = size || pagination.size
+    const offset = (currentPageNum - 1) * pageSizeNum
+    
     const params = {
-      offset: (pagination.page - 1) * pagination.size,
-      limit: pagination.size
+      offset,
+      limit: pageSizeNum
     }
     if (filters.project_id) params.project_id = filters.project_id
     if (filters.status) params.status = filters.status
 
-    const data = await getDeploys(params)
-    deploys.value = data
+    const response = await getDeploys(params)
+    deploys.value = response.items || []
+    pagination.total = response.total || 0
+    pagination.page = currentPageNum
+    pagination.size = pageSizeNum
   } catch (error) {
     ElMessage.error('加载部署列表失败')
   } finally {

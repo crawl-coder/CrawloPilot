@@ -30,6 +30,14 @@
       </el-table-column>
     </el-table>
     
+    <!-- 分页 -->
+    <Pagination
+      v-model:current-page="currentPage"
+      v-model:page-size="pageSize"
+      :total="total"
+      @change="loadProjects"
+    />
+    
     <!-- 创建/编辑对话框 -->
     <el-dialog v-model="showCreateDialog" :title="editingProject ? '编辑项目' : '创建项目'">
       <el-form :model="projectForm" :rules="rules" ref="formRef" label-width="100px">
@@ -56,6 +64,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getProjects, createProject, updateProject, deleteProject } from '@/api/project'
+import Pagination from '@/components/Pagination.vue'
 
 const router = useRouter()
 const projects = ref([])
@@ -63,6 +72,9 @@ const loading = ref(false)
 const showCreateDialog = ref(false)
 const editingProject = ref(null)
 const formRef = ref(null)
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const projectForm = reactive({
   name: '',
@@ -78,10 +90,20 @@ onMounted(() => {
   loadProjects()
 })
 
-const loadProjects = async () => {
+const loadProjects = async ({ page, size } = {}) => {
   try {
     loading.value = true
-    projects.value = await getProjects()
+    const currentPageNum = page || currentPage.value
+    const pageSizeNum = size || pageSize.value
+    const skip = (currentPageNum - 1) * pageSizeNum
+    
+    const response = await getProjects({ skip, limit: pageSizeNum })
+    projects.value = response.items || []
+    total.value = response.total || 0
+    
+    // 更新当前页码和每页数量
+    currentPage.value = currentPageNum
+    pageSize.value = pageSizeNum
   } catch (error) {
     ElMessage.error('加载项目列表失败')
   } finally {

@@ -166,13 +166,17 @@ const actionStats = computed(() => {
   return result
 })
 
-const loadData = async () => {
+const loadData = async ({ page: newPage, size } = {}) => {
   loading.value = true
   try {
+    const currentPageNum = newPage || pagination.value.page
+    const pageSizeNum = size || pagination.value.limit
+    const skip = (currentPageNum - 1) * pageSizeNum
+    
     const params = {
       ...queryForm.value,
-      skip: (pagination.value.page - 1) * pagination.value.limit,
-      limit: pagination.value.limit
+      skip,
+      limit: pageSizeNum
     }
     
     const [logsData, statsData] = await Promise.all([
@@ -180,9 +184,11 @@ const loadData = async () => {
       getAuditStats({ days: queryForm.value.days })
     ])
     
-    logs.value = logsData
+    logs.value = logsData.items || []
     stats.value = statsData
-    pagination.value.total = logsData.length
+    pagination.value.total = logsData.total || 0
+    pagination.value.page = currentPageNum
+    pagination.value.limit = pageSizeNum
   } catch (error) {
     ElMessage.error('加载数据失败')
   } finally {

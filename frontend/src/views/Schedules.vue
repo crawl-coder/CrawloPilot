@@ -72,6 +72,14 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 分页 -->
+      <Pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :total="total"
+        @change="loadData"
+      />
     </el-card>
 
     <!-- 创建/编辑对话框 -->
@@ -130,6 +138,7 @@ import {
   disableSchedule,
   triggerSchedule
 } from '@/api/schedule'
+import Pagination from '@/components/Pagination.vue'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -137,6 +146,9 @@ const schedules = ref([])
 const dialogVisible = ref(false)
 const dialogTitle = ref('创建调度')
 const formRef = ref(null)
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const filters = reactive({
   projectId: '',
@@ -161,14 +173,25 @@ const rules = {
   schedule_type: [{ required: true, message: '请选择调度类型', trigger: 'change' }]
 }
 
-const loadData = async () => {
+const loadData = async ({ page, size } = {}) => {
   loading.value = true
   try {
+    const currentPageNum = page || currentPage.value
+    const pageSizeNum = size || pageSize.value
+    const skip = (currentPageNum - 1) * pageSizeNum
+    
     const params = {}
     if (filters.projectId) params.project_id = filters.projectId
     if (filters.enabled !== '') params.enabled = filters.enabled
+    params.skip = skip
+    params.limit = pageSizeNum
     
-    schedules.value = await getSchedules(params)
+    const response = await getSchedules(params)
+    schedules.value = response.items || []
+    total.value = response.total || 0
+    
+    currentPage.value = currentPageNum
+    pageSize.value = pageSizeNum
   } catch (error) {
     ElMessage.error('加载调度列表失败')
   } finally {
