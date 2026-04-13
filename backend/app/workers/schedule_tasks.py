@@ -52,22 +52,33 @@ def execute_schedule_task(self, schedule_id: int, task_instance_id: int = None):
             container_id=str(uuid.uuid4())
         )
         
-        # TODO: 实际执行爬虫任务
-        # 这里应该调用爬虫执行的逻辑，例如：
-        # - 启动 Docker 容器
-        # - 调用爬虫 API
-        # - 执行爬虫命令
+        # 调用执行引擎执行爬虫任务
+        from app.services.task_executor import TaskExecutor, TaskConfig
+        import asyncio
         
-        logger.info(f"Task execution started: {task_instance_id}")
+        executor = TaskExecutor()
+        config = TaskConfig(
+            task_id=str(task_instance_id),
+            spider_id=schedule.spider_id if hasattr(schedule, 'spider_id') else '',
+            spider_name=schedule.spider_name,
+            git_url=schedule.git_url if hasattr(schedule, 'git_url') else None,
+            git_branch=schedule.git_branch if hasattr(schedule, 'git_branch') else 'main',
+            memory_limit=schedule.memory_limit if hasattr(schedule, 'memory_limit') else '512m',
+            cpu_limit=schedule.cpu_limit if hasattr(schedule, 'cpu_limit') else 1.0,
+            timeout=schedule.timeout if hasattr(schedule, 'timeout') else 3600,
+        )
         
-        # 模拟执行（实际应该等待爬虫完成）
-        # 这里只是示例，实际应该异步监控任务状态
+        # 异步执行任务
+        container_id = asyncio.run(executor.execute_task(config))
+        
+        logger.info(f"Task {task_instance_id} started in container {container_id[:12]}")
         
         result = {
             "status": "success",
             "task_instance_id": task_instance_id,
             "schedule_id": schedule_id,
             "spider_name": schedule.spider_name,
+            "container_id": container_id,
             "started_at": datetime.utcnow().isoformat()
         }
         

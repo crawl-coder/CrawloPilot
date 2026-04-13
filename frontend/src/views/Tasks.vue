@@ -45,9 +45,11 @@
             <el-option label="全部" value="" />
             <el-option label="等待中" value="pending" />
             <el-option label="运行中" value="running" />
+            <el-option label="已暂停" value="paused" />
             <el-option label="成功" value="success" />
             <el-option label="失败" value="failed" />
             <el-option label="超时" value="timeout" />
+            <el-option label="已取消" value="cancelled" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -64,9 +66,11 @@
           <template #default="{ row }">
             <el-tag v-if="row.status === 'pending'" type="info">等待中</el-tag>
             <el-tag v-else-if="row.status === 'running'" type="primary">运行中</el-tag>
+            <el-tag v-else-if="row.status === 'paused'" type="warning">已暂停</el-tag>
             <el-tag v-else-if="row.status === 'success'" type="success">成功</el-tag>
             <el-tag v-else-if="row.status === 'failed'" type="danger">失败</el-tag>
             <el-tag v-else-if="row.status === 'timeout'" type="warning">超时</el-tag>
+            <el-tag v-else-if="row.status === 'cancelled'" type="info">已取消</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="Worker" width="150">
@@ -84,12 +88,28 @@
             {{ row.started_at || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button 
               v-if="row.status === 'running'" 
               size="small" 
               type="warning"
+              @click="handlePause(row)"
+            >
+              暂停
+            </el-button>
+            <el-button 
+              v-if="row.status === 'paused'" 
+              size="small" 
+              type="success"
+              @click="handleResume(row)"
+            >
+              恢复
+            </el-button>
+            <el-button 
+              v-if="row.status === 'running' || row.status === 'paused'" 
+              size="small" 
+              type="danger"
               @click="handleStop(row)"
             >
               停止
@@ -141,6 +161,8 @@ import {
   getTaskStats,
   retryTask,
   stopTask,
+  pauseTask,
+  resumeTask,
   getTaskLogs
 } from '@/api/schedule'
 
@@ -233,6 +255,36 @@ const handleStop = async (row) => {
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('停止失败')
+    }
+  }
+}
+
+const handlePause = async (row) => {
+  try {
+    await ElMessageBox.confirm('确定要暂停该任务吗？', '提示', {
+      type: 'warning'
+    })
+    await pauseTask(row.id)
+    ElMessage.success('任务已暂停')
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('暂停失败')
+    }
+  }
+}
+
+const handleResume = async (row) => {
+  try {
+    await ElMessageBox.confirm('确定要恢复该任务吗？', '提示', {
+      type: 'warning'
+    })
+    await resumeTask(row.id)
+    ElMessage.success('任务已恢复')
+    loadData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('恢复失败')
     }
   }
 }

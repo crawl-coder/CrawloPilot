@@ -175,7 +175,8 @@ class Spider(Base):
     
     # 代码相关
     code_path = Column(String(512))  # 代码目录路径
-    entry_file = Column(String(256))  # 入口文件
+    entry_file = Column(String(256))  # 入口文件 (如 run.py)
+    spider_name = Column(String(128))  # 爬虫名称 (用于 crawlo run)
     
     # 配置
     config = Column(JSON)  # 爬虫配置
@@ -229,9 +230,11 @@ class Schedule(Base):
 class TaskStatus(str, enum.Enum):
     PENDING = "pending"
     RUNNING = "running"
+    PAUSED = "paused"  # 暂停状态
     SUCCESS = "success"
     FAILED = "failed"
     TIMEOUT = "timeout"
+    CANCELLED = "cancelled"  # 手动取消
 
 
 class TaskInstance(Base):

@@ -1,4 +1,4 @@
-from app.api.v1 import auth, projects, deploy, nodes, schedules, tasks, monitoring, alerts, data_quality, proxy_pool, api_management, audit, project_git, users, project_files, spiders, spider_git
+from app.api.v1 import auth, projects, deploy, nodes, schedules, tasks, monitoring, alerts, data_quality, proxy_pool, api_management, audit, project_git, users, project_files, spiders, spider_git, execution, websocket
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -14,18 +14,29 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动和关闭时的生命周期管理"""
-    # 启动时初始化调度器
+    # 启动时初始化调度器和执行器
     logger.info("Initializing scheduler...")
     scheduler_manager.init_scheduler()
     scheduler_manager.start_scheduler()
     logger.info("Scheduler started successfully")
     
+    # 初始化任务执行器
+    from app.services.task_executor import get_executor
+    executor = get_executor()
+    await executor.initialize()
+    logger.info("TaskExecutor initialized successfully")
+    
     yield
     
-    # 关闭时停止调度器
+    # 关闭时停止调度器和执行器
     logger.info("Shutting down scheduler...")
     scheduler_manager.shutdown_scheduler()
     logger.info("Scheduler shutdown complete")
+    
+    # 清理执行器资源
+    logger.info("Cleaning up TaskExecutor...")
+    await executor.cleanup()
+    logger.info("TaskExecutor cleanup complete")
 
 
 app = FastAPI(
@@ -112,6 +123,10 @@ app.include_router(data_quality.router, prefix=settings.API_PREFIX)
 app.include_router(proxy_pool.router, prefix=settings.API_PREFIX)
 app.include_router(api_management.router, prefix=settings.API_PREFIX)
 app.include_router(audit.router, prefix=settings.API_PREFIX)
+app.include_router(execution.router, prefix=settings.API_PREFIX)
+
+# WebSocket 路由 (不需要 prefix)
+app.include_router(websocket.router)
 
 # Prometheus metrics endpoint
 metrics_app = make_asgi_app()

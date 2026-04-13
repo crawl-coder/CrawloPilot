@@ -1,8 +1,8 @@
 <template>
   <el-pagination
     v-if="total > 0"
-    v-model:current-page="currentPage"
-    v-model:page-size="pageSize"
+    :current-page="localCurrentPage"
+    :page-size="localPageSize"
     :page-sizes="pageSizes"
     :total="total"
     :layout="layout"
@@ -14,6 +14,8 @@
 </template>
 
 <script setup>
+import { ref, watch } from 'vue'
+
 /**
  * 通用分页组件
  * 
@@ -61,14 +63,30 @@ const props = defineProps({
 
 const emit = defineEmits(['update:currentPage', 'update:pageSize', 'change'])
 
+// 本地变量
+const localCurrentPage = ref(props.currentPage)
+const localPageSize = ref(props.pageSize)
+
+// 监听 props 变化
+watch(() => props.currentPage, (newVal) => {
+  localCurrentPage.value = newVal
+})
+
+watch(() => props.pageSize, (newVal) => {
+  localPageSize.value = newVal
+})
+
 const handleSizeChange = (size) => {
+  localPageSize.value = size
+  localCurrentPage.value = 1
   emit('update:pageSize', size)
   emit('update:currentPage', 1) // 重置到第一页
   emit('change', { page: 1, size })
 }
 
 const handleCurrentChange = (page) => {
+  localCurrentPage.value = page
   emit('update:currentPage', page)
-  emit('change', { page, size: props.pageSize })
+  emit('change', { page, size: localPageSize.value })
 }
 </script>

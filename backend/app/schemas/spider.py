@@ -29,7 +29,8 @@ class SpiderBase(BaseModel):
     project_id: int
     description: Optional[str] = None
     spider_type: SpiderType = SpiderType.CRAWLO
-    entry_file: Optional[str] = None
+    entry_file: Optional[str] = None  # 入口文件 (如 run.py)
+    spider_name: Optional[str] = None  # 爬虫名称 (用于 crawlo run)
     
     # Git相关
     git_url: Optional[str] = None

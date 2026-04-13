@@ -44,6 +44,11 @@
           <span>任务实例</span>
         </el-menu-item>
         
+        <el-menu-item index="/execution">
+          <el-icon><VideoPlay /></el-icon>
+          <span>执行管理</span>
+        </el-menu-item>
+        
         <el-menu-item index="/monitoring">
           <el-icon><TrendCharts /></el-icon>
           <span>监控中心</span>
@@ -131,7 +136,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Odometer, Files, User, ArrowDown, Monitor, Clock, List, TrendCharts, Bell, Upload, Connection, Link, Document, Aim } from '@element-plus/icons-vue'
+import { Odometer, Files, User, ArrowDown, Monitor, Clock, List, TrendCharts, Bell, Upload, Connection, Link, Document, Aim, VideoPlay } from '@element-plus/icons-vue'
 import { getCurrentUser } from '@/api/auth'
 
 const router = useRouter()

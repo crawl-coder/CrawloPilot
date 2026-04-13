@@ -603,10 +603,44 @@
         <!-- 步骤3: 运行配置 -->
         <div v-show="currentStep === 2 && !editingSpider">
           <el-form-item label="入口文件" prop="entry_file">
-            <el-input v-model="spiderForm.entry_file" placeholder="例如: main.py 或 spiders/example.py" />
+            <el-input 
+              v-model="spiderForm.entry_file" 
+              placeholder="例如: run.py (默认使用 python run.py)" 
+            />
+            <div style="margin-top: 5px; color: #909399; font-size: 12px">
+              ℹ️ 留空则使用 Crawlo 命令行: crawlo run <爬虫名称>
+            </div>
           </el-form-item>
 
-          <el-form-item label="定时调度">
+          <el-form-item label="爬虫名称" prop="spider_name">
+            <el-input 
+              v-model="spiderForm.spider_name" 
+              placeholder="例如: of_week (用于 crawlo run)" 
+            />
+            <div style="margin-top: 5px; color: #909399; font-size: 12px">
+              ℹ️ 当入口文件为空时使用,或通过 crawlo run {{ spiderForm.spider_name || 'spider_name' }}
+            </div>
+          </el-form-item>
+
+          <el-alert
+            title="启动方式说明"
+            type="info"
+            :closable="false"
+            show-icon
+            style="margin-top: 10px"
+          >
+            <template #default>
+              <div style="font-size: 13px">
+                <strong>优先级:</strong><br/>
+                1️⃣ 如果填写了入口文件 (如 run.py) → 执行: <code>python run.py</code><br/>
+                2️⃣ 如果未填写入口文件 → 执行: <code>crawlo run {{ spiderForm.spider_name || 'spider_name' }}</code><br/>
+                <br/>
+                <strong>推荐:</strong> 填写入口文件 <code>run.py</code>,使用项目自己的启动逻辑
+              </div>
+            </template>
+          </el-alert>
+
+          <el-form-item label="定时调度" style="margin-top: 20px">
             <el-switch v-model="spiderForm.schedule_enabled" />
             <span style="margin-left: 10px; color: #909399; font-size: 13px">
               {{ spiderForm.schedule_enabled ? '已开启' : '已关闭' }}
@@ -750,13 +784,13 @@ const searchForm = reactive({
 })
 
 const spiderForm = reactive({
-  // 步骤1
+  // 步顤1
   name: '',
   project_id: null,
   spider_type: 'crawlo', // 默认 Crawlo
   description: '',
   
-  // 步骤2
+  // 步顤2
   code_source: 'git',
   git_url: '',
   git_auth_type: 'password',
@@ -765,8 +799,9 @@ const spiderForm = reactive({
   git_ssh_key: '',
   git_branch: 'main',
   
-  // 步骤3
-  entry_file: 'main.py',
+  // 步顤3
+  entry_file: 'run.py',  // 默认使用 run.py
+  spider_name: '',       // 爬虫名称 (用于 crawlo run)
   schedule_enabled: false,
   cron_expr: '',
   timeout_seconds: 3600,
@@ -807,8 +842,11 @@ onMounted(() => {
 
 const loadProjects = async () => {
   try {
-    projects.value = await getProjects()
+    const response = await getProjects({ skip: 0, limit: 1000 })
+    // API 返回格式: {items: [...], total: N}
+    projects.value = response.items || []
   } catch (error) {
+    console.error('加载项目列表失败:', error)
     ElMessage.error('加载项目列表失败')
   }
 }
@@ -1027,7 +1065,8 @@ const handleSubmit = async () => {
         project_id: spiderForm.project_id,
         spider_type: spiderForm.spider_type,
         description: spiderForm.description,
-        entry_file: spiderForm.entry_file,
+        entry_file: spiderForm.entry_file || null,  // 入口文件 (可选)
+        spider_name: spiderForm.spider_name || spiderForm.name,  // 爬虫名称 (用于 crawlo run)
         // Git 配置
         git_url: spiderForm.code_source === 'git' ? spiderForm.git_url : null,
         git_auth_type: spiderForm.git_auth_type,
