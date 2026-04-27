@@ -276,4 +276,112 @@ python add_sample_data.py
 
 ---
 
-**最后更新**: 2026-04-11
+**最后更新**: 2026-04-27
+
+---
+
+## 本地爬虫执行（LocalExecutor）
+
+### 概述
+当 Docker 不可用时，系统自动使用 `LocalExecutor` 在本地通过 subprocess 运行爬虫。
+
+### 核心文件
+- `backend/app/services/local_executor.py`
+
+### 架构
+
+```
+API端点 (spiders.py/execution.py)
+    ↓
+LocalExecutor (单例，管理所有进程)
+    ├── LocalSpiderProcess (task_id_1)  ← stdout读取线程
+    ├── LocalSpiderProcess (task_id_2)  ← stdout读取线程
+    └── LocalSpiderProcess (task_id_3)  ← 监控线程
+            ↓
+        日志文件: uploads/_task_logs/task_{id}.log
+        数据库: TaskInstance (status/duration/pages/items/errors)
+```
+
+### 执行流程
+
+```
+1. POST /api/v1/spiders/{id}/run
+   ↓
+2. execute_task(config) 创建 LocalSpiderProcess
+   ↓
+3. process.start(config)
+   ├── 构建命令: entry_file → crawlo run → run.py → Python内联
+   ├── 创建日志文件
+   └── 启动 subprocess.Popen
+   ↓
+4. 启动两个守护线程
+   ├── stdout读取线程: 实时写入日志文件
+   └── 进程监控线程: wait() → 解析指标 → 更新DB → 延迟清理
+   ↓
+5. 进程完成或超时
+   ├── 收集剩余输出
+   ├── parse_metrics_from_logs() 解析 pages/items/errors
+   └── _update_task_completion() 更新数据库终态
+```
+
+### 自动命令发现（_build_command）
+
+LocalSpiderProcess 按以下优先级自动选择执行命令：
+
+1. **entry_file 指定**: 如果 config.entry_file 非空且文件存在，使用它；.py 用 python，.sh 用 bash
+2. **crawlo run**: 如果 spider_name_to_run 有值且系统安装了 crawlo CLI
+3. **自动发现**: 在代码目录查找 `run.py` → `main.py` → `crawl.py` → `start.py`
+4. **直接 Python**: 使用 `python -c "import asyncio; from crawlo.crawler import CrawlerProcess; ..."` 内联执行
+
+### 进程生命周期状态
+
+| 状态 | 说明 | 触发条件 |
+|------|------|----------|
+| PENDING | 等待执行 | 刚创建 |
+| RUNNING | 运行中 | process.start() 成功后 |
+| PAUSED | 已暂停 | pause_task() → 发送 SIGSTOP/SIGBREAK |
+| SUCCESS | 成功完成 | 进程 exit_code == 0 |
+| FAILED | 执行失败 | 进程 exit_code != 0 或异常 |
+| TIMEOUT | 执行超时 | 超过 config.timeout |
+| CANCELLED | 用户取消 | stop_task() 被调用 |
+
+### 日志持久化
+
+- **目录**: `backend/uploads/_task_logs/task_{task_id}.log`
+- **方式**: stdout 通过守护线程实时写入
+- **编码**: UTF-8，errors='replace' 容错
+- **读取**: `get_task_logs(tail=100)` 从文件读取末尾N行
+
+### 爬虫指标自动统计
+
+从日志文件中使用正则表达式解析：
+
+```python
+# pages/items 解析
+r'(?:Crawled|crawled|已爬取)\s+(\d+)\s+(?:pages?|页).*?(\d+)\s+(?:items?|条)'
+
+# errors 统计
+r'\[(?:ERROR|WARNING)\]'  # 统计匹配次数
+```
+
+解析结果写入 TaskInstance 表：`pages_crawled`, `items_scraped`, `errors_count`, `duration`
+
+### 停止/暂停/恢复
+
+| API | 方法 |
+|-----|------|
+| 停止 | `stop_task()` → 发送 SIGTERM → 超时后 SIGKILL → 更新 CANCELLED |
+| 暂停 | `pause_task()` → Windows: SIGBREAK / Linux: SIGSTOP |
+| 恢复 | `resume_task()` → Linux: SIGCONT（Windows不支持） |
+
+### 超时控制
+
+- 默认超时: 3600秒（1小时），通过 `config.timeout` 配置
+- 超时后: 先 SIGTERM 等待5秒，再 SIGKILL 强制终止
+- 超时任务状态: `TIMEOUT`
+
+### 清理策略
+
+- 进程完成后延迟 300秒（5分钟）从 `active_tasks` 字典中移除
+- 延迟清理期间仍可通过 `get_task_status()` 和 `get_task_logs()` 查询
+- 日志文件保留在磁盘上，不做自动删除

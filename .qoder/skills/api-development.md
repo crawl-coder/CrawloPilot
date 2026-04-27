@@ -37,6 +37,21 @@
 - `DELETE /api/v1/nodes/{id}` - 删除节点
 - `GET /api/v1/nodes/{id}/containers` - 获取节点容器
 
+#### 5. 爬虫管理 (`spiders.py`)
+- `GET /api/v1/spiders` - 获取爬虫列表
+- `POST /api/v1/spiders` - 创建爬虫
+- `GET /api/v1/spiders/{id}` - 获取爬虫详情
+- `PUT /api/v1/spiders/{id}` - 更新爬虫
+- `DELETE /api/v1/spiders/{id}` - 删除爬虫
+- **`POST /api/v1/spiders/{id}/run`** - ⭐**运行爬虫**（异步启动本地进程）
+- **`POST /api/v1/spiders/{id}/stop?task_id={task_id}`** - ⭐**停止爬虫**
+
+#### 6. 任务执行 (`execution.py`)
+- **`GET /api/v1/execution/tasks/{task_id}/status`** - ⭐**获取任务状态**（含duration/pages/items/errors）
+- **`GET /api/v1/execution/tasks/{task_id}/logs?tail=50`** - ⭐**获取任务日志**
+- `GET /api/v1/execution/tasks` - 所有任务列表
+- `DELETE /api/v1/execution/tasks/{task_id}` - 删除任务
+
 ## 创建新 API 路由
 
 ### 步骤

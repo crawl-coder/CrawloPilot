@@ -37,11 +37,6 @@ const routes = [
         component: () => import('@/views/SpiderDetail.vue')
       },
       {
-        path: 'deploys',
-        name: 'Deploys',
-        component: () => import('@/views/Deploy.vue')
-      },
-      {
         path: 'nodes',
         name: 'Nodes',
         component: () => import('@/views/Nodes.vue')
@@ -57,11 +52,6 @@ const routes = [
         component: () => import('@/views/Tasks.vue')
       },
       {
-        path: 'execution',
-        name: 'Execution',
-        component: () => import('@/views/Execution.vue')
-      },
-      {
         path: 'monitoring',
         name: 'Monitoring',
         component: () => import('@/views/Monitoring.vue')
@@ -72,14 +62,9 @@ const routes = [
         component: () => import('@/views/Alerts.vue')
       },
       {
-        path: 'data-quality',
-        name: 'DataQuality',
-        component: () => import('@/views/DataQuality.vue')
-      },
-      {
-        path: 'data-statistics',
-        name: 'DataStatistics',
-        component: () => import('@/views/DataStatistics.vue')
+        path: 'data-management',
+        name: 'DataManagement',
+        component: () => import('@/views/DataManagement.vue')
       },
       {
         path: 'proxy-pool',

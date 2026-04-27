@@ -28,15 +28,20 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # 关闭时停止调度器和执行器
-    logger.info("Shutting down scheduler...")
-    scheduler_manager.shutdown_scheduler()
-    logger.info("Scheduler shutdown complete")
+    # 关闭时停止调度器和执行器（使用 try 防止热重载时被中断导致警告）
+    try:
+        logger.info("Shutting down scheduler...")
+        scheduler_manager.shutdown_scheduler()
+        logger.info("Scheduler shutdown complete")
+    except Exception as e:
+        logger.warning(f"Scheduler shutdown was interrupted: {e}")
     
-    # 清理执行器资源
-    logger.info("Cleaning up TaskExecutor...")
-    await executor.cleanup()
-    logger.info("TaskExecutor cleanup complete")
+    try:
+        logger.info("Cleaning up TaskExecutor...")
+        await executor.cleanup()
+        logger.info("TaskExecutor cleanup complete")
+    except Exception as e:
+        logger.warning(f"TaskExecutor cleanup was interrupted: {e}")
 
 
 app = FastAPI(

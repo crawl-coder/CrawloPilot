@@ -31,6 +31,11 @@
       <el-table :data="schedules" v-loading="loading" style="width: 100%">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="spider_name" label="爬虫名称" />
+        <el-table-column label="目标节点" width="140">
+          <template #default="{ row }">
+            {{ getNodeName(row.node_id) || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="schedule_type" label="调度类型" width="120">
           <template #default="{ row }">
             <el-tag v-if="row.schedule_type === 'cron'" type="primary">Cron</el-tag>
@@ -91,6 +96,16 @@
         <el-form-item label="爬虫名称" prop="spider_name">
           <el-input v-model="form.spider_name" placeholder="输入爬虫名称" />
         </el-form-item>
+        <el-form-item label="目标节点">
+          <el-select v-model="form.node_id" placeholder="选择节点(留空=本地执行)" clearable>
+            <el-option
+              v-for="n in nodeList"
+              :key="n.id"
+              :label="n.name + ' (' + (n.public_ip || n.host) + ')'"
+              :value="n.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="调度类型" prop="schedule_type">
           <el-radio-group v-model="form.schedule_type">
             <el-radio label="cron">Cron</el-radio>
@@ -138,11 +153,13 @@ import {
   disableSchedule,
   triggerSchedule
 } from '@/api/schedule'
+import { getNodes } from '@/api/node'
 import Pagination from '@/components/Pagination.vue'
 
 const loading = ref(false)
 const submitting = ref(false)
 const schedules = ref([])
+const nodeList = ref([])
 const dialogVisible = ref(false)
 const dialogTitle = ref('创建调度')
 const formRef = ref(null)
@@ -158,9 +175,10 @@ const filters = reactive({
 const form = reactive({
   project_id: 1,
   spider_name: '',
+  node_id: null,
   schedule_type: 'cron',
-  cron_expr: '*/5 * * * *',
-  interval_seconds: 300,
+  cron_expr: '*/30 * * * *',
+  interval_seconds: 1800,
   priority: 5,
   max_concurrency: 1,
   timeout_seconds: 3600,
@@ -204,9 +222,10 @@ const handleCreate = () => {
   Object.assign(form, {
     project_id: 1,
     spider_name: '',
+    node_id: null,
     schedule_type: 'cron',
-    cron_expr: '*/5 * * * *',
-    interval_seconds: 300,
+    cron_expr: '*/30 * * * *',
+    interval_seconds: 1800,
     priority: 5,
     max_concurrency: 1,
     timeout_seconds: 3600,
@@ -281,8 +300,24 @@ const handleTrigger = async (row) => {
   }
 }
 
+const loadNodes = async () => {
+  try {
+    const res = await getNodes()
+    nodeList.value = Array.isArray(res) ? res : []
+  } catch (error) {
+    nodeList.value = []
+  }
+}
+
+const getNodeName = (nodeId) => {
+  if (!nodeId) return ''
+  const node = nodeList.value.find(n => n.id === nodeId)
+  return node ? node.name : ''
+}
+
 onMounted(() => {
   loadData()
+  loadNodes()
 })
 </script>
 

@@ -20,11 +20,17 @@ class TaskCreate(BaseModel):
 
 class TaskResponse(BaseModel):
     """任务响应"""
-    id: str
-    spider_id: str
+    id: int
+    spider_id: Optional[int] = None
     spider_name: str
+    project_name: Optional[str] = None
     status: str
+    schedule_id: Optional[int] = None
+    worker_node: Optional[str] = None
     container_id: Optional[str] = None
+    node_id: Optional[int] = None
+    node_name: Optional[str] = None
+    deploy_mode: Optional[str] = None
     created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None

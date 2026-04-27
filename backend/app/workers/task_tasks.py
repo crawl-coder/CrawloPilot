@@ -9,8 +9,9 @@ from datetime import datetime
 from typing import Dict
 
 from app.core.database import SessionLocal
-from app.models import Task, TaskStatus, Spider
+from app.models import TaskInstance, TaskStatus, Spider
 from app.services.task_executor import TaskExecutor, TaskConfig
+from celery import shared_task
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,9 @@ def execute_spider_task(task_id: str, spider_id: str, spider_name: str, **kwargs
     
     try:
         # 更新任务状态为 PENDING
-        task = db.query(Task).filter(Task.id == task_id).first()
+        task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
         if task:
-            task.status = TaskStatus.PENDING.value
+            task.status = TaskStatus.PENDING
             db.commit()
         
         # 构建任务配置
@@ -53,7 +54,6 @@ def execute_spider_task(task_id: str, spider_id: str, spider_name: str, **kwargs
             git_branch=kwargs.get('git_branch', 'main'),
             node_id=kwargs.get('node_id'),
             entry_file=kwargs.get('entry_file'),  # 入口文件
-            spider_name_run=kwargs.get('spider_name'),  # 爬虫名称 (用于 crawlo run)
             memory_limit=kwargs.get('memory_limit', '512m'),
             cpu_limit=kwargs.get('cpu_limit', 1.0),
             timeout=kwargs.get('timeout', 3600),
@@ -79,9 +79,9 @@ def execute_spider_task(task_id: str, spider_id: str, spider_name: str, **kwargs
         
         # 更新任务状态为 FAILED
         try:
-            task = db.query(Task).filter(Task.id == task_id).first()
+            task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
             if task:
-                task.status = TaskStatus.FAILED.value
+                task.status = TaskStatus.FAILED
                 task.error_message = str(e)
                 task.finished_at = datetime.utcnow()
                 db.commit()

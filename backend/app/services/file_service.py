@@ -114,6 +114,16 @@ class FileService:
         if os.path.isdir(path) and name in skip_dirs:
             return None
         
+        # 跳过常见忽略文件
+        skip_files = {
+            'adaptive_fingerprints.db', 'fingerprints.db', 'requests.db',
+            'scrapy.cfg',
+            '.DS_Store', 'Thumbs.db',
+            'run_exists_checker.py',
+        }
+        if name in skip_files:
+            return None
+        
         node = {
             "name": name,
             "path": relative_path,
@@ -125,7 +135,11 @@ class FileService:
             if current_depth < max_depth:
                 children = []
                 try:
-                    for item in sorted(os.listdir(path)):
+                    items = sorted(os.listdir(path))
+                    # 目录排在前面，文件排在后面
+                    dirs = [i for i in items if os.path.isdir(os.path.join(path, i))]
+                    files = [i for i in items if os.path.isfile(os.path.join(path, i))]
+                    for item in dirs + files:
                         child_path = os.path.join(path, item)
                         child_node = self._build_tree(
                             child_path, base_path, max_depth, current_depth + 1

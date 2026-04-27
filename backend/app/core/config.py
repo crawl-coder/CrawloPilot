@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
     
     # Database
+    DATABASE_TYPE: str = "mysql"  # mysql 或 sqlite
+    SQLITE_PATH: str = "./crawlopilot.db"
     MYSQL_HOST: str = "mysql"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "crawlopilot"
@@ -19,6 +21,12 @@ class Settings(BaseSettings):
     
     @property
     def DATABASE_URL(self) -> str:
+        if self.DATABASE_TYPE == "sqlite":
+            import os
+            db_path = self.SQLITE_PATH
+            if not os.path.isabs(db_path):
+                db_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', db_path)
+            return f"sqlite:///{os.path.abspath(db_path)}"
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
     
     # Redis

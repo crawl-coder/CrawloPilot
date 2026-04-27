@@ -24,11 +24,6 @@
           <span>爬虫管理</span>
         </el-menu-item>
         
-        <el-menu-item index="/deploys">
-          <el-icon><Upload /></el-icon>
-          <span>部署管理</span>
-        </el-menu-item>
-        
         <el-menu-item index="/nodes">
           <el-icon><Monitor /></el-icon>
           <span>节点管理</span>
@@ -41,12 +36,7 @@
         
         <el-menu-item index="/tasks">
           <el-icon><List /></el-icon>
-          <span>任务实例</span>
-        </el-menu-item>
-        
-        <el-menu-item index="/execution">
-          <el-icon><VideoPlay /></el-icon>
-          <span>执行管理</span>
+          <span>任务管理</span>
         </el-menu-item>
         
         <el-menu-item index="/monitoring">
@@ -59,28 +49,18 @@
           <span>告警管理</span>
         </el-menu-item>
         
-        <el-sub-menu index="data">
-          <template #title>
-            <el-icon><Connection /></el-icon>
-            <span>数据管理</span>
-          </template>
-          <el-menu-item index="/data-quality">
-            <el-icon><Bell /></el-icon>
-            <span>数据质量</span>
-          </el-menu-item>
-          <el-menu-item index="/data-statistics">
-            <el-icon><TrendCharts /></el-icon>
-            <span>统计报表</span>
-          </el-menu-item>
-        </el-sub-menu>
+        <el-menu-item index="/data-management">
+          <el-icon><DataLine /></el-icon>
+          <span>数据管理</span>
+        </el-menu-item>
         
         <el-sub-menu index="resources">
           <template #title>
-            <el-icon><Connection /></el-icon>
+            <el-icon><Coin /></el-icon>
             <span>资源管理</span>
           </template>
           <el-menu-item index="/proxy-pool">
-            <el-icon><Monitor /></el-icon>
+            <el-icon><Connection /></el-icon>
             <span>代理池</span>
           </el-menu-item>
           <el-menu-item index="/api-management">
@@ -89,15 +69,20 @@
           </el-menu-item>
         </el-sub-menu>
         
-        <el-menu-item index="/audit-logs">
-          <el-icon><Document /></el-icon>
-          <span>审计日志</span>
-        </el-menu-item>
-        
-        <el-menu-item index="/users">
-          <el-icon><User /></el-icon>
-          <span>用户管理</span>
-        </el-menu-item>
+        <el-sub-menu index="system">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>系统管理</span>
+          </template>
+          <el-menu-item index="/audit-logs">
+            <el-icon><Document /></el-icon>
+            <span>审计日志</span>
+          </el-menu-item>
+          <el-menu-item index="/users">
+            <el-icon><User /></el-icon>
+            <span>用户管理</span>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
     
@@ -136,7 +121,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Odometer, Files, User, ArrowDown, Monitor, Clock, List, TrendCharts, Bell, Upload, Connection, Link, Document, Aim, VideoPlay } from '@element-plus/icons-vue'
+import { Odometer, Files, User, ArrowDown, Monitor, Clock, List, TrendCharts, Bell, Connection, Link, Document, Aim, Setting, DataLine, Coin } from '@element-plus/icons-vue'
 import { getCurrentUser } from '@/api/auth'
 
 const router = useRouter()

@@ -16,7 +16,7 @@ from app.schemas.task import TaskCreate, TaskResponse, TaskStatusResponse, TaskL
 from app.services.task_executor import get_executor
 from app.workers.celery_app import celery_app
 
-router = APIRouter(prefix="/api/v1/execution", tags=["execution"])
+router = APIRouter(prefix="/execution", tags=["execution"])
 
 logger = logging.getLogger(__name__)
 
@@ -184,22 +184,54 @@ async def get_task_status(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    # 查询容器状态
-    result = celery_app.send_task(
-        'app.workers.task_tasks.get_task_status',
-        args=[task_id]
-    )
-    container_status = result.get(timeout=5)
+    # 尝试获取容器/本地状态
+    container_status = None
+    local_metrics = {}
+    
+    # 如果有 process_id，尝试从本地执行器获取
+    if getattr(task, 'process_id', None):
+        try:
+            from app.services.local_executor import get_local_executor
+            local_executor = get_local_executor()
+            status = local_executor.get_task_status(task_id)
+            if status:
+                container_status = status.get('status', 'unknown')
+                local_metrics = {
+                    'pages_crawled': status.get('pages_crawled', 0),
+                    'items_scraped': status.get('items_scraped', 0),
+                    'errors_count': status.get('errors_count', 0),
+                }
+        except Exception as e:
+            logger.warning(f"获取本地状态失败: {e}")
+    else:
+        # 尝试通过 Celery 查询容器状态
+        try:
+            result = celery_app.send_task(
+                'app.workers.task_tasks.get_task_status',
+                args=[task_id]
+            )
+            container_status_raw = result.get(timeout=5)
+            if container_status_raw and container_status_raw.get('success'):
+                container_status = container_status_raw.get('status')
+        except Exception as e:
+            logger.warning(f"获取容器状态失败: {e}")
+    
+    # 计算 duration
+    duration = None
+    if task.duration is not None:
+        duration = float(task.duration)
+    elif task.started_at and task.finished_at:
+        duration = (task.finished_at - task.started_at).total_seconds()
     
     return TaskStatusResponse(
         task_id=task_id,
-        db_status=task.status.value if hasattr(task.status, 'value') else task.status,
-        container_status=container_status.get('status') if container_status.get('success') else None,
+        db_status=task.status.value if hasattr(task.status, 'value') else str(task.status),
+        container_status=container_status,
         container_id=task.container_id,
         started_at=task.started_at,
         finished_at=task.finished_at,
         error_message=getattr(task, 'error_message', None),
-        duration=None  # TODO: 计算duration
+        duration=duration
     )
 
 
@@ -215,21 +247,34 @@ async def get_task_logs(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    # 获取容器日志
-    result = celery_app.send_task(
-        'app.workers.task_tasks.get_task_logs',
-        args=[task_id, tail]
-    )
-    logs_data = result.get(timeout=5)
+    logs_text = ''
     
-    if logs_data.get('success'):
-        return TaskLogResponse(
-            task_id=task_id,
-            logs=logs_data.get('logs', ''),
-            total_lines=len(logs_data.get('logs', '').split('\n'))
-        )
+    # 如果有 process_id，从本地执行器获取日志
+    if getattr(task, 'process_id', None):
+        try:
+            from app.services.local_executor import get_local_executor
+            local_executor = get_local_executor()
+            logs_text = local_executor.get_task_logs(task_id, tail=tail)
+        except Exception as e:
+            logger.warning(f"获取本地日志失败: {e}")
     else:
-        raise HTTPException(status_code=500, detail=logs_data.get('error', 'Failed to get logs'))
+        # 尝试通过 Celery 获取容器日志
+        try:
+            result = celery_app.send_task(
+                'app.workers.task_tasks.get_task_logs',
+                args=[task_id, tail]
+            )
+            logs_data = result.get(timeout=5)
+            if logs_data and logs_data.get('success'):
+                logs_text = logs_data.get('logs', '')
+        except Exception as e:
+            logger.warning(f"获取容器日志失败: {e}")
+    
+    return TaskLogResponse(
+        task_id=task_id,
+        logs=logs_text,
+        total_lines=len(logs_text.split('\n')) if logs_text else 0
+    )
 
 
 @router.get("/tasks", response_model=List[TaskResponse])
@@ -266,8 +311,14 @@ async def list_tasks(
             id=task.id,
             spider_id=task.spider_id,
             spider_name=spider.name if spider else "Unknown",
+            project_name=spider.project.name if spider and spider.project else None,
             status=task.status,
+            schedule_id=task.schedule_id,
+            worker_node=task.worker_node,
             container_id=task.container_id,
+            node_id=task.node_id,
+            node_name=task.node.name if task.node else None,
+            deploy_mode=task.deploy_mode,
             created_at=task.created_at,
             started_at=task.started_at,
             finished_at=task.finished_at,
@@ -291,9 +342,12 @@ async def delete_task(
     
     # 如果任务正在运行,先停止
     if task.status in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
-        executor = get_executor()
-        import asyncio
-        asyncio.run(executor.stop_task(task_id))
+        try:
+            from app.services.local_executor import get_local_executor
+            local_executor = get_local_executor()
+            await local_executor.stop_task(str(task_id))
+        except Exception as e:
+            logger.warning(f"停止任务失败: {e}")
     
     # 删除数据库记录
     db.delete(task)

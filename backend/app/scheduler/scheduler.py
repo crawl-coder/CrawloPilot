@@ -12,6 +12,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# 模块级包装函数：避免 Celery .delay() 被 APScheduler 序列化时参数错乱
+def _run_celery_schedule_job(schedule_id: int):
+    """APScheduler 安全的 Celery 任务调用（函数内部导入避免循环引用）"""
+    from app.workers.schedule_tasks import execute_schedule_task
+    execute_schedule_task.delay(schedule_id)
+
+
 class SchedulerManager:
     """调度器管理器"""
     
@@ -59,11 +66,60 @@ class SchedulerManager:
         """启动调度器"""
         if not self.scheduler:
             self.init_scheduler()
-        
+    
         if not self.is_running:
             self.scheduler.start()
             self.is_running = True
+    
+            # 启动后重建所有任务：清理旧残留 + 从数据库重新注册
+            self._rebuild_all_jobs()
+    
             logger.info("Scheduler started")
+    
+    def _rebuild_all_jobs(self):
+        """清理所有历史残留任务并从数据库重新注册启用的调度"""
+        # 1. 清除所有已加载的旧任务
+        try:
+            removed = 0
+            for job in self.scheduler.get_jobs():
+                try:
+                    self.scheduler.remove_job(job.id)
+                    removed += 1
+                except Exception:
+                    pass
+            if removed > 0:
+                logger.info(f"已清除 {removed} 个历史残留调度任务")
+        except Exception as e:
+            logger.warning(f"清除历史任务时出错: {e}")
+    
+        # 2. 从数据库重新注册所有启用的调度
+        try:
+            from app.core.database import SessionLocal
+            from app.models import Schedule
+    
+            db = SessionLocal()
+            try:
+                enabled = db.query(Schedule).filter(
+                    Schedule.enabled == True,
+                    Schedule.cron_expr.isnot(None),
+                    Schedule.cron_expr != ''
+                ).all()
+    
+                for s in enabled:
+                    if s.cron_expr:
+                        self.add_cron_job(
+                            f"schedule_{s.id}",
+                            _run_celery_schedule_job,
+                            s.cron_expr,
+                            args=[s.id]
+                        )
+                        logger.info(f"已重新注册调度 #{s.id}: {s.spider_name}")
+    
+                logger.info(f"调度重建完成，共注册 {len(enabled)} 个任务")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"从数据库重建调度失败: {e}")
     
     def shutdown_scheduler(self, wait=True):
         """关闭调度器"""

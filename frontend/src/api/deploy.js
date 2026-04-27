@@ -57,3 +57,7 @@ export function deleteNode(id) {
 export function getNodeContainers(id) {
   return request.get(`/nodes/${id}/containers`)
 }
+
+export function updateNode(id, data) {
+  return request.put(`/nodes/${id}`, data)
+}

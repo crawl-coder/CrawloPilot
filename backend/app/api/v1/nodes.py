@@ -4,6 +4,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 from pydantic import BaseModel
 
 from app.core.database import get_db
@@ -20,9 +21,33 @@ class NodeCreate(BaseModel):
     """创建节点请求"""
     name: str
     host: str
-    port: int = 2375
+    port: int = 22
+    connect_type: str = "ssh"  # ssh / agent / docker
+    ssh_host: Optional[str] = None
+    ssh_port: Optional[int] = 22
+    ssh_user: Optional[str] = "root"
+    ssh_pwd: Optional[str] = None
+    ssh_key: Optional[str] = None
     docker_host: Optional[str] = None
     labels: Optional[Dict[str, str]] = None
+    public_ip: Optional[str] = None
+    private_ip: Optional[str] = None
+
+
+class NodeUpdate(BaseModel):
+    """更新节点请求"""
+    name: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
+    connect_type: Optional[str] = None
+    ssh_host: Optional[str] = None
+    ssh_port: Optional[int] = None
+    ssh_user: Optional[str] = None
+    ssh_pwd: Optional[str] = None
+    ssh_key: Optional[str] = None
+    labels: Optional[Dict[str, str]] = None
+    public_ip: Optional[str] = None
+    private_ip: Optional[str] = None
 
 
 class NodeResponse(BaseModel):
@@ -31,13 +56,29 @@ class NodeResponse(BaseModel):
     name: str
     host: str
     port: int
+    connect_type: str
+    ssh_host: Optional[str] = None
+    ssh_port: Optional[int] = None
+    ssh_user: Optional[str] = None
     status: NodeStatus
     labels: Optional[Dict[str, Any]]
     resources: Optional[Dict[str, Any]]
+    os_type: Optional[str] = None
+    os_version: Optional[str] = None
+    cpu_cores: int = 0
+    memory_total: int = 0
+    disk_total: int = 0
+    cpu_usage: float = 0.0
+    memory_usage: float = 0.0
+    disk_usage: float = 0.0
+    agent_version: Optional[str] = None
+    agent_status: str = "offline"
+    public_ip: Optional[str] = None
+    private_ip: Optional[str] = None
     container_count: int
-    last_heartbeat: Optional[str]
-    created_at: Any
-    updated_at: Optional[Any]
+    last_heartbeat: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -74,14 +115,64 @@ async def create_node(
             name=node_data.name,
             host=node_data.host,
             port=node_data.port,
+            connect_type=node_data.connect_type,
+            ssh_host=node_data.ssh_host,
+            ssh_port=node_data.ssh_port,
+            ssh_user=node_data.ssh_user,
+            ssh_pwd=node_data.ssh_pwd,
+            ssh_key=node_data.ssh_key,
             docker_host=node_data.docker_host,
-            labels=node_data.labels
+            labels=node_data.labels,
+            public_ip=node_data.public_ip,
+            private_ip=node_data.private_ip
         )
         return node
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"创建节点失败: {str(e)}")
+
+
+@router.put("/{node_id}", response_model=NodeResponse)
+async def update_node(
+    node_id: int,
+    node_data: NodeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    更新节点信息
+    
+    - **node_id**: 节点 ID
+    """
+    try:
+        node_service = NodeService(db)
+        node = node_service.update_node(
+            node_id=node_id,
+            name=node_data.name,
+            host=node_data.host,
+            port=node_data.port,
+            connect_type=node_data.connect_type,
+            ssh_host=node_data.ssh_host,
+            ssh_port=node_data.ssh_port,
+            ssh_user=node_data.ssh_user,
+            ssh_pwd=node_data.ssh_pwd,
+            ssh_key=node_data.ssh_key,
+            labels=node_data.labels,
+            public_ip=node_data.public_ip,
+            private_ip=node_data.private_ip
+        )
+        
+        if not node:
+            raise HTTPException(status_code=404, detail="节点不存在")
+        
+        return node
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新节点失败: {str(e)}")
 
 
 @router.get("", response_model=List[NodeResponse])

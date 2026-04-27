@@ -30,8 +30,8 @@ export function deleteSpider(spiderId) {
 }
 
 // 运行爬虫
-export function runSpider(spiderId) {
-  return request.post(`/spiders/${spiderId}/run`)
+export function runSpider(spiderId, data = {}) {
+  return request.post(`/spiders/${spiderId}/run`, data)
 }
 
 // 停止爬虫
@@ -73,3 +73,4 @@ export function deleteSpiderFileOrDir(spiderId, path) {
     params: { path }
   })
 }
+

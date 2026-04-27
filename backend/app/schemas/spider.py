@@ -2,7 +2,7 @@
 爬虫管理 Pydantic Schemas
 """
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
 
@@ -72,6 +72,9 @@ class SpiderInDB(SpiderBase):
     run_count: int = 0
     success_count: int = 0
     error_count: int = 0
+    
+    # 部署节点信息
+    deploy_nodes: List[Dict[str, Any]] = []
     
     created_at: datetime
     updated_at: datetime

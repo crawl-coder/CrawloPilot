@@ -18,6 +18,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+# 包装函数：避免 Celery .delay() 方法直接给 APScheduler 序列化时参数错乱
+def _schedule_celery_job(schedule_id: int):
+    """APScheduler 安全的 Celery 任务调用包装"""
+    execute_schedule_task.delay(schedule_id)
+
 router = APIRouter(prefix="/schedules", tags=["调度管理"])
 
 
@@ -25,6 +31,7 @@ router = APIRouter(prefix="/schedules", tags=["调度管理"])
 class ScheduleCreate(BaseModel):
     project_id: int
     spider_name: str
+    node_id: Optional[int] = None
     schedule_type: str  # cron, interval, once
     cron_expr: Optional[str] = None
     interval_seconds: Optional[int] = None
@@ -36,6 +43,7 @@ class ScheduleCreate(BaseModel):
 
 class ScheduleUpdate(BaseModel):
     spider_name: Optional[str] = None
+    node_id: Optional[int] = None
     schedule_type: Optional[str] = None
     cron_expr: Optional[str] = None
     interval_seconds: Optional[int] = None
@@ -49,6 +57,7 @@ class ScheduleResponse(BaseModel):
     id: int
     project_id: int
     spider_name: str
+    node_id: Optional[int] = None
     schedule_type: str
     cron_expr: Optional[str]
     interval_seconds: Optional[int]
@@ -89,6 +98,7 @@ async def create_schedule(
         schedule = schedule_store.create_schedule({
             "project_id": schedule_data.project_id,
             "spider_name": schedule_data.spider_name,
+            "node_id": schedule_data.node_id,
             "schedule_type": ScheduleType(schedule_data.schedule_type),
             "cron_expr": schedule_data.cron_expr,
             "interval_seconds": schedule_data.interval_seconds,
@@ -179,7 +189,7 @@ async def update_schedule(
         scheduler_manager.remove_job(f"schedule_{schedule_id}")
         scheduler_manager.add_cron_job(
             f"schedule_{schedule_id}",
-            execute_schedule_task.delay,
+            _schedule_celery_job,
             schedule.cron_expr or "*/5 * * * *",
             args=[schedule_id]
         )
@@ -225,7 +235,7 @@ async def enable_schedule(
     if schedule.cron_expr:
         scheduler_manager.add_cron_job(
             f"schedule_{schedule_id}",
-            execute_schedule_task.delay,
+            _schedule_celery_job,
             schedule.cron_expr,
             args=[schedule_id]
         )
@@ -312,7 +322,7 @@ def register_schedule_to_scheduler(schedule_id: int):
         if schedule and schedule.enabled and schedule.cron_expr:
             scheduler_manager.add_cron_job(
                 f"schedule_{schedule_id}",
-                execute_schedule_task.delay,
+                _schedule_celery_job,
                 schedule.cron_expr,
                 args=[schedule_id]
             )

@@ -19,7 +19,7 @@ tests/
 │   └── test_performance.py # 性能测试
 ├── integration/             # 集成测试
 │   ├── test_integration.py # API集成测试
-│   └── pages/              # 页面级测试
+│   └── pages/              # 页面级测试（需浏览器）
 │       ├── page_test_base.py
 │       ├── test_login_page.py
 │       ├── test_dashboard_page.py
@@ -27,6 +27,8 @@ tests/
 │       └── ...
 ├── scenarios/               # 测试场景
 │   └── test_scenarios.py
+├── test_deployment_flow.py # ⭐核心部署流程测试（18项）
+├── test_phase3.py ~ test_phase7.py  # 阶段测试
 ├── conftest.py             # pytest配置
 ├── run_all_tests.py        # 测试运行器
 └── project_assessment.py   # 项目评估
@@ -34,35 +36,28 @@ tests/
 
 ## 运行测试
 
-### 运行所有测试
+### 运行所有单元测试
 ```bash
-cd /Users/oscar/projects/CrawloPilot
-python tests/run_all_tests.py
+cd D:\dowell\others\CrawloPilot\backend
+pytest ../tests/unit/ -v
 ```
 
-### 运行单元测试
+### 运行特定单元测试
 ```bash
-pytest tests/unit/ -v
+pytest ../tests/unit/test_01_auth.py -v
 ```
 
-### 运行特定测试
+### 运行部署流程测试（⭐推荐，核心测试）
 ```bash
-pytest tests/unit/test_01_auth.py -v
+cd D:\dowell\others\CrawloPilot\backend
+python ../tests/test_deployment_flow.py
 ```
+此测试验证完整的爬虫部署生命周期：登录 → 创建项目 → 创建爬虫 → 准备代码 → 运行爬虫 → 监控状态 → 查看日志 → 停止爬虫（18项，目标100%通过）
 
-### 运行集成测试
+### 运行阶段测试
 ```bash
-pytest tests/integration/ -v
-```
-
-### 运行页面级测试
-```bash
-python tests/integration/pages/run_page_tests.py
-```
-
-### 带覆盖率报告
-```bash
-pytest tests/ --cov=backend/app --cov-report=html
+cd D:\dowell\others\CrawloPilot\backend
+python ../tests/test_phase7.py
 ```
 
 ## 单元测试
@@ -210,35 +205,63 @@ class BasePageTest:
         self.page.click('button[type="submit"]')
 ```
 
-## 测试场景
+## 部署流程测试（test_deployment_flow.py）
 
-### 完整工作流测试
+### 测试覆盖（18项，当前全部通过 ✅）
+
+| 节点 | 描述 | 测试方法 |
+|------|------|----------|
+| 1.1 | 用户登录 | POST `/api/v1/auth/login` → 获取token |
+| 1.2 | 获取用户信息 | GET `/api/v1/auth/me` |
+| 2.1 | 创建项目 | POST `/api/v1/projects` |
+| 2.2 | 查询项目列表 | GET `/api/v1/projects` |
+| 2.3 | 查询项目详情 | GET `/api/v1/projects/{id}` |
+| 3.1 | 创建爬虫 | POST `/api/v1/spiders` |
+| 3.2 | 查询爬虫列表 | GET `/api/v1/spiders` |
+| 3.3 | 查询爬虫详情 | GET `/api/v1/spiders/{id}` |
+| 3.4 | 更新爬虫信息 | PUT `/api/v1/spiders/{id}` |
+| 4.1 | 准备代码（创建爬虫文件） | 文件系统操作 |
+| 4.2 | 创建测试爬虫 | 文件系统操作 |
+| 5.1 | 触发爬虫执行 | POST `/api/v1/spiders/{id}/run` |
+| 5.2 | 查询任务状态(API) | GET `/api/v1/execution/tasks/{id}/status` |
+| 6.1 | 任务状态查询(API) | GET `/api/v1/execution/tasks/{id}/status` |
+| 6.2 | 等待任务完成 | 轮询直到SUCCESS/FAILED |
+| 6.3 | 查看任务日志 | GET `/api/v1/execution/tasks/{id}/logs?tail=50` |
+| 7.1 | 停止爬虫 | POST `/api/v1/spiders/{id}/stop?task_id={id}` |
+| E2E-1~8 | 端到端完整流程 | 单次完整生命周期 |
+
+### 轮询模式（关键模式）
+
+部署流测试使用增强轮询等待任务完成：
+
 ```python
-def test_complete_workflow():
-    """测试完整工作流程"""
-    client = TestClient(app)
+# 每次间隔2秒，最多等待60秒
+max_wait = 30  # 30次 × 2秒 = 60秒
+for i in range(max_wait):
+    resp = client.get(f"/api/v1/execution/tasks/{task_id}/status")
+    status = resp.json()
+    exit_code = status.get('exit_code')
+    task_status = status.get('status', 'unknown')
     
-    # 1. 登录
-    token = login(client, "admin", "admin123")
-    headers = {"Authorization": f"Bearer {token}"}
+    if exit_code is not None:
+        completed = True  # 进程已结束
+        break
+    elif task_status in ('success', 'failed', 'cancelled', 'timeout'):
+        completed = True  # DB终态
+        break
     
-    # 2. 创建项目
-    project = create_project(client, headers, "Test Project")
-    
-    # 3. 克隆Git仓库
-    git_clone(client, headers, project["id"], {
-        "url": "https://github.com/user/repo.git"
-    })
-    
-    # 4. 创建调度任务
-    schedule = create_schedule(client, headers, project["id"])
-    
-    # 5. 触发任务
-    trigger_schedule(client, headers, schedule["id"])
-    
-    # 6. 查看监控数据
-    metrics = get_metrics(client, headers)
-    assert metrics["total_tasks"] > 0
+    time.sleep(2)
+```
+
+### 日志验证模式
+
+```python
+# 获取任务日志并验证包含爬虫输出
+log_resp = client.get(
+    f"/api/v1/execution/tasks/{task_id}/logs?tail=50"
+)
+logs = log_resp.json()
+assert any(keyword in logs for keyword in ['Crawled', 'crawled', '已爬取'])
 ```
 
 ## 编写测试

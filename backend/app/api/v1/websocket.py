@@ -8,7 +8,8 @@ WebSocket 实时推送
 """
 
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter
-from typing import Dict, Set
+from typing import Dict, Set, Optional
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -302,3 +303,4 @@ async def handle_stop(task_id: str, websocket: WebSocket):
             "type": "error",
             "message": str(e)
         })
+
