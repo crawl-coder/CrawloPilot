@@ -153,18 +153,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { 
   getTaskInstances, 
   getTaskStats,
   retryTask,
-  stopTask,
-  pauseTask,
-  resumeTask,
+  stopTask as stopScheduleTask,
   getTaskLogs
 } from '@/api/schedule'
+import { pauseTask, resumeTask } from '@/api/execution'
 
 const loading = ref(false)
 const tasks = ref([])
@@ -299,15 +298,23 @@ const handleViewLogs = async (row) => {
   }
 }
 
+let refreshTimer = null
+
 onMounted(() => {
   loadData()
   loadStats()
-  
-  // 每 30 秒刷新一次
-  setInterval(() => {
+  // 每 30 秒刷新一次，离开页面时自动清理
+  refreshTimer = setInterval(() => {
     loadData()
     loadStats()
   }, 30000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
 })
 </script>
 

@@ -10,16 +10,17 @@ import os
 from typing import Optional, Dict, Any
 
 # 测试环境配置
+# 优先从环境变量读取，默认使用云服务器信息
 TEST_CONFIG = {
     'base_url': os.getenv('TEST_BASE_URL', 'http://localhost:8000'),
     'frontend_url': os.getenv('TEST_FRONTEND_URL', 'http://localhost:8080'),
     'nginx_url': os.getenv('TEST_NGINX_URL', 'http://localhost'),
-    'mysql_host': os.getenv('MYSQL_HOST', 'localhost'),
+    'mysql_host': os.getenv('MYSQL_HOST', '117.72.16.51'),
     'mysql_port': int(os.getenv('MYSQL_PORT', 3306)),
-    'mysql_user': os.getenv('MYSQL_USER', 'crawlopilot'),
-    'mysql_password': os.getenv('MYSQL_PASSWORD', 'crawlopilot123'),
-    'mysql_database': os.getenv('MYSQL_DATABASE', 'crawlopilot'),
-    'redis_host': os.getenv('REDIS_HOST', 'localhost'),
+    'mysql_user': os.getenv('MYSQL_USER', 'crawlo'),
+    'mysql_password': os.getenv('MYSQL_PASSWORD', 'bJjGTZN4cDf6bmjc'),
+    'mysql_database': os.getenv('MYSQL_DATABASE', 'crawlo_pilot'),
+    'redis_host': os.getenv('REDIS_HOST', '117.72.16.51'),
     'redis_port': int(os.getenv('REDIS_PORT', 6379)),
     'admin_username': 'admin',
     'admin_password': 'admin123',

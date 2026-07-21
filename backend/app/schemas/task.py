@@ -3,7 +3,7 @@
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Any
 from datetime import datetime
 
 
@@ -20,8 +20,8 @@ class TaskCreate(BaseModel):
 
 class TaskResponse(BaseModel):
     """任务响应"""
-    id: str
-    spider_id: str
+    id: Any
+    spider_id: Any
     spider_name: str
     status: str
     container_id: Optional[str] = None
@@ -30,9 +30,15 @@ class TaskResponse(BaseModel):
     finished_at: Optional[datetime] = None
     duration: Optional[float] = None
     error_message: Optional[str] = None
-    
+
     class Config:
         from_attributes = True
+
+
+class TaskListResponse(BaseModel):
+    """任务列表响应（含分页）"""
+    items: List[TaskResponse]
+    total: int
 
 
 class TaskStatusResponse(BaseModel):

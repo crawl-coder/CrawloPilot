@@ -62,6 +62,12 @@
         <el-form-item label="项目">
           <el-select v-model="queryForm.project_id" placeholder="选择项目" clearable>
             <el-option label="全部项目" value="" />
+            <el-option
+              v-for="proj in projectList"
+              :key="proj.id"
+              :label="proj.name"
+              :value="proj.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -158,12 +164,14 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getQualityChecks, getQualityStats } from '@/api/dataQuality'
+import { getProjects } from '@/api/project'
 import { ElMessage } from 'element-plus'
 import { Document, SuccessFilled, Warning, CircleCloseFilled } from '@element-plus/icons-vue'
 
 const loading = ref(false)
 const qualityList = ref([])
 const stats = ref({})
+const projectList = ref([])
 
 const queryForm = ref({
   project_id: '',
@@ -241,7 +249,17 @@ const formatTime = (time) => {
 
 onMounted(() => {
   loadData()
+  loadProjects()
 })
+
+const loadProjects = async () => {
+  try {
+    const res = await getProjects({ limit: 1000 })
+    projectList.value = res.items || res || []
+  } catch (error) {
+    console.error('加载项目列表失败', error)
+  }
+}
 </script>
 
 <style scoped>

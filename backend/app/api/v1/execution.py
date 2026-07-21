@@ -12,11 +12,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import TaskInstance, TaskStatus, Spider, User
-from app.schemas.task import TaskCreate, TaskResponse, TaskStatusResponse, TaskLogResponse
+from app.schemas.task import TaskCreate, TaskResponse, TaskListResponse, TaskStatusResponse, TaskLogResponse
 from app.services.task_executor import get_executor
 from app.workers.celery_app import celery_app
 
-router = APIRouter(prefix="/api/v1/execution", tags=["execution"])
+router = APIRouter(prefix="/execution", tags=["execution"])
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ async def stop_task(
         raise HTTPException(status_code=404, detail="Task not found")
     
     # 检查任务状态
-    if task.status not in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
+    if task.status not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
         raise HTTPException(status_code=400, detail=f"Cannot stop task in {task.status} status")
     
     # 异步停止任务
@@ -232,7 +232,7 @@ async def get_task_logs(
         raise HTTPException(status_code=500, detail=logs_data.get('error', 'Failed to get logs'))
 
 
-@router.get("/tasks", response_model=List[TaskResponse])
+@router.get("/tasks", response_model=TaskListResponse)
 async def list_tasks(
     spider_id: Optional[str] = None,
     status: Optional[str] = None,
@@ -259,6 +259,8 @@ async def list_tasks(
     
     tasks = query.order_by(TaskInstance.started_at.desc()).offset(offset).limit(limit).all()
     
+    total = query.count()
+    
     result = []
     for task in tasks:
         spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
@@ -275,7 +277,7 @@ async def list_tasks(
             error_message=task.error_message
         ))
     
-    return result
+    return TaskListResponse(items=result, total=total)
 
 
 @router.delete("/tasks/{task_id}")
@@ -290,7 +292,7 @@ async def delete_task(
         raise HTTPException(status_code=404, detail="Task not found")
     
     # 如果任务正在运行,先停止
-    if task.status in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
+    if task.status in [TaskStatus.PENDING, TaskStatus.RUNNING]:
         executor = get_executor()
         import asyncio
         asyncio.run(executor.stop_task(task_id))

@@ -286,17 +286,57 @@ const handleAddProxy = async () => {
 }
 
 const handleBatchAdd = async () => {
+  const lines = batchText.value.trim().split('\n')
+  const proxies = []
+  const errors = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line) continue
+
+    const parts = line.split(':')
+    if (parts.length < 2) {
+      errors.push(`第${i+1}行: 格式应为 ip:port 或 ip:port:protocol`)
+      continue
+    }
+
+    const ip = parts[0].trim()
+    const portStr = parts[1].trim()
+    const protocol = parts.length > 2 ? parts[2].trim().toLowerCase() : 'http'
+
+    // 验证 IP 格式
+    if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
+      errors.push(`第${i+1}行: IP 格式错误 "${ip}"`)
+      continue
+    }
+
+    // 验证端口
+    const port = parseInt(portStr)
+    if (isNaN(port) || port < 1 || port > 65535) {
+      errors.push(`第${i+1}行: 端口无效 "${portStr}"`)
+      continue
+    }
+
+    // 验证协议
+    if (!['http', 'https', 'socks5', 'socks4'].includes(protocol)) {
+      errors.push(`第${i+1}行: 协议不支持 "${protocol}"`)
+      continue
+    }
+
+    proxies.push({ ip, port, protocol })
+  }
+
+  if (errors.length > 0) {
+    ElMessage.warning(`发现 ${errors.length} 个格式错误: ${errors[0]}${errors.length > 1 ? '...' : ''}`)
+    if (proxies.length === 0) return
+  }
+
+  if (proxies.length === 0) {
+    ElMessage.warning('没有有效的代理可以添加')
+    return
+  }
+
   try {
-    const lines = batchText.value.trim().split('\n')
-    const proxies = lines.map(line => {
-      const [ip, port, protocol] = line.split(':')
-      return {
-        ip: ip.trim(),
-        port: parseInt(port.trim()),
-        protocol: protocol.trim()
-      }
-    })
-    
     await batchAddProxies(proxies)
     ElMessage.success(`成功添加 ${proxies.length} 个代理`)
     showBatchDialog.value = false

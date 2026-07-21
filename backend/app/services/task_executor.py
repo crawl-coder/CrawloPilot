@@ -71,9 +71,9 @@ class TaskExecutor:
         """初始化执行器"""
         if not self._initialized:
             try:
-                # 尝试连接 Docker
+                # docker-py 兼容性已在 docker_service 模块加载时通过
+                # monkey-patch APIClient.__init__ 解决
                 self.docker_client = docker.from_env()
-                # 确保 Docker 网络存在
                 self._ensure_network()
                 self._initialized = True
                 logger.info("TaskExecutor initialized with Docker")

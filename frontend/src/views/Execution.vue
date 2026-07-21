@@ -133,7 +133,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { VideoPlay } from '@element-plus/icons-vue'
 import { listTasks, stopTask, deleteTask, getTaskLogs } from '@/api/execution'
-import { listSpiders } from '@/api/spider'
+import { getSpiders } from '@/api/spider'
 
 const loading = ref(false)
 const taskList = ref([])
@@ -163,8 +163,8 @@ const loadTasks = async () => {
       limit: pagination.pageSize,
       offset: (pagination.page - 1) * pagination.pageSize
     })
-    taskList.value = res
-    pagination.total = res.length
+    taskList.value = res.items || res
+    pagination.total = res.total || (Array.isArray(res) ? res.length : 0)
   } catch (error) {
     ElMessage.error('加载任务列表失败')
   } finally {

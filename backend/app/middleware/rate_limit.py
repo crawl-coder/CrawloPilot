@@ -82,18 +82,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     # 不同路径的限流配置
     RATE_LIMITS = {
-        # 认证接口：较严格限制（开发环境放宽）
-        '/api/v1/auth/login': {'requests': 100, 'window': 60},     # 每分钟100次
-        '/api/v1/auth/register': {'requests': 30, 'window': 300},  # 每5分钟30次
+        # 认证接口：严格限制，防止暴力破解（已注释 — 测试期间禁用）
+        # '/api/v1/auth/login': {'requests': 10, 'window': 60},
+        # '/api/v1/auth/register': {'requests': 5, 'window': 300},
         
-        # 一般API：中等限制（开发环境放宽）
-        '/api/v1/': {'requests': 500, 'window': 60},               # 每分钟500次
+        # 一般API：中等限制
+        '/api/v1/': {'requests': 300, 'window': 60},               # 每分钟300次
         
         # 监控接口：宽松限制
-        '/api/v1/monitor/': {'requests': 500, 'window': 60},       # 每分钟500次
+        '/api/v1/monitoring/': {'requests': 300, 'window': 60},    # 每分钟300次
         
         # 数据导出：严格限制
-        '/api/v1/exports': {'requests': 50, 'window': 60},         # 每分钟50次
+        '/api/v1/data-quality/exports': {'requests': 30, 'window': 60},  # 每分钟30次
     }
     
     # 白名单路径（不限流）

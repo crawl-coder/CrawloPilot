@@ -59,6 +59,7 @@ class LogCollector:
     async def initialize(self):
         """初始化"""
         if not self._initialized:
+            # docker-py 兼容性由 docker_service 模块的 monkey-patch 保证
             self.docker_client = docker.from_env()
             self._initialized = True
             logger.info("LogCollector initialized")

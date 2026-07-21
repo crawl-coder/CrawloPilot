@@ -127,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { getSummaryStatistics, getProjectStatistics } from '@/api/dataQuality'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
@@ -242,6 +242,11 @@ const updateCharts = (data) => {
   }
 }
 
+const handleResize = () => {
+  recordsChart?.resize()
+  successChart?.resize()
+}
+
 const initCharts = () => {
   if (recordsChartRef.value) {
     recordsChart = echarts.init(recordsChartRef.value)
@@ -249,6 +254,15 @@ const initCharts = () => {
   if (successChartRef.value) {
     successChart = echarts.init(successChartRef.value)
   }
+  window.addEventListener('resize', handleResize)
+}
+
+const disposeCharts = () => {
+  window.removeEventListener('resize', handleResize)
+  recordsChart?.dispose()
+  successChart?.dispose()
+  recordsChart = null
+  successChart = null
 }
 
 const getSuccessColor = (rate) => {
@@ -273,6 +287,10 @@ const formatSize = (bytes) => {
 onMounted(() => {
   initCharts()
   loadStatistics()
+})
+
+onUnmounted(() => {
+  disposeCharts()
 })
 </script>
 

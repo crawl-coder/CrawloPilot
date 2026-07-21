@@ -138,7 +138,51 @@
 
       <!-- 调度配置 -->
       <el-tab-pane label="调度配置" name="schedule">
-        <el-alert title="调度配置功能开发中" type="info" :closable="false" />
+        <div v-loading="schedulesLoading">
+          <div v-if="schedules.length === 0" style="text-align: center; padding: 40px">
+            <el-empty description="暂无调度任务" />
+            <el-button type="primary" @click="goToCreateSchedule" style="margin-top: 16px">
+              创建调度
+            </el-button>
+          </div>
+          <el-table v-else :data="schedules" border style="width: 100%">
+            <el-table-column prop="id" label="ID" width="80" />
+            <el-table-column label="类型" width="100">
+              <template #default="{ row }">
+                <el-tag v-if="row.schedule_type === 'cron'" type="primary">Cron</el-tag>
+                <el-tag v-else-if="row.schedule_type === 'interval'" type="success">间隔</el-tag>
+                <el-tag v-else type="info">一次性</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="规则" width="160">
+              <template #default="{ row }">
+                <span v-if="row.schedule_type === 'cron'">{{ row.cron_expr }}</span>
+                <span v-else-if="row.schedule_type === 'interval'">每 {{ row.interval_seconds }} 秒</span>
+                <span v-else>{{ row.run_date }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="priority" label="优先级" width="80" />
+            <el-table-column label="状态" width="80">
+              <template #default="{ row }">
+                <el-tag v-if="row.enabled" type="success" size="small">启用</el-tag>
+                <el-tag v-else type="info" size="small">禁用</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="下次执行" width="180">
+              <template #default="{ row }">
+                {{ row.next_run_time || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="200">
+              <template #default="{ row }">
+                <el-button size="small" @click="handleToggleSchedule(row)">
+                  {{ row.enabled ? '禁用' : '启用' }}
+                </el-button>
+                <el-button size="small" type="primary" @click="handleTriggerSchedule(row)">触发</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </el-tab-pane>
 
       <!-- Git管理 -->
@@ -240,23 +284,48 @@
 
       <!-- 基本信息 -->
       <el-tab-pane label="基本信息" name="info">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="爬虫名称">{{ spider?.name }}</el-descriptions-item>
-          <el-descriptions-item label="类型">
-            <el-tag :color="getSpiderTypeColor(spider?.spider_type)" style="color: white; border: none">
-              {{ spider?.spider_type === 'crawlo' ? 'Crawlo⭐' : spider?.spider_type }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="getStatusType(spider?.status)">
-              {{ getStatusText(spider?.status) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="入口文件">{{ spider?.entry_file || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="描述" :span="2">{{ spider?.description || '无' }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ formatDate(spider?.created_at) }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ formatDate(spider?.updated_at) }}</el-descriptions-item>
-        </el-descriptions>
+        <div style="text-align: right; margin-bottom: 16px">
+          <el-button v-if="!editingInfo" type="primary" size="small" @click="editingInfo = true">
+            <el-icon><Edit /></el-icon> 编辑
+          </el-button>
+          <template v-else>
+            <el-button size="small" @click="editingInfo = false">取消</el-button>
+            <el-button type="primary" size="small" @click="handleSaveInfo" :loading="savingInfo">保存</el-button>
+          </template>
+        </div>
+
+        <template v-if="!editingInfo">
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="爬虫名称">{{ spider?.name }}</el-descriptions-item>
+            <el-descriptions-item label="类型">
+              <el-tag :color="getSpiderTypeColor(spider?.spider_type)" style="color: white; border: none">
+                {{ spider?.spider_type === 'crawlo' ? 'Crawlo⭐' : spider?.spider_type }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="getStatusType(spider?.status)">
+                {{ getStatusText(spider?.status) }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="入口文件">{{ spider?.entry_file || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="描述" :span="2">{{ spider?.description || '无' }}</el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ formatDate(spider?.created_at) }}</el-descriptions-item>
+            <el-descriptions-item label="更新时间">{{ formatDate(spider?.updated_at) }}</el-descriptions-item>
+          </el-descriptions>
+        </template>
+        <template v-else>
+          <el-form :model="editForm" label-width="120px" style="max-width: 600px">
+            <el-form-item label="爬虫名称">
+              <el-input v-model="editForm.name" />
+            </el-form-item>
+            <el-form-item label="入口文件">
+              <el-input v-model="editForm.entry_file" placeholder="spider.py" />
+            </el-form-item>
+            <el-form-item label="描述">
+              <el-input v-model="editForm.description" type="textarea" :rows="3" />
+            </el-form-item>
+          </el-form>
+        </template>
       </el-tab-pane>
     </el-tabs>
 
@@ -279,11 +348,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Folder, Document, More, Back, VideoPlay, Delete } from '@element-plus/icons-vue'
-import { getSpider, runSpider, deleteSpider, getSpiderFileTree, getSpiderFileContent, saveSpiderFileContent, createSpiderFileOrDir, deleteSpiderFileOrDir } from '@/api/spider'
+import { Refresh, Folder, Document, More, Back, VideoPlay, Delete, Edit } from '@element-plus/icons-vue'
+import { getSpider, runSpider, deleteSpider, updateSpider, getSpiderFileTree, getSpiderFileContent, saveSpiderFileContent, createSpiderFileOrDir, deleteSpiderFileOrDir } from '@/api/spider'
+import { getSchedules, enableSchedule, disableSchedule, triggerSchedule } from '@/api/schedule'
 import { gitClone, gitPull, gitPush, gitGetBranches, gitBranchOperation, gitGetCommits, gitGetStatus } from '@/api/spider-git'
 
 const route = useRoute()
@@ -293,6 +363,19 @@ const spiderId = route.params.id
 const spider = ref(null)
 const activeTab = ref('code') // 默认显示代码结构
 const running = ref(false)
+
+// 编辑信息
+const editingInfo = ref(false)
+const savingInfo = ref(false)
+const editForm = reactive({
+  name: '',
+  entry_file: '',
+  description: ''
+})
+
+// 调度管理
+const schedules = ref([])
+const schedulesLoading = ref(false)
 
 // Git管理
 const gitActiveTab = ref('operations')
@@ -332,6 +415,13 @@ const createForm = reactive({
 
 onMounted(() => {
   loadSpider()
+})
+
+// 切换到调度Tab时自动加载
+watch(activeTab, (tab) => {
+  if (tab === 'schedule' && spider.value) {
+    loadSchedules()
+  }
 })
 
 const loadSpider = async () => {
@@ -477,6 +567,46 @@ const getSpiderTypeColor = (type) => {
   return colorMap[type] || '#8C8C8C'
 }
 
+const loadSchedules = async () => {
+  schedulesLoading.value = true
+  try {
+    const res = await getSchedules({ spider_name: spider.value?.name, limit: 100 })
+    schedules.value = res.items || res || []
+  } catch (error) {
+    console.error('加载调度列表失败', error)
+  } finally {
+    schedulesLoading.value = false
+  }
+}
+
+const handleToggleSchedule = async (row) => {
+  try {
+    if (row.enabled) {
+      await disableSchedule(row.id)
+      ElMessage.success('已禁用')
+    } else {
+      await enableSchedule(row.id)
+      ElMessage.success('已启用')
+    }
+    loadSchedules()
+  } catch (error) {
+    ElMessage.error('操作失败')
+  }
+}
+
+const handleTriggerSchedule = async (row) => {
+  try {
+    await triggerSchedule(row.id)
+    ElMessage.success('任务已触发')
+  } catch (error) {
+    ElMessage.error('触发失败')
+  }
+}
+
+const goToCreateSchedule = () => {
+  router.push('/schedules')
+}
+
 const handleRun = async () => {
   try {
     await ElMessageBox.confirm(`确定要运行爬虫 "${spider.value?.name}" 吗？`, '提示', {
@@ -515,7 +645,26 @@ const handleDelete = async () => {
 }
 
 const showEditDialog = () => {
-  ElMessage.info('编辑功能开发中')
+  // 准备编辑表单数据
+  editForm.name = spider.value?.name || ''
+  editForm.entry_file = spider.value?.entry_file || ''
+  editForm.description = spider.value?.description || ''
+  editingInfo.value = true
+  activeTab.value = 'info'
+}
+
+const handleSaveInfo = async () => {
+  savingInfo.value = true
+  try {
+    await updateSpider(spiderId, editForm)
+    ElMessage.success('保存成功')
+    editingInfo.value = false
+    loadSpider()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '保存失败')
+  } finally {
+    savingInfo.value = false
+  }
 }
 
 // ==================== Git管理 ====================

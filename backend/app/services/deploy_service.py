@@ -420,7 +420,20 @@ class DeployService:
     def get_deploy(self, deploy_id: int) -> Optional[Deploy]:
         """获取部署详情"""
         return self.db.query(Deploy).get(deploy_id)
-    
+
+    def get_deploy_count(
+        self,
+        project_id: Optional[int] = None,
+        status: Optional[DeployStatus] = None,
+    ) -> int:
+        """获取部署总数"""
+        query = self.db.query(Deploy)
+        if project_id:
+            query = query.filter(Deploy.project_id == project_id)
+        if status:
+            query = query.filter(Deploy.status == status)
+        return query.count()
+
     def get_deploys(
         self,
         project_id: Optional[int] = None,

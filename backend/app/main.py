@@ -1,12 +1,12 @@
-from app.api.v1 import auth, projects, deploy, nodes, schedules, tasks, monitoring, alerts, data_quality, proxy_pool, api_management, audit, project_git, users, project_files, spiders, spider_git, execution, websocket
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
+import logging
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import make_asgi_app
+
 from app.core.config import settings
 from app.scheduler import scheduler_manager
-from prometheus_client import make_asgi_app
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 审计中间件（Phase 7）
+# 审计中间件
 from app.middleware.audit import AuditMiddleware
 app.add_middleware(AuditMiddleware)
 
@@ -105,27 +105,59 @@ app.add_middleware(AuditMiddleware)
 from app.middleware.rate_limit import RateLimitMiddleware
 app.add_middleware(RateLimitMiddleware)
 
-# Include routers
+# 请求指标中间件
+from app.middleware.metrics import MetricsMiddleware
+app.add_middleware(MetricsMiddleware)
+
+# ====== 路由注册 ======
+
+# 认证与用户管理
+from app.api.v1 import auth, users
 app.include_router(auth.router, prefix=settings.API_PREFIX)
 app.include_router(users.router, prefix=settings.API_PREFIX)
+
+# 项目管理
+from app.api.v1 import projects, project_git, project_files
 app.include_router(projects.router, prefix=settings.API_PREFIX)
 app.include_router(project_git.router, prefix=settings.API_PREFIX)
 app.include_router(project_files.router, prefix=settings.API_PREFIX)
+
+# 爬虫管理
+from app.api.v1 import spiders, spider_git
 app.include_router(spiders.router, prefix=settings.API_PREFIX)
 app.include_router(spider_git.router, prefix=settings.API_PREFIX)
+
+# 部署与节点
+from app.api.v1 import deploy, nodes
 app.include_router(deploy.router, prefix=settings.API_PREFIX)
 app.include_router(nodes.router, prefix=settings.API_PREFIX)
+
+# 调度与任务
+from app.api.v1 import schedules, tasks, execution
 app.include_router(schedules.router, prefix=settings.API_PREFIX)
 app.include_router(tasks.router, prefix=settings.API_PREFIX)
-app.include_router(monitoring.router, prefix=settings.API_PREFIX)
-app.include_router(alerts.router, prefix=settings.API_PREFIX)
-app.include_router(data_quality.router, prefix=settings.API_PREFIX)
-app.include_router(proxy_pool.router, prefix=settings.API_PREFIX)
-app.include_router(api_management.router, prefix=settings.API_PREFIX)
-app.include_router(audit.router, prefix=settings.API_PREFIX)
 app.include_router(execution.router, prefix=settings.API_PREFIX)
 
+# 监控与告警
+from app.api.v1 import monitoring, alerts
+app.include_router(monitoring.router, prefix=settings.API_PREFIX)
+app.include_router(alerts.router, prefix=settings.API_PREFIX)
+
+# 数据质量
+from app.api.v1 import data_quality
+app.include_router(data_quality.router, prefix=settings.API_PREFIX)
+
+# 代理池与 API 管理
+from app.api.v1 import proxy_pool, api_management
+app.include_router(proxy_pool.router, prefix=settings.API_PREFIX)
+app.include_router(api_management.router, prefix=settings.API_PREFIX)
+
+# 审计
+from app.api.v1 import audit
+app.include_router(audit.router, prefix=settings.API_PREFIX)
+
 # WebSocket 路由 (不需要 prefix)
+from app.api.v1 import websocket
 app.include_router(websocket.router)
 
 # Prometheus metrics endpoint
@@ -134,14 +166,63 @@ app.mount("/metrics", metrics_app)
 
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy", "version": settings.APP_VERSION}
+async def health_check():
+    """详细的健康检查端点"""
+    import redis as redis_lib
+    from sqlalchemy import text
+
+    health_info = {
+        "status": "healthy",
+        "version": settings.APP_VERSION,
+        "services": {}
+    }
+
+    # 检查数据库
+    from app.core.database import SessionLocal
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        health_info["services"]["database"] = "connected"
+    except Exception as e:
+        health_info["services"]["database"] = f"error: {str(e)}"
+        health_info["status"] = "degraded"
+
+    # 检查 Redis
+    try:
+        r = redis_lib.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=settings.REDIS_DB,
+            password=settings.REDIS_PASSWORD,
+            socket_connect_timeout=3,
+            socket_timeout=3
+        )
+        r.ping()
+        r.close()
+        health_info["services"]["redis"] = "connected"
+    except Exception as e:
+        health_info["services"]["redis"] = f"error: {str(e)}"
+        health_info["status"] = "degraded"
+
+    # 检查调度器
+    try:
+        if scheduler_manager.scheduler and scheduler_manager.scheduler.running:
+            health_info["services"]["scheduler"] = "running"
+        else:
+            health_info["services"]["scheduler"] = "stopped"
+            health_info["status"] = "degraded"
+    except Exception as e:
+        health_info["services"]["scheduler"] = f"error: {str(e)}"
+
+    return health_info
 
 
 @app.get("/")
-def root():
+async def root():
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "docs": "/docs"
+        "docs": "/docs",
+        "health": "/health"
     }

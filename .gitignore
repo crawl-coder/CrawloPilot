@@ -31,6 +31,7 @@ Thumbs.db
 
 # Environment
 .env
+.env.example.local
 *.local
 
 # Docker
@@ -53,3 +54,6 @@ mysql-data/
 redis-data/
 prometheus-data/
 grafana-data/
+backend/uploads/*
+tests/reports/*
+backend/note.txt

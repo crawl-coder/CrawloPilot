@@ -16,6 +16,12 @@
         <el-form-item label="项目">
           <el-select v-model="filters.projectId" placeholder="选择项目" clearable @change="loadData">
             <el-option label="全部" value="" />
+            <el-option
+              v-for="proj in projectList"
+              :key="proj.id"
+              :label="proj.name"
+              :value="proj.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -138,11 +144,13 @@ import {
   disableSchedule,
   triggerSchedule
 } from '@/api/schedule'
+import { getProjects } from '@/api/project'
 import Pagination from '@/components/Pagination.vue'
 
 const loading = ref(false)
 const submitting = ref(false)
 const schedules = ref([])
+const projectList = ref([])
 const dialogVisible = ref(false)
 const dialogTitle = ref('创建调度')
 const formRef = ref(null)
@@ -283,7 +291,17 @@ const handleTrigger = async (row) => {
 
 onMounted(() => {
   loadData()
+  loadProjects()
 })
+
+const loadProjects = async () => {
+  try {
+    const res = await getProjects({ limit: 1000 })
+    projectList.value = res.items || res || []
+  } catch (error) {
+    console.error('加载项目列表失败', error)
+  }
+}
 </script>
 
 <style scoped>

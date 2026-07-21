@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { getApiConfigs, createApiConfig, getApiStats, getApiTrend } from '@/api/proxyApi'
 import { ElMessage } from 'element-plus'
 import { Connection, SuccessFilled, Timer, CircleClose, Plus } from '@element-plus/icons-vue'
@@ -256,10 +256,21 @@ const updateTrendChart = (data) => {
   })
 }
 
+const handleResize = () => {
+  trendChart?.resize()
+}
+
 const initChart = () => {
   if (trendChartRef.value) {
     trendChart = echarts.init(trendChartRef.value)
+    window.addEventListener('resize', handleResize)
   }
+}
+
+const disposeChart = () => {
+  window.removeEventListener('resize', handleResize)
+  trendChart?.dispose()
+  trendChart = null
 }
 
 const formatTime = (time) => {
@@ -270,6 +281,10 @@ const formatTime = (time) => {
 onMounted(() => {
   initChart()
   loadData()
+})
+
+onUnmounted(() => {
+  disposeChart()
 })
 </script>
 

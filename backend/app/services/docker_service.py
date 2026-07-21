@@ -2,30 +2,102 @@
 Docker Engine 服务层
 封装 Docker API 操作，提供容器生命周期管理
 """
+import os
 import docker
 from docker.errors import DockerException, NotFound, APIError
 from typing import Dict, List, Optional, Any
 from app.core.config import settings
 import logging
+from urllib.parse import quote
+from requests.adapters import HTTPAdapter
+from docker.api import client as api_client
 
 logger = logging.getLogger(__name__)
 
 
+# ==================== Docker Desktop 兼容适配器 ====================
+# docker-py 6.x 在 Docker Desktop 'desktop-linux' 上下文中会解析出
+# http+docker:// scheme，与 urllib3 2.x 不兼容。
+# 以下适配器将 http+docker:// 请求重写为 http+unix:// 并路由到 Unix socket。
+
+_SOCKET_PATH = None
+
+
+def _resolve_docker_socket(configured_host: str) -> str:
+    """解析可用的 Docker socket 路径"""
+    cfg = configured_host.replace('unix://', '')
+    for path in [cfg, '/var/run/docker.sock', '/Users/oscar/.docker/run/docker.sock']:
+        if os.path.exists(path):
+            return path
+    return cfg
+
+
+def _patch_docker_client():
+    """monkey-patch APIClient.__init__ 以兼容 Docker Desktop macOS"""
+    global _SOCKET_PATH
+    sock = _SOCKET_PATH
+    if not sock:
+        from app.core.config import settings
+        sock = _resolve_docker_socket(settings.DOCKER_HOST)
+        _SOCKET_PATH = sock
+
+    original_init = api_client.APIClient.__init__
+
+    def patched_init(self, base_url=None, version=None, **kwargs):
+        if version is None:
+            version = '1.39'
+        original_init(self, base_url=base_url, version=version, **kwargs)
+        # 在 __init__ 完成前 mount 适配器，确保 _retrieve_server_version 也能通过
+        adapter = _create_adapter(sock)
+        self.mount('http+docker://', adapter)
+
+    api_client.APIClient.__init__ = patched_init
+
+
+def _create_adapter(socket_path: str) -> HTTPAdapter:
+    """创建将 http+docker:// 路由到 Unix socket 的适配器"""
+    from requests_unixsocket import UnixAdapter
+
+    class DockerDesktopAdapter(HTTPAdapter):
+        def __init__(self):
+            self.sock_path = socket_path
+            self.unix_adapter = UnixAdapter()
+            super().__init__()
+
+        def send(self, request, **kwargs):
+            encoded = quote(self.sock_path, safe='')
+            request.url = request.url.replace(
+                'http+docker://localhost', f'http+unix://{encoded}'
+            )
+            request.url = request.url.replace(
+                'http+docker://localnpipe', f'http+unix://{encoded}'
+            )
+            return self.unix_adapter.send(request, **kwargs)
+
+    return DockerDesktopAdapter()
+
+
+# 在模块加载时执行 monkey-patch
+_patch_docker_client()
+
+
 class DockerService:
     """Docker Engine 封装服务"""
-    
+
     def __init__(self, docker_host: Optional[str] = None):
         """
         初始化 Docker 客户端
-        
+
         Args:
             docker_host: Docker 守护进程地址，默认使用配置
         """
         self.docker_host = docker_host or settings.DOCKER_HOST
         try:
-            self.client = docker.DockerClient(base_url=self.docker_host)
+            sock_path = _resolve_docker_socket(self.docker_host)
+            base_url = f'http+unix://{sock_path}'
+            self.client = docker.DockerClient(base_url=base_url)
             self.ping()
-            logger.info(f"Connected to Docker: {self.docker_host}")
+            logger.info(f"Connected to Docker via: {sock_path}")
         except DockerException as e:
             logger.error(f"Failed to connect to Docker: {e}")
             raise

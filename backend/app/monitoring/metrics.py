@@ -2,25 +2,11 @@
 Prometheus 监控指标定义
 """
 from prometheus_client import Counter, Histogram, Gauge, Enum
-import time
 
 
-# ==================== HTTP 指标 ====================
-
-# HTTP 请求总数
-http_requests_total = Counter(
-    'http_requests_total',
-    'Total HTTP requests',
-    ['method', 'endpoint', 'status']
-)
-
-# HTTP 请求延迟
-http_request_duration_seconds = Histogram(
-    'http_request_duration_seconds',
-    'HTTP request duration in seconds',
-    ['method', 'endpoint'],
-    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
-)
+# ==================== HTTP 指标（由 middleware/metrics.py 采集）====================
+# 此处不再重复定义 http_requests_total / http_request_duration_seconds
+# 它们已在 middleware/metrics.py 中定义，避免 Prometheus 注册冲突
 
 
 # ==================== 爬虫指标 ====================
@@ -183,21 +169,7 @@ redis_connection_status = Gauge(
 
 
 class MetricsCollector:
-    """指标收集器"""
-    
-    @staticmethod
-    def record_http_request(method: str, endpoint: str, status: int, duration: float):
-        """记录 HTTP 请求指标"""
-        http_requests_total.labels(
-            method=method,
-            endpoint=endpoint,
-            status=status
-        ).inc()
-        
-        http_request_duration_seconds.labels(
-            method=method,
-            endpoint=endpoint
-        ).observe(duration)
+    """指标收集器（HTTP 指标由 middleware/metrics.py 自动采集）"""
     
     @staticmethod
     def record_spider_run(spider_name: str, status: str, items: int = 0, duration: float = 0):

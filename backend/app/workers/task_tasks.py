@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from typing import Dict
 
+from app.workers.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.models import Task, TaskStatus, Spider
 from app.services.task_executor import TaskExecutor, TaskConfig
@@ -15,7 +16,8 @@ from app.services.task_executor import TaskExecutor, TaskConfig
 logger = logging.getLogger(__name__)
 
 
-def execute_spider_task(task_id: str, spider_id: str, spider_name: str, **kwargs) -> Dict:
+@celery_app.task(bind=True, name="app.workers.task_tasks.execute_spider_task", queue="tasks")
+def execute_spider_task(self, task_id: str, spider_id: str, spider_name: str, **kwargs) -> Dict:
     """
     执行爬虫任务
     
@@ -98,7 +100,8 @@ def execute_spider_task(task_id: str, spider_id: str, spider_name: str, **kwargs
         db.close()
 
 
-def stop_spider_task(task_id: str) -> Dict:
+@celery_app.task(bind=True, name="app.workers.task_tasks.stop_spider_task", queue="tasks")
+def stop_spider_task(self, task_id: str) -> Dict:
     """
     停止爬虫任务
     
@@ -129,7 +132,8 @@ def stop_spider_task(task_id: str) -> Dict:
         }
 
 
-def get_task_status(task_id: str) -> Dict:
+@celery_app.task(bind=True, name="app.workers.task_tasks.get_task_status", queue="tasks")
+def get_task_status(self, task_id: str) -> Dict:
     """
     获取任务状态
     
@@ -167,7 +171,7 @@ def get_task_status(task_id: str) -> Dict:
         }
 
 
-@shared_task(bind=True, max_retries=3)
+@celery_app.task(bind=True, name="app.workers.task_tasks.pause_spider_task", queue="tasks", max_retries=3)
 def pause_spider_task(self, task_id: str) -> Dict:
     """
     暂停爬虫任务
@@ -178,8 +182,6 @@ def pause_spider_task(self, task_id: str) -> Dict:
     Returns:
         暂停结果
     """
-    from app.services.task_executor import TaskExecutor
-    
     executor = TaskExecutor()
     
     try:
@@ -208,7 +210,7 @@ def pause_spider_task(self, task_id: str) -> Dict:
         }
 
 
-@shared_task(bind=True, max_retries=3)
+@celery_app.task(bind=True, name="app.workers.task_tasks.resume_spider_task", queue="tasks", max_retries=3)
 def resume_spider_task(self, task_id: str) -> Dict:
     """
     恢复爬虫任务
@@ -219,8 +221,6 @@ def resume_spider_task(self, task_id: str) -> Dict:
     Returns:
         恢复结果
     """
-    from app.services.task_executor import TaskExecutor
-    
     executor = TaskExecutor()
     
     try:
@@ -249,7 +249,8 @@ def resume_spider_task(self, task_id: str) -> Dict:
         }
 
 
-def get_task_logs(task_id: str, tail: int = 100) -> Dict:
+@celery_app.task(bind=True, name="app.workers.task_tasks.get_task_logs", queue="tasks")
+def get_task_logs(self, task_id: str, tail: int = 100) -> Dict:
     """
     获取任务日志
     

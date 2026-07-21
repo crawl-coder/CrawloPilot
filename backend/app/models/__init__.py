@@ -1,5 +1,5 @@
 from app.core.database import Base
-from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -241,12 +241,14 @@ class TaskInstance(Base):
     __tablename__ = "task_instance"
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    schedule_id = Column(BigInteger, ForeignKey("schedule.id"), nullable=False)
+    schedule_id = Column(BigInteger, ForeignKey("schedule.id"), nullable=True)
     spider_id = Column(BigInteger, ForeignKey("spider.id"), nullable=True)
-    spider_name = Column(String(128), nullable=False)
+    spider_name = Column(String(128), nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING)
     worker_node = Column(String(64))
     container_id = Column(String(64))
+    duration = Column(Float, nullable=True)
+    error_message = Column(Text, nullable=True)
     started_at = Column(DateTime)
     finished_at = Column(DateTime)
     stats = Column(JSON)

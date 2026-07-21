@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import hashlib
+import logging
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
+import redis
 from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
@@ -11,31 +14,108 @@ from app.schemas.user import UserCreate, UserInDB, Token
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
+logger = logging.getLogger(__name__)
+
+
+def _get_client_ip(request: Request) -> str:
+    """从请求中提取客户端IP"""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _get_redis_client():
+    """获取Redis客户端（用于登录保护）"""
+    try:
+        return redis.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=settings.REDIS_DB,
+            password=settings.REDIS_PASSWORD,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+    except Exception:
+        return None
+
+
+def _check_login_attempts(username: str, ip: str) -> bool:
+    """
+    检查登录尝试是否触发限制（临时IP封禁）
+    5分钟内连续失败5次则封禁15分钟
+    """
+    r = _get_redis_client()
+    if r is None:
+        return True  # Redis不可用时放行
+
+    key = f"login_fail:{hashlib.md5(f'{ip}:{username}'.encode()).hexdigest()}"
+    banned_key = f"login_banned:{ip}"
+
+    # 检查是否被封禁
+    if r.exists(banned_key):
+        ttl = r.ttl(banned_key)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"登录尝试过于频繁，请在 {ttl} 秒后重试",
+        )
+
+    return True
+
+
+def _record_login_failure(username: str, ip: str):
+    """记录登录失败并检查是否触发封禁"""
+    r = _get_redis_client()
+    if r is None:
+        return
+
+    key = f"login_fail:{hashlib.md5(f'{ip}:{username}'.encode()).hexdigest()}"
+    banned_key = f"login_banned:{ip}"
+
+    pipe = r.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, 300)  # 5分钟过期
+    result = pipe.execute()
+
+    attempt_count = result[0]
+    if attempt_count >= 5:
+        logger.warning(f"Login rate limit triggered for IP={ip}, username={username}")
+        # 封禁IP 15分钟
+        r.setex(banned_key, 900, "1")
+
 
 @router.post("/login", response_model=Token)
 def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
+    ip = _get_client_ip(request)
+    # 登录频率限制已注释 — 如需启用请取消注释下两行
+    # _check_login_attempts(form_data.username, ip)
+
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.password_hash):
+        # _record_login_failure(form_data.username, ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
         )
-    
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": str(user.id)}, expires_delta=access_token_expires
     )
-    
+
+    logger.info(f"User {user.username} logged in from IP {ip}")
     return {"access_token": access_token, "token_type": "bearer"}
 
 

@@ -9,7 +9,7 @@ import request from './request'
  */
 export function createAndExecuteTask(data) {
   return request({
-    url: '/api/v1/execution/tasks',
+    url: '/execution/tasks',
     method: 'post',
     data
   })
@@ -20,7 +20,7 @@ export function createAndExecuteTask(data) {
  */
 export function stopTask(taskId) {
   return request({
-    url: `/api/v1/execution/tasks/${taskId}/stop`,
+    url: `/execution/tasks/${taskId}/stop`,
     method: 'post'
   })
 }
@@ -30,7 +30,7 @@ export function stopTask(taskId) {
  */
 export function pauseTask(taskId) {
   return request({
-    url: `/api/v1/execution/tasks/${taskId}/pause`,
+    url: `/execution/tasks/${taskId}/pause`,
     method: 'post'
   })
 }
@@ -40,7 +40,7 @@ export function pauseTask(taskId) {
  */
 export function resumeTask(taskId) {
   return request({
-    url: `/api/v1/execution/tasks/${taskId}/resume`,
+    url: `/execution/tasks/${taskId}/resume`,
     method: 'post'
   })
 }
@@ -50,7 +50,7 @@ export function resumeTask(taskId) {
  */
 export function getTaskStatus(taskId) {
   return request({
-    url: `/api/v1/execution/tasks/${taskId}/status`,
+    url: `/execution/tasks/${taskId}/status`,
     method: 'get'
   })
 }
@@ -60,7 +60,7 @@ export function getTaskStatus(taskId) {
  */
 export function getTaskLogs(taskId, tail = 100) {
   return request({
-    url: `/api/v1/execution/tasks/${taskId}/logs`,
+    url: `/execution/tasks/${taskId}/logs`,
     method: 'get',
     params: { tail }
   })
@@ -71,7 +71,7 @@ export function getTaskLogs(taskId, tail = 100) {
  */
 export function listTasks(params) {
   return request({
-    url: '/api/v1/execution/tasks',
+    url: '/execution/tasks',
     method: 'get',
     params
   })
@@ -82,7 +82,7 @@ export function listTasks(params) {
  */
 export function deleteTask(taskId) {
   return request({
-    url: `/api/v1/execution/tasks/${taskId}`,
+    url: `/execution/tasks/${taskId}`,
     method: 'delete'
   })
 }

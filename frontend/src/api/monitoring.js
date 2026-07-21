@@ -67,5 +67,5 @@ export function testNotification(channel) {
 }
 
 export function resolveAlert(alertId) {
-  return request.post(`/alerts/alerts/${alertId}/resolve`)
+  return request.post(`/alerts/${alertId}/resolve`)
 }

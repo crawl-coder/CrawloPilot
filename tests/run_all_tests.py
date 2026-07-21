@@ -46,12 +46,24 @@ class TestRunner:
             print(f"\n>>> 运行 {name} 测试...")
             start = time.time()
             
+            # 从 .env 加载环境变量注入子进程
+            env = os.environ.copy()
+            env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+            if os.path.exists(env_path):
+                with open(env_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, val = line.split('=', 1)
+                            env[key.strip()] = val.strip()
+            
             try:
                 result = subprocess.run(
                     [sys.executable, test_file],
                     capture_output=True,
                     text=True,
-                    timeout=120
+                    timeout=120,
+                    env=env
                 )
                 
                 duration = time.time() - start
@@ -136,15 +148,15 @@ class TestRunner:
         print("\n" + "="*70)
         print("  服务状态检查")
         print("="*70)
-        
+
         import requests
-        
+
         services = {
             '后端API': TEST_CONFIG['base_url'],
             '前端服务': TEST_CONFIG['frontend_url'],
             'Nginx': TEST_CONFIG['nginx_url'],
         }
-        
+
         for name, url in services.items():
             try:
                 response = requests.get(f"{url}/health", timeout=5)
@@ -154,33 +166,45 @@ class TestRunner:
                     print(f"    ✗ {name}: 异常 (状态码: {response.status_code})")
             except Exception as e:
                 print(f"    ✗ {name}: 无法连接 ({url})")
-        
+
+        # 直接使用正确的云服务器凭据（忽略系统环境变量干扰）
+        mysql_user = 'crawlo'
+        mysql_pass = 'bJjGTZN4cDf6bmjc'
+        mysql_host = '117.72.16.51'
+        mysql_port = 3306
+        mysql_db = 'crawlo_pilot'
+        redis_host = '117.72.16.51'
+        redis_port = 6379
+        redis_pass = 'oscar0503'
+
         # 检查数据库
         try:
             import pymysql
             conn = pymysql.connect(
-                host=TEST_CONFIG['mysql_host'],
-                port=TEST_CONFIG['mysql_port'],
-                user=TEST_CONFIG['mysql_user'],
-                password=TEST_CONFIG['mysql_password'],
-                database=TEST_CONFIG['mysql_database']
+                host=mysql_host,
+                port=mysql_port,
+                user=mysql_user,
+                password=mysql_pass,
+                database=mysql_db
             )
             conn.close()
-            print(f"    ✓ MySQL: 连接正常")
+            print(f"    ✓ MySQL: 连接正常 ({mysql_user}@{mysql_host})")
         except Exception as e:
-            print(f"    ✗ MySQL: 连接失败 ({str(e)[:50]})")
-        
+            print(f"    ✗ MySQL: 连接失败 ({str(e)[:60]})")
+
         # 检查 Redis
         try:
-            import redis
-            r = redis.Redis(
-                host=TEST_CONFIG['redis_host'],
-                port=TEST_CONFIG['redis_port']
+            import redis as redis_lib
+            r = redis_lib.Redis(
+                host=redis_host,
+                port=redis_port,
+                password=redis_pass
             )
             r.ping()
-            print(f"    ✓ Redis: 连接正常")
+            r.close()
+            print(f"    ✓ Redis: 连接正常 ({redis_host}:{redis_port})")
         except Exception as e:
-            print(f"    ✗ Redis: 连接失败 ({str(e)[:50]})")
+            print(f"    ✗ Redis: 连接失败 ({str(e)[:60]})")
     
     def generate_summary_report(self):
         """生成汇总报告"""
