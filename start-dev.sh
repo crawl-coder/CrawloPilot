@@ -216,6 +216,7 @@ nohup "$PYTHON_BIN" -m uvicorn app.main:app \
     --host 0.0.0.0 \
     --port 8000 \
     --reload \
+    --reload-dir app \
     > ../logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > ../logs/backend.pid
