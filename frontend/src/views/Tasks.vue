@@ -33,10 +33,6 @@
               <el-icon><Refresh /></el-icon>
               刷新
             </el-button>
-            <el-button type="primary" @click="handleCreateTask">
-              <el-icon><VideoPlay /></el-icon>
-              新建任务
-            </el-button>
           </div>
         </div>
       </template>
@@ -225,7 +221,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, VideoPlay } from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
 import { listTasks, stopTask, pauseTask, resumeTask, deleteTask, getTaskLogs, getTaskStats, retryTask } from '@/api/execution'
 import { getSpiders } from '@/api/spider'
 import { getTaskStatusType as getStatusType, getTaskStatusText as getStatusText, formatDateTime as formatTime } from '@/utils/common'
@@ -306,10 +302,6 @@ const loadSpiders = async () => {
 const refreshAll = () => {
   loadTasks()
   loadStats()
-}
-
-const handleCreateTask = () => {
-  ElMessage.info('请从爬虫详情页创建任务')
 }
 
 const handleReset = () => {
