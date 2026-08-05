@@ -24,14 +24,14 @@
           <span>爬虫管理</span>
         </el-menu-item>
         
-        <el-menu-item index="/nodes">
-          <el-icon><Monitor /></el-icon>
-          <span>节点管理</span>
-        </el-menu-item>
-        
         <el-menu-item index="/tasks">
           <el-icon><List /></el-icon>
           <span>任务管理</span>
+        </el-menu-item>
+
+        <el-menu-item index="/nodes">
+          <el-icon><Monitor /></el-icon>
+          <span>节点管理</span>
         </el-menu-item>
         
         <el-sub-menu index="system">
