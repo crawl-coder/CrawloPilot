@@ -1,24 +1,14 @@
 <template>
   <div class="tasks-container">
-    <!-- 统计卡片 -->
-    <el-row :gutter="20" style="margin-bottom: 20px">
-      <el-col :span="12">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="运行中" :value="stats.running" />
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="失败数" :value="stats.failed" />
-        </el-card>
-      </el-col>
-    </el-row>
-
     <el-card>
       <template #header>
         <div class="card-header">
           <span>任务管理</span>
           <div class="header-actions">
+            <span class="auto-refresh">
+              <el-switch v-model="autoRefresh" size="small" />
+              自动刷新
+            </span>
             <el-button @click="refreshAll" :loading="loading">
               <el-icon><Refresh /></el-icon>
               刷新
@@ -51,7 +41,6 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="loadTasks">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -208,11 +197,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import { listTasks, stopTask, pauseTask, resumeTask, deleteTask, getTaskLogs, getTaskStats, retryTask } from '@/api/execution'
+import { listTasks, stopTask, pauseTask, resumeTask, deleteTask, getTaskLogs, retryTask } from '@/api/execution'
 import { getSpiders } from '@/api/spider'
 import { getTaskStatusType as getStatusType, getTaskStatusText as getStatusText, formatDateTime as formatTime } from '@/utils/common'
 
@@ -220,13 +209,6 @@ const loading = ref(false)
 const taskList = ref([])
 const spiders = ref([])
 const router = useRouter()
-
-const stats = reactive({
-  total: 0,
-  running: 0,
-  failed: 0,
-  success_rate: 0
-})
 
 const filters = reactive({
   spider_id: '',
@@ -266,20 +248,6 @@ const loadTasks = async () => {
   }
 }
 
-const loadStats = async () => {
-  try {
-    const data = await getTaskStats()
-    if (data) {
-      stats.total = data.total || 0
-      stats.running = data.running || 0
-      stats.failed = data.failed || 0
-      stats.success_rate = data.success_rate || 0
-    }
-  } catch (error) {
-    console.error('加载统计失败', error)
-  }
-}
-
 const loadSpiders = async () => {
   try {
     const res = await getSpiders({ limit: 1000 })
@@ -291,7 +259,6 @@ const loadSpiders = async () => {
 
 const refreshAll = () => {
   loadTasks()
-  loadStats()
 }
 
 const handleReset = () => {
@@ -409,28 +376,42 @@ const handleViewDetail = (row) => {
 }
 
 let refreshTimer = null
+const autoRefresh = ref(true)
+
+const startAutoRefresh = () => {
+  stopAutoRefresh()
+  refreshTimer = setInterval(refreshAll, 30000)
+}
+
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+watch(autoRefresh, (enabled) => {
+  if (enabled) {
+    startAutoRefresh()
+  } else {
+    stopAutoRefresh()
+  }
+})
 
 onMounted(() => {
   loadTasks()
-  loadStats()
   loadSpiders()
-
-  // 每 30 秒自动刷新
-  refreshTimer = setInterval(refreshAll, 30000)
+  startAutoRefresh()
 })
 
 onUnmounted(() => {
-  if (refreshTimer) clearInterval(refreshTimer)
+  stopAutoRefresh()
 })
 </script>
 
 <style scoped>
 .tasks-container {
   padding: 20px;
-}
-
-.stat-card {
-  text-align: center;
 }
 
 .card-header {
@@ -442,6 +423,15 @@ onUnmounted(() => {
 .header-actions {
   display: flex;
   gap: 10px;
+  align-items: center;
+}
+
+.auto-refresh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #909399;
 }
 
 .filter-form {
