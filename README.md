@@ -128,6 +128,15 @@ CrawloPilot/
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
+## 项目文档
+
+完整文档见 [docs/README.md](docs/README.md)，重点先读：
+
+- [设计哲学](docs/DESIGN_PHILOSOPHY.md) —— 项目为什么这样设计
+- [部署执行](docs/modules/04-execution.md) —— 本地/SSH/Docker/Agent 四种执行方式
+- [节点管理](docs/modules/05-nodes.md) —— 分布式节点接入
+- [任务与实时日志](docs/modules/06-tasks.md) —— 可观测性设计
+
 ## 数据库
 
 主要表：`user`、`role`、`team`、`project`、`project_version`、`spider`、
