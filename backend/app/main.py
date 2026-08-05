@@ -113,10 +113,11 @@ app.add_middleware(MetricsMiddleware)
 
 # ====== 路由注册 ======
 
-# 认证与用户管理
-from app.api.v1 import auth, users
+# 认证与用户/团队管理
+from app.api.v1 import auth, users, teams
 app.include_router(auth.router, prefix=settings.API_PREFIX)
 app.include_router(users.router, prefix=settings.API_PREFIX)
+app.include_router(teams.router, prefix=settings.API_PREFIX)
 
 # 项目管理
 from app.api.v1 import projects, project_files

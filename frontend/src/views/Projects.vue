@@ -20,10 +20,9 @@
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column label="操作" width="300">
+      <el-table-column label="操作" width="240">
         <template #default="{ row }">
           <el-button size="small" type="primary" @click="viewProject(row)">详情</el-button>
-          <el-button size="small" type="success" @click="viewSpiders(row)">爬虫</el-button>
           <el-button size="small" @click="handleEdit(row)">编辑</el-button>
           <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
@@ -45,6 +44,17 @@
           <el-input v-model="projectForm.name" />
         </el-form-item>
         
+        <el-form-item label="所属团队" prop="team_id">
+          <el-select v-model="projectForm.team_id" placeholder="请选择团队" style="width: 100%">
+            <el-option
+              v-for="team in teams"
+              :key="team.id"
+              :label="team.name"
+              :value="team.id"
+            />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="描述" prop="description">
           <el-input v-model="projectForm.description" type="textarea" :rows="3" />
         </el-form-item>
@@ -64,10 +74,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getProjects, createProject, updateProject, deleteProject } from '@/api/project'
+import { getTeams } from '@/api/team'
 import Pagination from '@/components/Pagination.vue'
 
 const router = useRouter()
 const projects = ref([])
+const teams = ref([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
 const editingProject = ref(null)
@@ -83,12 +95,22 @@ const projectForm = reactive({
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }]
+  name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
+  team_id: [{ required: true, message: '请选择团队', trigger: 'change' }]
 }
 
 onMounted(() => {
   loadProjects()
+  loadTeams()
 })
+
+const loadTeams = async () => {
+  try {
+    teams.value = await getTeams()
+  } catch (error) {
+    console.error('加载团队列表失败', error)
+  }
+}
 
 const loadProjects = async ({ page, size } = {}) => {
   try {
@@ -139,10 +161,6 @@ const handleEdit = (row) => {
 
 const viewProject = (row) => {
   router.push(`/projects/${row.id}`)
-}
-
-const viewSpiders = (row) => {
-  router.push(`/spiders?project_id=${row.id}`)
 }
 
 const handleDelete = async (row) => {
