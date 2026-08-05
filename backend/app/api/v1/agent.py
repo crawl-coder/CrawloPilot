@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/nodes/agent", tags=["Agent节点"])
 
-# 任务日志目录（与本地执行器共用）
-LOGS_DIR = Path(__file__).parent.parent.parent.parent / "uploads" / "_task_logs"
+# 任务日志目录（与本地/SSH/Docker 执行器共用：项目根 uploads/_task_logs）
+LOGS_DIR = Path(__file__).parent.parent.parent.parent.parent / "uploads" / "_task_logs"
 
 
 # ==================== Schemas ====================

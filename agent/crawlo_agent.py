@@ -227,6 +227,7 @@ class AgentClient:
             log_lines = []
             stopped = False
             last_upload = time.time()
+            last_stop_check = time.time()
 
             while True:
                 line = proc.stdout.readline()
@@ -235,6 +236,18 @@ class AgentClient:
                     if time.time() - last_upload > 2:
                         self._upload_logs(task_id, "".join(log_lines[-200:]))
                         last_upload = time.time()
+                    # 有持续输出时也定期检查停止指令
+                    if time.time() - last_stop_check > 1:
+                        if self._task_status(task_id):
+                            log(f"任务 {task_id} 收到停止指令")
+                            proc.terminate()
+                            try:
+                                proc.wait(timeout=10)
+                            except subprocess.TimeoutExpired:
+                                proc.kill()
+                            stopped = True
+                            break
+                        last_stop_check = time.time()
                 elif proc.poll() is not None:
                     break
                 else:

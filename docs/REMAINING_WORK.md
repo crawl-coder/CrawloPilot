@@ -12,8 +12,10 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 - [x] 项目管理 + 代码文件上传
 - [x] 爬虫管理 + 运行/停止
 - [x] 本地进程执行（LocalExecutor，无需 Docker/Celery）
+- [x] SSH 远程节点执行
+- [x] Docker 节点直连执行（基础镜像复用 + 任务镜像秒级构建）
+- [x] Agent 节点执行（反向注册/心跳/任务领取/日志回报/停止指令）
 - [x] 任务状态 / 实时日志 / WebSocket 推送
-- [x] SSH 远程节点执行、Docker 节点执行（显式指定节点时）
 - [x] 部署流程验收测试：`tests/test_deployment_flow.py`（18/18 ✅）
 
 ## V1 已裁剪（V2 规划）
@@ -52,7 +54,8 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 
 ## 已知事项
 
-- 本地执行依赖 crawlo 库，示例爬虫需要 `aiomysql`（已安装至 `crawlo_pilot` 环境）
+- crawlo 已升级至 1.7.2（本地环境 + Docker 基础镜像均使用，基础镜像构建优先用本地 wheel）
+- Agent 程序：`agent/crawlo_agent.py`，纯标准库，反向连接控制端
 - 远程 MySQL/Redis（117.72.16.51）网络延迟约 0.5~1s/请求；本地部署建议使用 Docker 版 MySQL/Redis
 - Docker 守护进程未运行，容器模式暂未在本机验证
 - `tests/run_all_tests.py` 中残留数据库明文凭据，生产环境需移除或改用环境变量
