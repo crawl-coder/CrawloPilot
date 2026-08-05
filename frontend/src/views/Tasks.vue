@@ -2,22 +2,12 @@
   <div class="tasks-container">
     <!-- 统计卡片 -->
     <el-row :gutter="20" style="margin-bottom: 20px">
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="总任务数" :value="stats.total" />
-        </el-card>
-      </el-col>
-      <el-col :span="6">
+      <el-col :span="12">
         <el-card shadow="hover" class="stat-card">
           <el-statistic title="运行中" :value="stats.running" />
         </el-card>
       </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="成功率" :value="stats.success_rate" suffix="%" />
-        </el-card>
-      </el-col>
-      <el-col :span="6">
+      <el-col :span="12">
         <el-card shadow="hover" class="stat-card">
           <el-statistic title="失败数" :value="stats.failed" />
         </el-card>
