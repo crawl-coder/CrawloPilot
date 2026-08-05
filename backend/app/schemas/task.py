@@ -3,7 +3,7 @@
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict
 from datetime import datetime
 
 
@@ -20,25 +20,25 @@ class TaskCreate(BaseModel):
 
 class TaskResponse(BaseModel):
     """任务响应"""
-    id: Any
-    spider_id: Any
+    id: int
+    spider_id: Optional[int] = None
     spider_name: str
+    project_name: Optional[str] = None
     status: str
+    schedule_id: Optional[int] = None
+    worker_node: Optional[str] = None
     container_id: Optional[str] = None
+    node_id: Optional[int] = None
+    node_name: Optional[str] = None
+    deploy_mode: Optional[str] = None
     created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     duration: Optional[float] = None
     error_message: Optional[str] = None
-
+    
     class Config:
         from_attributes = True
-
-
-class TaskListResponse(BaseModel):
-    """任务列表响应（含分页）"""
-    items: List[TaskResponse]
-    total: int
 
 
 class TaskStatusResponse(BaseModel):

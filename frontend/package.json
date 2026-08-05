@@ -8,13 +8,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.4.15",
-    "vue-router": "^4.2.5",
-    "pinia": "^2.1.7",
-    "element-plus": "^2.5.3",
     "@element-plus/icons-vue": "^2.3.1",
+    "@guolao/vue-monaco-editor": "^1.6.0",
     "axios": "^1.6.5",
-    "echarts": "^5.4.3"
+    "echarts": "^5.4.3",
+    "element-plus": "^2.5.3",
+    "highlight.js": "^11.11.1",
+    "monaco-editor": "^0.55.1",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.15",
+    "vue-router": "^4.2.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.3",

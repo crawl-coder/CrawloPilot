@@ -1,9 +1,9 @@
 <template>
-  <div>
+  <div class="dashboard-container">
     <h2>仪表盘</h2>
     <el-row :gutter="20" style="margin-top: 20px">
       <el-col :span="6">
-        <el-card shadow="hover" v-loading="loading">
+        <el-card shadow="hover" class="stat-card">
           <el-statistic title="项目总数" :value="stats.projects">
             <template #suffix>
               <el-icon><Files /></el-icon>
@@ -13,7 +13,17 @@
       </el-col>
       
       <el-col :span="6">
-        <el-card shadow="hover" v-loading="loading">
+        <el-card shadow="hover" class="stat-card">
+          <el-statistic title="爬虫总数" :value="stats.spiders">
+            <template #suffix>
+              <el-icon><Aim /></el-icon>
+            </template>
+          </el-statistic>
+        </el-card>
+      </el-col>
+      
+      <el-col :span="6">
+        <el-card shadow="hover" class="stat-card">
           <el-statistic title="运行中任务" :value="stats.runningTasks">
             <template #suffix>
               <el-icon><VideoPlay /></el-icon>
@@ -23,7 +33,7 @@
       </el-col>
       
       <el-col :span="6">
-        <el-card shadow="hover" v-loading="loading">
+        <el-card shadow="hover" class="stat-card">
           <el-statistic title="今日任务" :value="stats.todayTasks">
             <template #suffix>
               <el-icon><Document /></el-icon>
@@ -31,9 +41,11 @@
           </el-statistic>
         </el-card>
       </el-col>
-      
+    </el-row>
+    
+    <el-row :gutter="20" style="margin-top: 20px">
       <el-col :span="6">
-        <el-card shadow="hover" v-loading="loading">
+        <el-card shadow="hover" class="stat-card">
           <el-statistic title="成功率" :value="stats.successRate" suffix="%">
             <template #prefix>
               <el-icon><SuccessFilled /></el-icon>
@@ -41,63 +53,39 @@
           </el-statistic>
         </el-card>
       </el-col>
-    </el-row>
-    
-    <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <span>最近任务</span>
-          </template>
-          <el-table :data="recentTasks" v-loading="loading" size="small" max-height="300">
-            <el-table-column prop="spider_name" label="爬虫" />
-            <el-table-column prop="status" label="状态" width="90">
-              <template #default="{ row }">
-                <el-tag :type="taskStatusType(row.status)" size="small">
-                  {{ taskStatusText(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="created_at" label="时间" width="160">
-              <template #default="{ row }">
-                {{ formatTime(row.created_at) }}
-              </template>
-            </el-table-column>
-          </el-table>
+
+      <el-col :span="6">
+        <el-card shadow="hover" class="stat-card">
+          <el-statistic title="调度配置" :value="stats.schedules" suffix="个">
+            <template #suffix>
+              <el-icon><Clock /></el-icon>
+            </template>
+          </el-statistic>
         </el-card>
       </el-col>
-      <el-col :span="12">
-        <el-card shadow="hover">
-          <template #header>
-            <span>系统状态</span>
-          </template>
-          <el-descriptions :column="1" border size="small" v-loading="loading">
-            <el-descriptions-item label="后端服务">
-              <el-tag :type="health.services?.database === 'connected' ? 'success' : 'danger'" size="small">
-                {{ health.services?.database === 'connected' ? '正常' : '异常' }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="数据库">
-              <el-tag :type="health.services?.database === 'connected' ? 'success' : 'danger'" size="small">
-                {{ health.services?.database || '未知' }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="Redis">
-              <el-tag :type="health.services?.redis === 'connected' ? 'success' : 'danger'" size="small">
-                {{ health.services?.redis || '未知' }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="调度器">
-              <el-tag :type="health.services?.scheduler === 'running' ? 'success' : 'warning'" size="small">
-                {{ health.services?.scheduler || '未知' }}
-              </el-tag>
-            </el-descriptions-item>
-          </el-descriptions>
+
+      <el-col :span="6">
+        <el-card shadow="hover" class="stat-card">
+          <el-statistic title="在线节点" :value="stats.onlineNodes">
+            <template #suffix>
+              <el-icon><Monitor /></el-icon>
+            </template>
+          </el-statistic>
+        </el-card>
+      </el-col>
+
+      <el-col :span="6">
+        <el-card shadow="hover" class="stat-card">
+          <el-statistic title="活跃告警" :value="stats.activeAlerts">
+            <template #suffix>
+              <el-icon><Bell /></el-icon>
+            </template>
+          </el-statistic>
         </el-card>
       </el-col>
     </el-row>
     
-    <el-card style="margin-top: 20px" shadow="hover">
+    <el-card style="margin-top: 20px">
       <template #header>
         <h3>欢迎使用 CrawloPilot</h3>
       </template>
@@ -105,102 +93,77 @@
       <p>当前版本：v1.0.0</p>
       <el-divider />
       <h4>快速开始</h4>
-      <ul>
-        <li>创建您的第一个爬虫项目</li>
-        <li>配置任务调度</li>
-        <li>监控运行状态</li>
-        <li>查看数据统计</li>
-      </ul>
+      <el-steps :space="200" direction="vertical">
+        <el-step title="创建项目" description="在项目管理中创建您的第一个爬虫项目" />
+        <el-step title="创建爬虫" description="在项目中添加爬虫，支持 Git/上传/空模板" />
+        <el-step title="配置调度" description="设置定时任务或手动触发执行" />
+        <el-step title="监控运行" description="在监控中心查看实时运行状态和日志" />
+      </el-steps>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { getProjects } from '@/api/project'
-import { listTasks } from '@/api/execution'
-import { getDashboardData, getHealthStatus } from '@/api/monitoring'
+import { ref, onMounted } from 'vue'
+import { Files, Aim, VideoPlay, Document, SuccessFilled, Clock, Monitor, Bell } from '@element-plus/icons-vue'
+import { getDashboardData, getActiveAlerts } from '@/api/monitoring'
+import { getSpiders } from '@/api/spider'
+import { getNodes } from '@/api/deploy'
 
-const loading = ref(false)
-const stats = reactive({
+const stats = ref({
   projects: 0,
+  spiders: 0,
   runningTasks: 0,
   todayTasks: 0,
-  successRate: 0
-})
-const recentTasks = ref([])
-const health = reactive({
-  status: 'unknown',
-  services: {}
+  successRate: 0,
+  schedules: 0,
+  onlineNodes: 0,
+  activeAlerts: 0
 })
 
-const taskStatusType = (status) => {
-  const map = { pending: 'info', running: 'warning', success: 'success', failed: 'danger', cancelled: 'info' }
-  return map[status] || 'info'
-}
-
-const taskStatusText = (status) => {
-  const map = { pending: '待执行', running: '运行中', success: '成功', failed: '失败', cancelled: '已取消' }
-  return map[status] || status
-}
-
-const formatTime = (time) => {
-  if (!time) return '-'
-  return new Date(time).toLocaleString('zh-CN')
-}
-
-const loadDashboard = async () => {
-  loading.value = true
+onMounted(async () => {
   try {
-    // 并行加载所有数据
-    const [projectsRes, runningRes, todayRes, tasksRes, healthRes] = await Promise.allSettled([
-      getProjects({ limit: 1 }),
-      listTasks({ status: 'running', limit: 1 }),
-      listTasks({ status: 'success', limit: 500 }),
-      listTasks({ limit: 10 }),
-      getHealthStatus()
+    // 并行加载各类统计数据
+    const [dashboard, spidersData, alerts, nodesData] = await Promise.allSettled([
+      getDashboardData().catch(() => ({})),
+      getSpiders({ limit: 1 }).catch(() => ({ total: 0 })),
+      getActiveAlerts().catch(() => []),
+      getNodes().catch(() => [])
     ])
 
-    // 项目总数
-    if (projectsRes.status === 'fulfilled') {
-      const data = projectsRes.value
-      stats.projects = data.total || (Array.isArray(data) ? data.length : 0)
+    if (dashboard.status === 'fulfilled' && dashboard.value) {
+      const d = dashboard.value
+      stats.value.projects = d.projects?.total || 0
+      stats.value.schedules = d.schedules?.total || 0
+      stats.value.runningTasks = d.tasks?.running || 0
+      stats.value.todayTasks = d.tasks?.today || 0
+      stats.value.successRate = d.tasks?.success_rate || 0
     }
 
-    // 运行中任务数
-    if (runningRes.status === 'fulfilled') {
-      const data = runningRes.value
-      stats.runningTasks = data.total || (Array.isArray(data) ? data.length : 0)
+    if (spidersData.status === 'fulfilled') {
+      stats.value.spiders = spidersData.value.total || 0
     }
 
-    // 今日任务 / 成功率（复用成功查询结果）
-    if (todayRes.status === 'fulfilled') {
-      const data = todayRes.value
-      const successItems = data.items || data
-      const successCount = Array.isArray(successItems) ? successItems.length : 0
-      const totalTasks = stats.runningTasks + successCount
-      stats.todayTasks = totalTasks
-      stats.successRate = totalTasks > 0 ? Math.round((successCount / totalTasks) * 100) : 100
+    if (alerts.status === 'fulfilled') {
+      stats.value.activeAlerts = Array.isArray(alerts.value) ? alerts.value.length : 0
     }
 
-    // 最近任务
-    if (tasksRes.status === 'fulfilled') {
-      const data = tasksRes.value
-      recentTasks.value = data.items || data || []
-    }
-
-    // 健康状态
-    if (healthRes.status === 'fulfilled') {
-      Object.assign(health, healthRes.value)
+    if (nodesData.status === 'fulfilled') {
+      const nodes = Array.isArray(nodesData.value) ? nodesData.value : (nodesData.value?.items || [])
+      stats.value.onlineNodes = nodes.filter(n => n.status === 'online').length
     }
   } catch (error) {
-    console.error('加载仪表盘数据失败', error)
-  } finally {
-    loading.value = false
+    console.error('加载 Dashboard 数据失败:', error)
   }
-}
-
-onMounted(() => {
-  loadDashboard()
 })
 </script>
+
+<style scoped>
+.dashboard-container {
+  padding: 20px;
+}
+
+.stat-card {
+  text-align: center;
+}
+</style>

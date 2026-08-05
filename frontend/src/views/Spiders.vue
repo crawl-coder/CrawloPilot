@@ -189,7 +189,7 @@
                       {{ type === 'crawlo' ? 'Crawlo⭐' : type }}
                     </el-tag>
                     <el-progress 
-                      :percentage="(count / spiders.length * 100).toFixed(0)" 
+                      :percentage="Number((count / spiders.length * 100).toFixed(0))"
                       :stroke-width="8"
                       :color="getSpiderTypeColor(type)"
                     />
@@ -352,7 +352,7 @@
                 <div v-if="row.run_count > 0">
                   成功: {{ row.success_count }} / 失败: {{ row.error_count }}
                   <el-progress 
-                    :percentage="((row.success_count / row.run_count) * 100).toFixed(1)" 
+                    :percentage="Number(((row.success_count / row.run_count) * 100).toFixed(1))"
                     :stroke-width="4"
                     :show-text="false"
                     style="margin-top: 4px"
@@ -372,7 +372,7 @@
               <span v-else style="color: #999">未运行</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="280" fixed="right">
+          <el-table-column label="操作" width="350" fixed="right">
             <template #default="{ row }">
               <el-button size="small" type="primary" @click="viewSpider(row)">详情</el-button>
               <el-button size="small" type="success" @click="handleRun(row)" :disabled="row.status === 'disabled'">运行</el-button>
@@ -689,6 +689,43 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 运行爬虫对话框 - 选择节点 -->
+    <el-dialog
+      v-model="runDialogVisible"
+      title="运行爬虫"
+      width="420px"
+      :close-on-click-modal="false"
+    >
+      <div style="padding: 10px 0">
+        <p style="margin-bottom: 15px; font-size: 14px; color: #606266">
+          请选择要运行爬虫 <strong>{{ runningSpider?.name }}</strong> 的目标节点：
+        </p>
+        <el-select v-model="selectedNodeId" placeholder="请选择节点" style="width: 100%" clearable>
+          <el-option :value="null" label="本地运行（不通过远程节点）" />
+          <el-option
+            v-for="node in nodes"
+            :key="node.id"
+            :value="node.id"
+            :disabled="node.status !== 'online'"
+          >
+            <span style="display: flex; align-items: center; gap: 6px">
+              <el-tag size="small" :type="node.status === 'online' ? 'success' : 'danger'" style="flex-shrink: 0">
+                {{ node.status === 'online' ? '在线' : '离线' }}
+              </el-tag>
+              {{ node.name }}
+              <span style="color: #909399; font-size: 12px">({{ node.host }})</span>
+            </span>
+          </el-option>
+        </el-select>
+      </div>
+      <template #footer>
+        <el-button @click="runDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="runLoading" @click="confirmRun">确定运行</el-button>
+      </template>
+    </el-dialog>
+
+
   </div>
 </template>
 
@@ -699,6 +736,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, UploadFilled, Grid, List, VideoPlay, Document, More, CircleCheck, CircleClose, DataLine, Rank, Loading, MoreFilled } from '@element-plus/icons-vue'
 import { getSpiders, createSpider, updateSpider, deleteSpider, runSpider } from '@/api/spider'
 import { getProjects } from '@/api/project'
+import { getNodes } from '@/api/node'
+import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, getSpiderTypeColor, formatDateTime as formatDate, formatRelativeTime, formatDuration as formatTime } from '@/utils/common'
 
 const router = useRouter()
 const route = useRoute()
@@ -716,6 +755,22 @@ const pageSize = ref(10) // 每页数量
 // 分步向导
 const currentStep = ref(0)
 const uploadFile = ref(null)
+
+// 运行爬虫 - 节点选择
+const nodes = ref([])
+const runDialogVisible = ref(false)
+const runningSpider = ref(null)
+const selectedNodeId = ref(null)
+const runLoading = ref(false)
+
+const loadNodes = async () => {
+  try {
+    const res = await getNodes()
+    nodes.value = Array.isArray(res) ? res : []
+  } catch (e) {
+    nodes.value = []
+  }
+}
 
 // 视图模式 - 从localStorage读取或根据数据量智能选择
 const viewMode = ref(localStorage.getItem('spiderViewMode') || null) // null 表示需要根据数据量选择
@@ -830,6 +885,7 @@ const rules = {
 
 onMounted(() => {
   loadProjects()
+  loadNodes()
   
   // 从URL参数中读取project_id
   if (route.query.project_id) {
@@ -892,68 +948,6 @@ const resetSearch = () => {
 const getProjectName = (projectId) => {
   const project = projects.value.find(p => p.id === projectId)
   return project ? project.name : '-'
-}
-
-const getStatusType = (status) => {
-  const typeMap = {
-    draft: 'info',
-    active: 'success',
-    disabled: 'warning',
-    error: 'danger'
-  }
-  return typeMap[status] || 'info'
-}
-
-const getStatusText = (status) => {
-  const textMap = {
-    draft: '草稿',
-    active: '运行中',
-    disabled: '已禁用',
-    error: '错误'
-  }
-  return textMap[status] || status
-}
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
-}
-
-const formatRelativeTime = (dateStr) => {
-  if (!dateStr) return '未运行'
-  
-  const now = new Date()
-  const date = new Date(dateStr)
-  const diff = Math.floor((now - date) / 1000) // 秒
-  
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
-  if (diff < 604800) return `${Math.floor(diff / 86400)}天前`
-  
-  return formatDate(dateStr)
-}
-
-const formatTime = (seconds) => {
-  if (seconds >= 3600) {
-    return `${Math.floor(seconds / 3600)}小时`
-  } else if (seconds >= 60) {
-    return `${Math.floor(seconds / 60)}分钟`
-  }
-  return `${seconds}秒`
-}
-
-// 获取爬虫类型颜色
-const getSpiderTypeColor = (type) => {
-  const colorMap = {
-    crawlo: '#722ED1',    // 紫色 - Crawlo
-    scrapy: '#FA8C16',    // 橙色
-    selenium: '#1890FF',  // 蓝色
-    playwright: '#52C41A', // 绿色
-    requests: '#8C8C8C',  // 灰色
-    custom: '#13C2C2'     // 青色
-  }
-  return colorMap[type] || '#8C8C8C'
 }
 
 // 卡片操作
@@ -1106,19 +1100,30 @@ const viewSpider = (row) => {
 }
 
 const handleRun = async (row) => {
-  try {
-    await ElMessageBox.confirm(`确定要运行爬虫 "${row.name}" 吗？`, '提示', {
-      type: 'info'
-    })
+  // 加载节点列表（如果还没加载）
+  if (nodes.value.length === 0) {
+    await loadNodes()
+  }
+  runningSpider.value = row
+  selectedNodeId.value = null
+  runDialogVisible.value = true
+}
 
-    await runSpider(row.id)
+const confirmRun = async () => {
+  const spider = runningSpider.value
+  if (!spider) return
+  runLoading.value = true
+  try {
+    await runSpider(spider.id, { node_id: selectedNodeId.value })
     ElMessage.success('爬虫运行指令已发送')
+    runDialogVisible.value = false
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.detail || '运行失败')
-    }
+    ElMessage.error(error.response?.data?.detail || '运行失败')
+  } finally {
+    runLoading.value = false
   }
 }
+
 
 const handleDelete = async (row) => {
   try {
@@ -1359,4 +1364,6 @@ const handleDelete = async (row) => {
     opacity: 1;
   }
 }
+
+
 </style>

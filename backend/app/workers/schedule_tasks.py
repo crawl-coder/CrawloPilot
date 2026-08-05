@@ -22,6 +22,7 @@ def execute_schedule_task(self, schedule_id: int, task_instance_id: int = None):
         task_instance_id: 任务实例 ID
     """
     db = SessionLocal()
+    task_instance_id_local = task_instance_id
     try:
         logger.info(f"Executing schedule task: schedule_id={schedule_id}")
         
@@ -35,70 +36,52 @@ def execute_schedule_task(self, schedule_id: int, task_instance_id: int = None):
             return {"status": "failed", "error": "Schedule not found"}
         
         # 创建任务实例（如果没有提供）
-        if not task_instance_id:
+        if not task_instance_id_local:
             task_instance = task_store.create_task_instance(
                 schedule_id=schedule_id,
                 spider_name=schedule.spider_name
             )
-            task_instance_id = task_instance.id
+            task_instance_id_local = task_instance.id
         else:
-            task_instance = task_store.get_task_instance(task_instance_id)
+            task_instance = task_store.get_task_instance(task_instance_id_local)
         
         # 更新任务状态为运行中
-        task_store.update_task_status(task_instance_id, TaskStatus.RUNNING)
+        task_store.update_task_status(task_instance_id_local, TaskStatus.RUNNING)
         task_store.set_worker_info(
-            task_instance_id,
+            task_instance_id_local,
             worker_node=self.request.hostname,
             container_id=str(uuid.uuid4())
         )
         
-        # 调用执行引擎执行爬虫任务
-        from app.services.task_executor import TaskExecutor, TaskConfig
-        import asyncio
+        # 如果指定了目标节点，通过 SSH 在远程服务器上执行
+        if schedule.node_id:
+            _execute_on_node(db, schedule, task_instance_id_local)
+        else:
+            _execute_locally(db, schedule, task_instance_id_local)
         
-        executor = TaskExecutor()
-        config = TaskConfig(
-            task_id=str(task_instance_id),
-            spider_id=schedule.spider_id if hasattr(schedule, 'spider_id') else '',
-            spider_name=schedule.spider_name,
-            git_url=schedule.git_url if hasattr(schedule, 'git_url') else None,
-            git_branch=schedule.git_branch if hasattr(schedule, 'git_branch') else 'main',
-            memory_limit=schedule.memory_limit if hasattr(schedule, 'memory_limit') else '512m',
-            cpu_limit=schedule.cpu_limit if hasattr(schedule, 'cpu_limit') else 1.0,
-            timeout=schedule.timeout if hasattr(schedule, 'timeout') else 3600,
-        )
-        
-        # 异步执行任务
-        container_id = asyncio.run(executor.execute_task(config))
-        
-        logger.info(f"Task {task_instance_id} started in container {container_id[:12]}")
-        
-        result = {
-            "status": "success",
-            "task_instance_id": task_instance_id,
-            "schedule_id": schedule_id,
-            "spider_name": schedule.spider_name,
-            "container_id": container_id,
-            "started_at": datetime.utcnow().isoformat()
-        }
-        
-        # 更新任务状态为成功（示例）
+        # 更新任务状态为成功
         task_store.update_task_status(
-            task_instance_id,
+            task_instance_id_local,
             TaskStatus.SUCCESS,
             stats={"items_scraped": 0, "duration": 0}
         )
         
-        return result
+        return {
+            "status": "success",
+            "task_instance_id": task_instance_id_local,
+            "schedule_id": schedule_id,
+            "spider_name": schedule.spider_name,
+            "started_at": datetime.utcnow().isoformat()
+        }
         
     except Exception as e:
         logger.error(f"Task execution failed: {e}", exc_info=True)
         
         # 更新任务状态为失败
-        if task_instance_id:
+        if task_instance_id_local:
             task_store = TaskInstanceStore(db)
             task_store.update_task_status(
-                task_instance_id,
+                task_instance_id_local,
                 TaskStatus.FAILED,
                 stats={"error": str(e)}
             )
@@ -106,6 +89,89 @@ def execute_schedule_task(self, schedule_id: int, task_instance_id: int = None):
         return {"status": "failed", "error": str(e)}
     finally:
         db.close()
+
+
+def _execute_on_node(db, schedule, task_instance_id):
+    """在指定节点上通过 SSH 执行爬虫"""
+    from app.models import Spider, Node
+    
+    logger.info(f"Executing schedule on node {schedule.node_id}")
+    
+    # 查找节点
+    node = db.query(Node).get(schedule.node_id)
+    if not node:
+        raise Exception(f"Node {schedule.node_id} not found")
+    
+    # 查找爬虫
+    spider = db.query(Spider).filter(
+        Spider.project_id == schedule.project_id,
+        Spider.name == schedule.spider_name
+    ).first()
+    if not spider:
+        raise Exception(f"Spider '{schedule.spider_name}' not found in project {schedule.project_id}")
+    
+    # 获取代码目录
+    from app.services.upload_service import UploadService
+    upload_service = UploadService()
+    code_dir = upload_service.get_spider_code_dir(spider.project_id, spider.id)
+    if not code_dir:
+        raise Exception("Spider code directory not found")
+    
+    from app.services.ssh_executor import get_ssh_executor, SshTaskConfig
+    
+    ssh_executor = get_ssh_executor()
+    config = SshTaskConfig(
+        task_id=str(task_instance_id),
+        spider_id=str(spider.id),
+        spider_name=spider.spider_name or spider.name,
+        ssh_host=node.ssh_host or node.host,
+        ssh_port=node.ssh_port or 22,
+        ssh_user=node.ssh_user or "root",
+        ssh_pwd=node.ssh_pwd,
+        ssh_key=node.ssh_key,
+        code_dir=code_dir,
+        entry_file=spider.entry_file,
+        spider_name_to_run=spider.spider_name or spider.name,
+    )
+    
+    ssh_executor.execute_task(config)
+    
+    # 更新任务实例的节点信息
+    from app.core.database import SessionLocal
+    db2 = SessionLocal()
+    try:
+        task = db2.query(TaskInstance).get(int(task_instance_id))
+        if task:
+            task.node_id = schedule.node_id
+            task.deploy_mode = "ssh"
+            db2.commit()
+    finally:
+        db2.close()
+    
+    logger.info(f"Task {task_instance_id} started on node {node.name} via SSH")
+
+
+def _execute_locally(db, schedule, task_instance_id):
+    """在本地执行爬虫（Docker 或本地进程）"""
+    # 调用执行引擎执行爬虫任务
+    from app.services.task_executor import TaskExecutor, TaskConfig
+    import asyncio
+    
+    executor = TaskExecutor()
+    config = TaskConfig(
+        task_id=str(task_instance_id),
+        spider_id=schedule.spider_id if hasattr(schedule, 'spider_id') else '',
+        spider_name=schedule.spider_name,
+        git_url=schedule.git_url if hasattr(schedule, 'git_url') else None,
+        git_branch=schedule.git_branch if hasattr(schedule, 'git_branch') else 'main',
+        memory_limit=schedule.memory_limit if hasattr(schedule, 'memory_limit') else '512m',
+        cpu_limit=schedule.cpu_limit if hasattr(schedule, 'cpu_limit') else 1.0,
+        timeout=schedule.timeout if hasattr(schedule, 'timeout') else 3600,
+    )
+    
+    container_id = asyncio.run(executor.execute_task(config))
+    
+    logger.info(f"Task {task_instance_id} started in container {container_id[:12]}")
 
 
 @celery_app.task(bind=True, name="schedule.check_and_trigger", queue="schedule")

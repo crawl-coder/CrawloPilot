@@ -37,7 +37,15 @@
 
 #### 4. 调度相关
 - `Schedule` - 调度配置表
-- `TaskInstance` - 任务实例表
+- `TaskInstance` - 任务实例表（关键字段需掌握）
+  - `id` - 主键
+  - `spider_id` - 关联爬虫
+  - `status` - ENUM: PENDING/RUNNING/PAUSED/SUCCESS/FAILED/TIMEOUT/CANCELLED
+  - `started_at` / `finished_at` - 起止时间
+  - `duration` - 执行时长（秒）
+  - `process_id` - 本地进程 PID
+  - `pages_crawled` / `items_scraped` / `errors_count` - 爬虫指标
+  - `error_message` - 错误信息
 
 #### 5. 其他
 - `AlertRule` - 告警规则
@@ -311,3 +319,45 @@ mysqldump -h 117.72.16.51 -u crawlo -p crawlo_pilot > backup.sql
 ```bash
 mysql -h 117.72.16.51 -u crawlo -p crawlo_pilot < backup.sql
 ```
+
+---
+
+## ⚠️ MySQL ENUM 列管理（易踩坑）
+
+### 问题描述
+当 Python 模型中 ENUM 新增枚举值后，MySQL 数据库中的 ENUM 列不会自动跟随更新，写入新值时会报：
+```
+DataError: (1265, "Data truncated for column 'status' at row 1")
+```
+
+### 根因
+- SQLAlchemy 的 `alembic revision --autogenerate` **无法检测** ENUM 值的增减
+- 手动 ALTER TABLE 是唯一可靠的解决方案
+
+### 修复方法
+```sql
+-- 查看当前 ENUM 定义
+SHOW COLUMNS FROM task_instance WHERE Field = 'status';
+
+-- 重新定义完整 ENUM 列表（必须包含所有旧值 + 新值）
+ALTER TABLE task_instance MODIFY COLUMN status 
+  ENUM('PENDING','RUNNING','PAUSED','SUCCESS','FAILED','TIMEOUT','CANCELLED') 
+  DEFAULT 'PENDING';
+```
+
+### 使用 Python 执行修复
+```python
+# 在需要添加新值的服务中
+from sqlalchemy import text
+db.execute(text("""
+    ALTER TABLE task_instance MODIFY COLUMN status 
+    ENUM('PENDING','RUNNING','PAUSED','SUCCESS','FAILED','TIMEOUT','CANCELLED') 
+    DEFAULT 'PENDING'
+"""))
+db.commit()
+```
+
+### 最佳实践
+1. **任何时候**给 ENUM 列加新值，都必须使用 **ALTER TABLE 完整重定义**
+2. Python 模型、Pydantic Schema、MySQL 列定义三者必须同步
+3. 建议在 Alembic 迁移文件中手动编写 `op.execute("ALTER TABLE ...")` 来管理 ENUM 变更

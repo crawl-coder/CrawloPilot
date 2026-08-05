@@ -6,9 +6,10 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models import Deploy, DeployStatus, DeployStrategy, Container, ContainerStatus, Node, ProjectVersion
-from app.services.docker_service import get_docker_service
+from app.services.docker_service import DockerService, get_docker_service
 import logging
 import uuid
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,20 @@ class DeployService:
     def __init__(self, db: Session):
         self.db = db
         self.docker = get_docker_service()
+    
+    def _get_docker_for_node(self, node: Node) -> DockerService:
+        """
+        根据节点创建对应的 Docker 连接
+        
+        Args:
+            node: 目标节点
+            
+        Returns:
+            连接到该节点的 DockerService
+        """
+        docker_url = f"tcp://{node.host}:{node.port}"
+        logger.info(f"Connecting to Docker on node {node.name}: {docker_url}")
+        return DockerService(docker_host=docker_url)
     
     async def create_deploy(
         self,
@@ -105,13 +120,10 @@ class DeployService:
                 
             # 根据策略执行部署（使用同步版本）
             if deploy.strategy == DeployStrategy.BLUE_GREEN:
-                import asyncio
                 result = asyncio.run(self._blue_green_deploy(deploy, version, node))
             elif deploy.strategy == DeployStrategy.ROLLING:
-                import asyncio
                 result = asyncio.run(self._rolling_deploy(deploy, version, node))
             else:  # RECREATE
-                import asyncio
                 result = asyncio.run(self._recreate_deploy(deploy, version, node))
                 
             # 更新部署状态
@@ -144,12 +156,19 @@ class DeployService:
         try:
             logger.info(f"Rolling back deploy: {deploy_id}")
                 
+            # 获取目标节点 Docker 连接
+            node_docker = self.docker
+            if deploy.node_id:
+                node = self.db.query(Node).get(deploy.node_id)
+                if node:
+                    node_docker = self._get_docker_for_node(node)
+                
             # 停止本次部署创建的容器
             if deploy.container_ids:
                 for container_id in deploy.container_ids:
                     try:
-                        self.docker.stop_container(container_id)
-                        self.docker.remove_container(container_id)
+                        node_docker.stop_container(container_id)
+                        node_docker.remove_container(container_id)
                     except Exception as e:
                         logger.warning(f"Failed to remove container during rollback: {e}")
                 
@@ -175,6 +194,7 @@ class DeployService:
         2. 删除旧容器
         3. 创建新容器
         """
+        node_docker = self._get_docker_for_node(node)
         container_ids = []
         
         # 1. 停止并删除该项目的旧容器
@@ -186,8 +206,8 @@ class DeployService:
         
         for old_container in old_containers:
             try:
-                self.docker.stop_container(old_container.container_id)
-                self.docker.remove_container(old_container.container_id)
+                node_docker.stop_container(old_container.container_id)
+                node_docker.remove_container(old_container.container_id)
                 old_container.status = ContainerStatus.EXITED
                 old_container.stopped_at = datetime.utcnow()
             except Exception as e:
@@ -199,7 +219,7 @@ class DeployService:
         container_name = f"{version.project.name}-{version.version}-{uuid.uuid4().hex[:8]}"
         image_tag = version.image_tag or f"{version.project.name}:{version.version}"
         
-        container_info = self.docker.create_container(
+        container_info = node_docker.create_container(
             image=image_tag,
             name=container_name,
             environment={
@@ -245,6 +265,7 @@ class DeployService:
         3. 切换流量（更新端口映射）
         4. 停止旧容器（蓝）
         """
+        node_docker = self._get_docker_for_node(node)
         container_ids = []
         
         # 1. 获取当前运行的容器（蓝）
@@ -261,7 +282,7 @@ class DeployService:
         # 使用不同的端口（+1000）避免冲突
         green_ports = {"80/tcp": 8001} if not blue_containers else {"80/tcp": 8002}
         
-        green_container_info = self.docker.create_container(
+        green_container_info = node_docker.create_container(
             image=image_tag,
             name=green_container_name,
             environment={
@@ -295,7 +316,7 @@ class DeployService:
         # 4. 停止蓝容器
         for blue_container in blue_containers:
             try:
-                self.docker.stop_container(blue_container.container_id)
+                node_docker.stop_container(blue_container.container_id)
                 blue_container.status = ContainerStatus.EXITED
                 blue_container.stopped_at = datetime.utcnow()
             except Exception as e:
@@ -320,6 +341,7 @@ class DeployService:
         1. 逐个替换容器
         2. 每次替换一个，等待健康后继续
         """
+        node_docker = self._get_docker_for_node(node)
         container_ids = []
         
         # 获取当前容器
@@ -336,7 +358,7 @@ class DeployService:
             # 创建新容器
             new_container_name = f"{version.project.name}-{version.version}-rolling-{idx}-{uuid.uuid4().hex[:6]}"
             
-            new_container_info = self.docker.create_container(
+            new_container_info = node_docker.create_container(
                 image=image_tag,
                 name=new_container_name,
                 environment={
@@ -367,7 +389,7 @@ class DeployService:
             
             # 停止旧容器
             try:
-                self.docker.stop_container(old_container.container_id)
+                node_docker.stop_container(old_container.container_id)
                 old_container.status = ContainerStatus.EXITED
                 old_container.stopped_at = datetime.utcnow()
             except Exception as e:

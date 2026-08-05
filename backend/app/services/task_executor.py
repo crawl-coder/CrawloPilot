@@ -511,13 +511,8 @@ class TaskExecutor:
                 logger.error(f"Failed to cleanup task {task_id}: {e}")
         
         self.active_tasks.clear()
-    
-    def __del__(self):
-        """析构函数"""
-        try:
-            asyncio.create_task(self.cleanup())
-        except:
-            pass
+
+    # 注意：不定义 __del__ 方法，清理由 lifespan 生命周期管理负责
 
 
 # 全局执行器实例
@@ -530,3 +525,4 @@ def get_executor() -> TaskExecutor:
     if _executor is None:
         _executor = TaskExecutor()
     return _executor
+

@@ -28,7 +28,6 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item @click="showEditDialog">编辑信息</el-dropdown-item>
-              <el-dropdown-item @click="activeTab = 'schedule'">调度配置</el-dropdown-item>
               <el-dropdown-item divided @click="handleDelete" type="danger">删除爬虫</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -43,19 +42,20 @@
         <div class="file-browser" v-loading="fileLoading">
           <el-row :gutter="20" style="height: 600px">
             <!-- 文件树 -->
-            <el-col :span="8">
+            <el-col :span="4">
               <div class="file-tree-container">
                 <div class="tree-header">
-                  <el-button size="small" @click="loadFileTree" :icon="Refresh">刷新</el-button>
-                  <el-button size="small" type="primary" @click="showCreateDialog">新建</el-button>
+                  <span class="tree-title">项目文件</span>
+                  <el-button size="small" @click="loadFileTree" :icon="Refresh" text>刷新</el-button>
                 </div>
                 <el-tree
                   :data="fileTree"
                   :props="treeProps"
                   node-key="path"
-                  default-expand-all
-                  :expand-on-click-node="false"
+                  :expand-on-click-node="true"
                   @node-click="handleNodeClick"
+                  @node-expand="handleNodeExpand"
+                  @node-collapse="handleNodeCollapse"
                 >
                   <template #default="{ node, data }">
                     <span class="custom-tree-node">
@@ -80,22 +80,38 @@
             </el-col>
 
             <!-- 文件内容 -->
-            <el-col :span="16">
+            <el-col :span="20">
               <div class="file-content-container">
                 <div class="content-header" v-if="currentFile">
                   <span class="file-name">{{ currentFile.name }}</span>
-                  <el-button size="small" type="primary" @click="saveFile" :loading="saving">
-                    保存
-                  </el-button>
+                  <div class="header-actions">
+                    <el-tag size="small" type="info">{{ getLanguage(currentFile.name) }}</el-tag>
+                    <el-button size="small" type="primary" @click="toggleEdit" :icon="isEditing ? View : Edit">
+                      {{ isEditing ? '预览' : '编辑' }}
+                    </el-button>
+                    <el-button v-if="isEditing" size="small" type="success" @click="saveFile" :loading="saving" :icon="Check">
+                      保存
+                    </el-button>
+                  </div>
                 </div>
                 <div v-if="currentFile && !currentFile.is_binary" class="content-editor">
+                  <!-- 编辑模式 -->
                   <el-input
+                    v-if="isEditing"
                     v-model="fileContent"
                     type="textarea"
                     :rows="30"
                     :autosize="false"
                     placeholder="文件内容"
+                    class="code-textarea"
                   />
+                  <!-- 预览模式（高亮显示） -->
+                  <div v-else class="code-preview">
+                    <div class="line-numbers">
+                      <span v-for="(_, index) in lineNumbers" :key="index">{{ index + 1 }}</span>
+                    </div>
+                    <pre class="code-content"><code :class="'language-' + getLanguage(currentFile.name)" v-html="highlightedCode"></code></pre>
+                  </div>
                 </div>
                 <div v-else-if="currentFile?.is_binary" class="binary-file">
                   <el-empty description="二进制文件，无法预览" />
@@ -106,82 +122,6 @@
               </div>
             </el-col>
           </el-row>
-        </div>
-      </el-tab-pane>
-
-      <!-- 运行监控 -->
-      <el-tab-pane label="运行监控" name="monitor">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="运行状态">
-            <el-tag :type="getStatusType(spider?.status)">
-              {{ getStatusText(spider?.status) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="运行统计">
-            总运行: {{ spider?.run_count }} 次 | 
-            成功: {{ spider?.success_count }} | 
-            失败: {{ spider?.error_count }}
-          </el-descriptions-item>
-          <el-descriptions-item label="最后运行">
-            {{ spider?.last_run_at ? formatDate(spider.last_run_at) : '未运行' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="最后状态">
-            <el-tag v-if="spider?.last_run_status" :type="spider.last_run_status === 'success' ? 'success' : 'danger'">
-              {{ spider.last_run_status }}
-            </el-tag>
-            <span v-else>-</span>
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <el-alert title="运行日志功能开发中" type="info" :closable="false" style="margin-top: 20px" />
-      </el-tab-pane>
-
-      <!-- 调度配置 -->
-      <el-tab-pane label="调度配置" name="schedule">
-        <div v-loading="schedulesLoading">
-          <div v-if="schedules.length === 0" style="text-align: center; padding: 40px">
-            <el-empty description="暂无调度任务" />
-            <el-button type="primary" @click="goToCreateSchedule" style="margin-top: 16px">
-              创建调度
-            </el-button>
-          </div>
-          <el-table v-else :data="schedules" border style="width: 100%">
-            <el-table-column prop="id" label="ID" width="80" />
-            <el-table-column label="类型" width="100">
-              <template #default="{ row }">
-                <el-tag v-if="row.schedule_type === 'cron'" type="primary">Cron</el-tag>
-                <el-tag v-else-if="row.schedule_type === 'interval'" type="success">间隔</el-tag>
-                <el-tag v-else type="info">一次性</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="规则" width="160">
-              <template #default="{ row }">
-                <span v-if="row.schedule_type === 'cron'">{{ row.cron_expr }}</span>
-                <span v-else-if="row.schedule_type === 'interval'">每 {{ row.interval_seconds }} 秒</span>
-                <span v-else>{{ row.run_date }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="priority" label="优先级" width="80" />
-            <el-table-column label="状态" width="80">
-              <template #default="{ row }">
-                <el-tag v-if="row.enabled" type="success" size="small">启用</el-tag>
-                <el-tag v-else type="info" size="small">禁用</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="下次执行" width="180">
-              <template #default="{ row }">
-                {{ row.next_run_time || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="200">
-              <template #default="{ row }">
-                <el-button size="small" @click="handleToggleSchedule(row)">
-                  {{ row.enabled ? '禁用' : '启用' }}
-                </el-button>
-                <el-button size="small" type="primary" @click="handleTriggerSchedule(row)">触发</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
         </div>
       </el-tab-pane>
 
@@ -284,48 +224,34 @@
 
       <!-- 基本信息 -->
       <el-tab-pane label="基本信息" name="info">
-        <div style="text-align: right; margin-bottom: 16px">
-          <el-button v-if="!editingInfo" type="primary" size="small" @click="editingInfo = true">
-            <el-icon><Edit /></el-icon> 编辑
-          </el-button>
-          <template v-else>
-            <el-button size="small" @click="editingInfo = false">取消</el-button>
-            <el-button type="primary" size="small" @click="handleSaveInfo" :loading="savingInfo">保存</el-button>
-          </template>
-        </div>
-
-        <template v-if="!editingInfo">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="爬虫名称">{{ spider?.name }}</el-descriptions-item>
-            <el-descriptions-item label="类型">
-              <el-tag :color="getSpiderTypeColor(spider?.spider_type)" style="color: white; border: none">
-                {{ spider?.spider_type === 'crawlo' ? 'Crawlo⭐' : spider?.spider_type }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="状态">
-              <el-tag :type="getStatusType(spider?.status)">
-                {{ getStatusText(spider?.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="入口文件">{{ spider?.entry_file || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="描述" :span="2">{{ spider?.description || '无' }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ formatDate(spider?.created_at) }}</el-descriptions-item>
-            <el-descriptions-item label="更新时间">{{ formatDate(spider?.updated_at) }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <template v-else>
-          <el-form :model="editForm" label-width="120px" style="max-width: 600px">
-            <el-form-item label="爬虫名称">
-              <el-input v-model="editForm.name" />
-            </el-form-item>
-            <el-form-item label="入口文件">
-              <el-input v-model="editForm.entry_file" placeholder="spider.py" />
-            </el-form-item>
-            <el-form-item label="描述">
-              <el-input v-model="editForm.description" type="textarea" :rows="3" />
-            </el-form-item>
-          </el-form>
-        </template>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="爬虫名称">{{ spider?.name }}</el-descriptions-item>
+          <el-descriptions-item label="类型">
+            <el-tag :color="getSpiderTypeColor(spider?.spider_type)" style="color: white; border: none">
+              {{ spider?.spider_type === 'crawlo' ? 'Crawlo⭐' : spider?.spider_type }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="getStatusType(spider?.status)">
+              {{ getStatusText(spider?.status) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="入口文件">{{ spider?.entry_file || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="描述" :span="2">{{ spider?.description || '无' }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatDate(spider?.created_at) }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ formatDate(spider?.updated_at) }}</el-descriptions-item>
+          <!-- 部署节点信息 -->
+          <el-descriptions-item label="部署节点" :span="2">
+            <template v-if="spider?.deploy_nodes && spider.deploy_nodes.length > 0">
+              <div v-for="node in spider.deploy_nodes" :key="node.id" class="deploy-node-item">
+                <el-tag type="success" size="small" style="margin-right: 6px">在线</el-tag>
+                <span class="node-label">{{ node.name }}</span>
+                <span class="node-host">{{ node.host }}:{{ node.port }}</span>
+              </div>
+            </template>
+            <span v-else class="no-node">未部署到任何节点</span>
+          </el-descriptions-item>
+        </el-descriptions>
       </el-tab-pane>
     </el-tabs>
 
@@ -344,17 +270,68 @@
         <el-button type="primary" @click="handleCreate">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 运行爬虫对话框 -->
+    <el-dialog v-model="showRunDialog" title="运行爬虫" width="500px">
+      <el-form label-width="100px">
+        <el-form-item label="运行模式">
+          <el-radio-group v-model="runForm.mode">
+            <el-radio label="local">本地运行</el-radio>
+            <el-radio label="node">部署到节点</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="目标节点" v-if="runForm.mode === 'node'">
+          <el-select v-model="runForm.nodeId" placeholder="请选择节点" style="width: 100%" :loading="nodesLoading">
+            <el-option
+              v-for="node in availableNodes"
+              :key="node.id"
+              :label="`${node.name} (${node.ssh_host || node.host}:${node.ssh_port || node.port})`"
+              :value="node.id"
+            >
+              <span>{{ node.name }}</span>
+              <el-tag 
+                :type="node.status === 'online' ? 'success' : 'danger'" 
+                size="small" 
+                style="margin-left: 8px"
+              >
+                {{ node.status === 'online' ? '在线' : '离线' }}
+              </el-tag>
+              <el-tag size="small" style="margin-left: 4px">
+                {{ node.connect_type === 'ssh' ? 'SSH' : node.connect_type }}
+              </el-tag>
+            </el-option>
+          </el-select>
+          <div v-if="availableNodes.length === 0" style="color: #909399; font-size: 12px; margin-top: 4px">
+            暂无可用节点，请先添加节点
+          </div>
+        </el-form-item>
+        <el-form-item label="部署信息" v-if="runForm.mode === 'node' && selectedNode">
+          <div style="font-size: 13px; line-height: 1.8">
+            <div><strong>主机:</strong> {{ selectedNode.ssh_host || selectedNode.host }}</div>
+            <div><strong>端口:</strong> {{ selectedNode.ssh_port || selectedNode.port }}</div>
+            <div><strong>连接方式:</strong> {{ selectedNode.connect_type }}</div>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRunDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmRun" :loading="running">确认运行</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Folder, Document, More, Back, VideoPlay, Delete, Edit } from '@element-plus/icons-vue'
-import { getSpider, runSpider, deleteSpider, updateSpider, getSpiderFileTree, getSpiderFileContent, saveSpiderFileContent, createSpiderFileOrDir, deleteSpiderFileOrDir } from '@/api/spider'
-import { getSchedules, enableSchedule, disableSchedule, triggerSchedule } from '@/api/schedule'
+import { Refresh, Folder, Document, More, Back, VideoPlay, Delete, Edit, View, Check } from '@element-plus/icons-vue'
+import { getSpider, runSpider, deleteSpider, getSpiderFileTree, getSpiderFileContent, saveSpiderFileContent, createSpiderFileOrDir, deleteSpiderFileOrDir } from '@/api/spider'
 import { gitClone, gitPull, gitPush, gitGetBranches, gitBranchOperation, gitGetCommits, gitGetStatus } from '@/api/spider-git'
+import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, getSpiderTypeColor, formatDateTime as formatDate } from '@/utils/common'
+import { getNodes } from '@/api/node'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github.css'
 
 const route = useRoute()
 const router = useRouter()
@@ -364,18 +341,18 @@ const spider = ref(null)
 const activeTab = ref('code') // 默认显示代码结构
 const running = ref(false)
 
-// 编辑信息
-const editingInfo = ref(false)
-const savingInfo = ref(false)
-const editForm = reactive({
-  name: '',
-  entry_file: '',
-  description: ''
+// 运行对话框
+const showRunDialog = ref(false)
+const nodesLoading = ref(false)
+const availableNodes = ref([])
+const runForm = reactive({
+  mode: 'local',
+  nodeId: null
 })
-
-// 调度管理
-const schedules = ref([])
-const schedulesLoading = ref(false)
+const selectedNode = computed(() => {
+  if (!runForm.nodeId) return null
+  return availableNodes.value.find(n => n.id === runForm.nodeId) || null
+})
 
 // Git管理
 const gitActiveTab = ref('operations')
@@ -400,10 +377,74 @@ const fileTree = ref([])
 const currentFile = ref(null)
 const fileContent = ref('')
 const saving = ref(false)
+const isEditing = ref(false)
 
 const treeProps = {
   children: 'children',
   label: 'name'
+}
+
+// 代码高亮
+const highlightedCode = computed(() => {
+  if (!fileContent.value) return ''
+  const lang = getLanguage(currentFile.value?.name || '')
+  try {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(fileContent.value, { language: lang }).value
+    }
+    return hljs.highlightAuto(fileContent.value).value
+  } catch (e) {
+    return fileContent.value
+  }
+})
+
+const lineNumbers = computed(() => {
+  if (!fileContent.value) return []
+  return fileContent.value.split('\n')
+})
+
+// 根据文件名检测语言
+const getLanguage = (filename) => {
+  if (!filename) return 'text'
+  const ext = filename.split('.').pop().toLowerCase()
+  const langMap = {
+    'py': 'python',
+    'js': 'javascript',
+    'ts': 'typescript',
+    'jsx': 'javascript',
+    'tsx': 'typescript',
+    'vue': 'xml',
+    'html': 'html',
+    'css': 'css',
+    'scss': 'scss',
+    'less': 'less',
+    'json': 'json',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'xml': 'xml',
+    'md': 'markdown',
+    'sh': 'bash',
+    'bash': 'bash',
+    'sql': 'sql',
+    'java': 'java',
+    'go': 'go',
+    'rs': 'rust',
+    'rb': 'ruby',
+    'php': 'php',
+    'c': 'c',
+    'cpp': 'cpp',
+    'h': 'c',
+    'ini': 'ini',
+    'cfg': 'ini',
+    'conf': 'ini',
+    'toml': 'toml',
+    'txt': 'text',
+  }
+  return langMap[ext] || 'text'
+}
+
+const toggleEdit = () => {
+  isEditing.value = !isEditing.value
 }
 
 // 创建对话框
@@ -415,13 +456,7 @@ const createForm = reactive({
 
 onMounted(() => {
   loadSpider()
-})
-
-// 切换到调度Tab时自动加载
-watch(activeTab, (tab) => {
-  if (tab === 'schedule' && spider.value) {
-    loadSchedules()
-  }
+  loadFileTree()  // 自动加载文件树
 })
 
 const loadSpider = async () => {
@@ -440,7 +475,15 @@ const loadFileTree = async () => {
       ElMessage.warning(tree.error)
       fileTree.value = []
     } else {
-      fileTree.value = tree.children || []
+      // 如果返回的是带 children 的树结构，取第一层 children 作为根节点列表
+      // 如果返回的已经是数组，直接使用
+      if (tree.children) {
+        fileTree.value = tree.children
+      } else if (Array.isArray(tree)) {
+        fileTree.value = tree
+      } else {
+        fileTree.value = []
+      }
     }
   } catch (error) {
     ElMessage.error('加载文件树失败')
@@ -454,6 +497,7 @@ const handleNodeClick = async (data) => {
     try {
       fileLoading.value = true
       currentFile.value = data
+      isEditing.value = false  // 默认预览模式
       const result = await getSpiderFileContent(spiderId, data.path)
       
       if (result.error) {
@@ -468,6 +512,15 @@ const handleNodeClick = async (data) => {
       fileLoading.value = false
     }
   }
+}
+
+// 节点展开/折叠处理
+const handleNodeExpand = (data) => {
+  // 可以在这里添加展开时的处理逻辑
+}
+
+const handleNodeCollapse = (data) => {
+  // 可以在这里添加折叠时的处理逻辑
 }
 
 const saveFile = async () => {
@@ -530,92 +583,46 @@ const handleFileAction = async (command, data) => {
   }
 }
 
-const getStatusType = (status) => {
-  const typeMap = {
-    draft: 'info',
-    active: 'success',
-    disabled: 'warning',
-    error: 'danger'
-  }
-  return typeMap[status] || 'info'
-}
-
-const getStatusText = (status) => {
-  const textMap = {
-    draft: '草稿',
-    active: '运行中',
-    disabled: '已禁用',
-    error: '错误'
-  }
-  return textMap[status] || status
-}
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
-}
-
-const getSpiderTypeColor = (type) => {
-  const colorMap = {
-    crawlo: '#722ED1',
-    scrapy: '#FA8C16',
-    selenium: '#1890FF',
-    playwright: '#52C41A',
-    requests: '#8C8C8C',
-    custom: '#13C2C2'
-  }
-  return colorMap[type] || '#8C8C8C'
-}
-
-const loadSchedules = async () => {
-  schedulesLoading.value = true
-  try {
-    const res = await getSchedules({ spider_name: spider.value?.name, limit: 100 })
-    schedules.value = res.items || res || []
-  } catch (error) {
-    console.error('加载调度列表失败', error)
-  } finally {
-    schedulesLoading.value = false
-  }
-}
-
-const handleToggleSchedule = async (row) => {
-  try {
-    if (row.enabled) {
-      await disableSchedule(row.id)
-      ElMessage.success('已禁用')
-    } else {
-      await enableSchedule(row.id)
-      ElMessage.success('已启用')
-    }
-    loadSchedules()
-  } catch (error) {
-    ElMessage.error('操作失败')
-  }
-}
-
-const handleTriggerSchedule = async (row) => {
-  try {
-    await triggerSchedule(row.id)
-    ElMessage.success('任务已触发')
-  } catch (error) {
-    ElMessage.error('触发失败')
-  }
-}
-
-const goToCreateSchedule = () => {
-  router.push('/schedules')
+const showEditDialog = () => {
+  ElMessage.info('编辑功能开发中')
 }
 
 const handleRun = async () => {
+  // 加载可用节点
   try {
-    await ElMessageBox.confirm(`确定要运行爬虫 "${spider.value?.name}" 吗？`, '提示', {
-      type: 'info'
-    })
-    
+    nodesLoading.value = true
+    const nodes = await getNodes({ limit: 100 })
+    if (Array.isArray(nodes)) {
+      availableNodes.value = nodes
+    } else if (nodes?.items) {
+      availableNodes.value = nodes.items
+    } else {
+      availableNodes.value = []
+    }
+  } catch (error) {
+    availableNodes.value = []
+  } finally {
+    nodesLoading.value = false
+  }
+  
+  // 打开运行对话框
+  runForm.mode = 'local'
+  runForm.nodeId = null
+  showRunDialog.value = true
+}
+
+const confirmRun = async () => {
+  try {
     running.value = true
-    await runSpider(spiderId)
+    
+    const data = {}
+    if (runForm.mode === 'node' && runForm.nodeId) {
+      data.node_id = runForm.nodeId
+    }
+    
+    await runSpider(spiderId, data)
     ElMessage.success('爬虫运行指令已发送')
+    showRunDialog.value = false
     
     // 刷新爬虫信息
     await loadSpider()
@@ -641,29 +648,6 @@ const handleDelete = async () => {
     if (error !== 'cancel') {
       ElMessage.error('删除失败')
     }
-  }
-}
-
-const showEditDialog = () => {
-  // 准备编辑表单数据
-  editForm.name = spider.value?.name || ''
-  editForm.entry_file = spider.value?.entry_file || ''
-  editForm.description = spider.value?.description || ''
-  editingInfo.value = true
-  activeTab.value = 'info'
-}
-
-const handleSaveInfo = async () => {
-  savingInfo.value = true
-  try {
-    await updateSpider(spiderId, editForm)
-    ElMessage.success('保存成功')
-    editingInfo.value = false
-    loadSpider()
-  } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '保存失败')
-  } finally {
-    savingInfo.value = false
   }
 }
 
@@ -797,62 +781,207 @@ const loadStatus = async () => {
 
 .file-tree-container {
   height: 100%;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
   overflow: hidden;
+  background: #fafafa;
 }
 
 .tree-header {
-  padding: 10px;
+  padding: 10px 14px;
   background: #f5f7fa;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid #e4e7ed;
   display: flex;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+}
+
+.tree-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
 }
 
 .custom-tree-node {
   flex: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-right: 8px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 8px 0 0;
+  color: #303133;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.custom-tree-node span:not(.tree-actions) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-actions {
   display: none;
+  flex-shrink: 0;
 }
 
-.custom-tree-node:hover .tree-actions {
-  display: inline-block;
+/* 覆盖 el-tree 默认样式 */
+:deep(.el-tree) {
+  background: #fafafa;
+  --el-tree-node-hover-bg-color: #f0f0f0;
+  --el-tree-text-color: #303133;
+  --el-tree-expand-icon-color: #909399;
+}
+
+:deep(.el-tree-node__content) {
+  height: 30px;
+  background: transparent;
+}
+
+:deep(.el-tree-node__content:hover) {
+  background: #f0f0f0;
+}
+
+:deep(.el-tree-node__expand-icon) {
+  color: #909399;
+  font-size: 12px;
+}
+
+:deep(.el-tree-node__expand-icon.is-leaf) {
+  color: transparent;
+}
+
+:deep(.el-tree-node:focus > .el-tree-node__content) {
+  background: #e8f4ff;
+}
+
+:deep(.el-tree__empty-block) {
+  background: #fafafa;
 }
 
 .file-content-container {
   height: 100%;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 .content-header {
-  padding: 10px;
+  padding: 10px 14px;
   background: #f5f7fa;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid #e4e7ed;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .file-name {
-  font-weight: bold;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #303133;
 }
 
 .content-editor {
   flex: 1;
-  padding: 10px;
   overflow: auto;
+  background: #fafafa;
+}
+
+.code-textarea {
+  height: 100%;
+}
+
+.code-textarea :deep(.el-textarea__inner) {
+  height: 100% !important;
+  background: #fafafa;
+  color: #303133;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  border: none;
+  border-radius: 0;
+  resize: none;
+  padding: 16px;
+}
+
+.code-preview {
+  display: flex;
+  height: 100%;
+  overflow: auto;
+  background: #fafafa;
+}
+
+.line-numbers {
+  padding: 16px 8px 16px 16px;
+  background: #f5f7fa;
+  border-right: 1px solid #e4e7ed;
+  user-select: none;
+  text-align: right;
+  flex-shrink: 0;
+  min-width: 36px;
+}
+
+.line-numbers span {
+  display: block;
+  color: #c0c4cc;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 20.8px;
+}
+
+.code-content {
+  flex: 1;
+  margin: 0;
+  padding: 16px 20px;
+  overflow: auto;
+  background: transparent;
+}
+
+.code-content code {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  background: transparent;
+  padding: 0;
+}
+
+/* highlight.js 覆盖 - 浅色模式 */
+.code-content :deep(.hljs) {
+  background: transparent !important;
+  padding: 0 !important;
+  color: #303133;
+}
+
+/* 部署节点样式 */
+.deploy-node-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.node-label {
+  font-weight: 500;
+  color: #303133;
+}
+
+.node-host {
+  color: #909399;
+  font-size: 12px;
+}
+
+.no-node {
+  color: #909399;
 }
 
 .binary-file, .empty-content {

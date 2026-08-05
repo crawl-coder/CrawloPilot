@@ -17,9 +17,10 @@ def list_projects(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取项目列表(带分页)"""
-    total = db.query(Project).count()
-    projects = db.query(Project).offset(skip).limit(limit).all()
+    """获取项目列表(带分页，排除已删除项目)"""
+    query = db.query(Project).filter(Project.status != ProjectStatus.DELETED)
+    total = query.count()
+    projects = query.offset(skip).limit(limit).all()
     return {
         "total": total,
         "items": projects,
@@ -79,7 +80,7 @@ def update_project(
     return project
 
 
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}")
 def delete_project(
     project_id: int,
     db: Session = Depends(get_db),
@@ -91,10 +92,10 @@ def delete_project(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
-    
+
     project.status = ProjectStatus.DELETED
     db.commit()
-    return None
+    return {"message": "删除成功", "id": project_id}
 
 
 @router.post("/{project_id}/versions", response_model=ProjectVersionInDB, status_code=status.HTTP_201_CREATED)

@@ -424,3 +424,29 @@ print(f"Result: {result.result}")
 - 使用 `--max-tasks-per-child` 限制
 - 检查数据库连接是否关闭
 - 检查是否有未释放的资源
+
+---
+
+## ⚠️ 已知问题：APScheduler + Celery 集成报错
+
+### 现象
+控制台周期性打印以下错误，但不影响主流程：
+```
+Job "execute_schedule_task.delay (trigger: cron[month='*', day='*', day_of_week='*', hour='*', minute='*/5'], next run at: ...)" raised an exception
+TypeError: execute_schedule_task() takes from 2 to 3 positional arguments but 207 were given
+```
+
+### 根因
+- APScheduler 的 `trigger` 配置将 `delay` 方法的参数错误地传递给了 Celery 任务函数
+- `schedule_service.py` 中的 `execute_schedule_task.delay()` 调用时，APScheduler 把触发器的参数解析结果（如 year=*, month=*, ... 共200+个参数）传给了 `delay()`
+
+### 临时解决
+当前未修复，因为：
+1. 定时调度不是核心功能（爬虫手动运行即可）
+2. 错误不会阻塞主流程或影响普通 API 调用
+3. 修复需要重构 APScheduler 与 Celery 的参数传递逻辑
+
+### 如需修复
+检查 `backend/app/services/schedule_service.py` 中 `execute_schedule_task` 的调用方式，可能需要：
+- 使用 `functools.partial` 包装参数
+- 或者改用 `APScheduler` 原生的 `add_job(func, trigger, args=[...])` 方式，而非通过 `delay()`

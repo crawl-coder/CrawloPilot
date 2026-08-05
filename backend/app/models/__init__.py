@@ -1,5 +1,5 @@
 from app.core.database import Base
-from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer, Float
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -210,6 +210,7 @@ class Schedule(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
     spider_name = Column(String(128), nullable=False)
+    node_id = Column(BigInteger, ForeignKey("node.id"), nullable=True)
     schedule_type = Column(Enum(ScheduleType), nullable=False)
     cron_expr = Column(String(64))
     interval_seconds = Column(Integer)
@@ -224,6 +225,7 @@ class Schedule(Base):
     
     # Relationships
     project = relationship("Project", back_populates="schedules")
+    node = relationship("Node")
     task_instances = relationship("TaskInstance", back_populates="schedule")
 
 
@@ -243,21 +245,29 @@ class TaskInstance(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     schedule_id = Column(BigInteger, ForeignKey("schedule.id"), nullable=True)
     spider_id = Column(BigInteger, ForeignKey("spider.id"), nullable=True)
+    node_id = Column(BigInteger, ForeignKey("node.id"), nullable=True)  # 部署目标节点
     spider_name = Column(String(128), nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING)
     worker_node = Column(String(64))
     container_id = Column(String(64))
-    duration = Column(Float, nullable=True)
-    error_message = Column(Text, nullable=True)
+    process_id = Column(Integer)  # 本地进程 PID (非Docker模式)
+    deploy_mode = Column(String(16), default="local")  # local / docker / ssh
+    workspace = Column(String(512))  # SSH模式服务器工作目录
     started_at = Column(DateTime)
     finished_at = Column(DateTime)
+    duration = Column(DECIMAL(10, 2))  # 运行时长(秒)
     stats = Column(JSON)
     log_url = Column(String(512))
+    error_message = Column(Text)  # 错误信息
+    pages_crawled = Column(Integer, default=0)  # 爬取页面数
+    items_scraped = Column(Integer, default=0)  # 采集条目数
+    errors_count = Column(Integer, default=0)  # 错误数量
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
     schedule = relationship("Schedule", back_populates="task_instances")
     spider = relationship("Spider", back_populates="task_instances")
+    node = relationship("Node", back_populates="task_instances")
 
 
 class AlertRuleType(str, enum.Enum):
@@ -418,11 +428,29 @@ class Node(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     name = Column(String(128), unique=True, nullable=False, index=True)
     host = Column(String(256), nullable=False)
-    port = Column(Integer, default=2375)  # Docker API 端口
+    port = Column(Integer, default=2375)  # Docker API 端口 / SSH 端口
+    connect_type = Column(String(16), default="docker")  # ssh / agent / docker
+    ssh_host = Column(String(256))      # SSH 连接地址（与 host 解耦）
+    ssh_port = Column(Integer, default=22)  # SSH 端口
+    ssh_user = Column(String(64), default="root")  # SSH 用户
+    ssh_pwd = Column(String(512))       # SSH 密码
+    ssh_key = Column(Text)              # SSH 私钥
     docker_host = Column(String(256))  # Docker socket 路径
     status = Column(Enum(NodeStatus), default=NodeStatus.OFFLINE)
     labels = Column(JSON)  # 节点标签
     resources = Column(JSON)  # CPU、内存、磁盘信息
+    os_type = Column(String(64))        # Linux / Windows / macOS
+    os_version = Column(String(128))    # Ubuntu 22.04 LTS
+    cpu_cores = Column(Integer, default=0)  # CPU 核数
+    memory_total = Column(BigInteger, default=0)  # 总内存 (bytes)
+    disk_total = Column(BigInteger, default=0)   # 总磁盘 (bytes)
+    cpu_usage = Column(DECIMAL(5,2), default=0.00)    # CPU 使用率 %
+    memory_usage = Column(DECIMAL(5,2), default=0.00) # 内存使用率 %
+    disk_usage = Column(DECIMAL(5,2), default=0.00)   # 磁盘使用率 %
+    agent_version = Column(String(32))  # Agent 版本号
+    agent_status = Column(String(16), default="offline")  # agent 状态
+    public_ip = Column(String(64))      # 公网 IP
+    private_ip = Column(String(64))     # 内网 IP
     container_count = Column(Integer, default=0)
     last_heartbeat = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -431,6 +459,7 @@ class Node(Base):
     # Relationships
     containers = relationship("Container", back_populates="node")
     deploys = relationship("Deploy", back_populates="node")
+    task_instances = relationship("TaskInstance", back_populates="node")
 
 
 class ContainerStatus(str, enum.Enum):
