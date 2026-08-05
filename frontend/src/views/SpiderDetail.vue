@@ -110,7 +110,9 @@
                     <div class="line-numbers">
                       <span v-for="(_, index) in lineNumbers" :key="index">{{ index + 1 }}</span>
                     </div>
-                    <pre class="code-content"><code :class="'language-' + getLanguage(currentFile.name)" v-html="highlightedCode"></code></pre>
+                    <div class="code-scroll">
+                      <pre class="code-content"><code :class="'language-' + getLanguage(currentFile.name)" v-html="highlightedCode"></code></pre>
+                    </div>
                   </div>
                 </div>
                 <div v-else-if="currentFile?.is_binary" class="binary-file">
@@ -811,7 +813,7 @@ const handleDelete = async () => {
 
 .content-editor {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   background: #fafafa;
 }
 
@@ -835,7 +837,8 @@ const handleDelete = async () => {
 .code-preview {
   display: flex;
   height: 100%;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: #fafafa;
 }
 
@@ -846,7 +849,11 @@ const handleDelete = async () => {
   user-select: none;
   text-align: right;
   flex-shrink: 0;
+  align-self: flex-start;
   min-width: 36px;
+  position: sticky;
+  left: 0;
+  z-index: 1;
 }
 
 .line-numbers span {
@@ -858,11 +865,17 @@ const handleDelete = async () => {
   min-height: 20.8px;
 }
 
-.code-content {
+.code-scroll {
   flex: 1;
+  min-width: 0;
+  align-self: flex-start;
+  overflow-x: auto;
+}
+
+.code-content {
   margin: 0;
   padding: 16px 20px;
-  overflow: auto;
+  white-space: pre;
   background: transparent;
 }
 
