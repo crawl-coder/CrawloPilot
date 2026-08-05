@@ -7,7 +7,7 @@
 
 export const SPIDER_STATUS_MAP = {
   draft: { type: 'info', text: '草稿' },
-  active: { type: 'success', text: '运行中' },
+  active: { type: 'success', text: '启用' },
   disabled: { type: 'warning', text: '已禁用' },
   error: { type: 'danger', text: '错误' }
 }

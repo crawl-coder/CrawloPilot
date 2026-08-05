@@ -113,7 +113,11 @@
         <el-form-item label="连接方式" required>
           <el-radio-group v-model="nodeForm.connect_type" @change="onConnectTypeChange">
             <el-radio value="ssh">SSH 直连</el-radio>
-            <el-radio value="agent">Agent 代理</el-radio>
+            <el-tooltip content="Agent 模式 v2 支持，当前版本请使用 SSH 直连" placement="top">
+              <span>
+                <el-radio value="agent" disabled>Agent 代理（即将支持）</el-radio>
+              </span>
+            </el-tooltip>
             <el-radio value="docker">Docker API</el-radio>
           </el-radio-group>
         </el-form-item>

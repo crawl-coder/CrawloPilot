@@ -125,6 +125,72 @@
         </div>
       </el-tab-pane>
 
+      <!-- 运行记录 -->
+      <el-tab-pane label="运行记录" name="runs">
+        <div v-loading="runsLoading">
+          <el-empty v-if="runs.length === 0 && !runsLoading" description="暂无运行记录" />
+          <el-table v-else :data="runs" border size="small">
+            <el-table-column prop="id" label="任务ID" width="100">
+              <template #default="{ row }">
+                <el-link type="primary" @click="goTaskDetail(row)">#{{ row.id }}</el-link>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getTaskStatusType(row.status)" size="small">
+                  {{ getTaskStatusText(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="模式" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" type="info" effect="plain">{{ row.deploy_mode || 'local' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="节点" width="140">
+              <template #default="{ row }">{{ row.node_name || '本机' }}</template>
+            </el-table-column>
+            <el-table-column label="指标" width="200">
+              <template #default="{ row }">
+                <span style="font-size: 12px; color: #606266">
+                  页 {{ row.pages_crawled || 0 }} / 条 {{ row.items_scraped || 0 }} / 错 {{ row.errors_count || 0 }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="时长" width="90">
+              <template #default="{ row }">
+                {{ row.duration ? `${Number(row.duration).toFixed(1)}s` : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="开始时间" width="170">
+              <template #default="{ row }">{{ formatDate(row.started_at || row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="140">
+              <template #default="{ row }">
+                <el-button size="small" @click="goTaskDetail(row)">详情</el-button>
+                <el-button
+                  v-if="row.status === 'failed' || row.status === 'timeout'"
+                  size="small"
+                  type="primary"
+                  @click="handleRetryRun(row)"
+                >
+                  重试
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination
+            v-if="runsTotal > 0"
+            v-model:current-page="runsPage"
+            :page-size="runsPageSize"
+            :total="runsTotal"
+            layout="total, prev, pager, next"
+            style="margin-top: 12px; justify-content: flex-end"
+            @current-change="loadRecentRuns"
+          />
+        </div>
+      </el-tab-pane>
+
       <!-- 基本信息 -->
       <el-tab-pane label="基本信息" name="info">
         <el-descriptions :column="2" border>
@@ -230,7 +296,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Folder, Document, More, Back, VideoPlay, Delete, Edit, View, Check } from '@element-plus/icons-vue'
 import { getSpider, runSpider, deleteSpider, getSpiderFileTree, getSpiderFileContent, saveSpiderFileContent, createSpiderFileOrDir, deleteSpiderFileOrDir } from '@/api/spider'
+import { listTasks, retryTask } from '@/api/execution'
 import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, getSpiderTypeColor, formatDateTime as formatDate } from '@/utils/common'
+import { getTaskStatusType, getTaskStatusText } from '@/utils/common'
 import { getNodes } from '@/api/node'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
@@ -254,6 +322,50 @@ const runForm = reactive({
 const selectedNode = computed(() => {
   if (!runForm.nodeId) return null
   return availableNodes.value.find(n => n.id === runForm.nodeId) || null
+})
+
+// 运行记录
+const runs = ref([])
+const runsLoading = ref(false)
+const runsTotal = ref(0)
+const runsPage = ref(1)
+const runsPageSize = ref(10)
+
+const loadRecentRuns = async () => {
+  runsLoading.value = true
+  try {
+    const res = await listTasks({
+      spider_id: spiderId,
+      limit: runsPageSize.value,
+      offset: (runsPage.value - 1) * runsPageSize.value
+    })
+    runs.value = res.items || []
+    runsTotal.value = res.total || 0
+  } catch (error) {
+    ElMessage.error('加载运行记录失败')
+  } finally {
+    runsLoading.value = false
+  }
+}
+
+const goTaskDetail = (row) => {
+  router.push(`/tasks/${row.id}`)
+}
+
+const handleRetryRun = async (row) => {
+  try {
+    const res = await retryTask(row.id)
+    ElMessage.success(`重试已提交: 新任务 #${res.task_id}`)
+    loadRecentRuns()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '重试失败')
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'runs') {
+    loadRecentRuns()
+  }
 })
 
 // 文件浏览器
@@ -505,12 +617,17 @@ const confirmRun = async () => {
       data.node_id = runForm.nodeId
     }
     
-    await runSpider(spiderId, data)
+    const res = await runSpider(spiderId, data)
     ElMessage.success('爬虫运行指令已发送')
     showRunDialog.value = false
     
     // 刷新爬虫信息
     await loadSpider()
+
+    // 跳转到任务详情，形成「运行 → 执行详情」闭环
+    if (res?.task_id) {
+      router.push(`/tasks/${res.task_id}`)
+    }
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(error.response?.data?.detail || '运行失败')

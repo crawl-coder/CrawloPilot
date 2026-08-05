@@ -14,7 +14,6 @@ from app.core.dependencies import get_current_user
 from app.models import TaskInstance, TaskStatus, Spider, User
 from app.schemas.task import TaskCreate, TaskResponse, TaskStatusResponse, TaskLogResponse
 from app.services.task_executor import get_executor
-from app.workers.celery_app import celery_app
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -44,12 +43,21 @@ async def create_and_execute_task(
     if not spider:
         raise HTTPException(status_code=404, detail="Spider not found")
     
+    # 检查代码目录
+    from app.services.upload_service import UploadService
+    import os
+    upload_service = UploadService()
+    code_dir = upload_service.get_spider_code_dir(spider.project_id, spider.id)
+    if not code_dir or not os.path.exists(code_dir):
+        raise HTTPException(status_code=400, detail="爬虫代码目录不存在，请先上传代码")
+
     # 创建任务记录
     task = TaskInstance(
         spider_id=spider.id,
-        schedule_id=None,  # 手动执行,没有调度
+        spider_name=spider.spider_name or spider.name,
+        schedule_id=None,
+        deploy_mode="local",
         status=TaskStatus.PENDING,
-        worker_node=None
     )
     db.add(task)
     db.commit()
@@ -57,31 +65,30 @@ async def create_and_execute_task(
     
     logger.info(f"Task created: {task.id} for spider {spider.name}")
     
-    # 异步执行任务
-    celery_app.send_task(
-        'app.workers.task_tasks.execute_spider_task',
-        args=[
-            task.id,
-            spider.id,
-            spider.name
-        ],
-        kwargs={
-            'git_url': task_data.git_url or spider.git_url,
-            'git_branch': task_data.git_branch or spider.git_branch or 'main',
-            'entry_file': spider.entry_file,  # 传递入口文件
-            'spider_name': spider.spider_name or spider.name,  # 传递爬虫名称
-            'node_id': task_data.node_id,
-            'memory_limit': task_data.memory_limit or '512m',
-            'cpu_limit': task_data.cpu_limit or 1.0,
-            'timeout': task_data.timeout or 3600,
-        }
+    # 本地模式后台执行（v1 默认，不依赖 Celery）
+    from app.services.local_executor import get_local_executor, LocalTaskConfig
+    config = LocalTaskConfig(
+        task_id=str(task.id),
+        spider_id=str(spider.id),
+        spider_name=spider.spider_name or spider.name,
+        code_dir=code_dir,
+        entry_file=spider.entry_file,
+        spider_name_to_run=spider.spider_name or spider.name,
+        timeout=task_data.timeout or 3600,
     )
+    background_tasks.add_task(get_local_executor().execute_task, config)
+
+    if task_data.node_id:
+        task.node_id = task_data.node_id
+        db.commit()
     
     return TaskResponse(
         id=task.id,
         spider_id=task.spider_id,
         spider_name=spider.name,
         status=task.status,
+        deploy_mode="local",
+        node_id=task.node_id,
         created_at=task.created_at,
         started_at=task.started_at,
         finished_at=task.finished_at
@@ -104,15 +111,14 @@ async def pause_task(
         raise HTTPException(status_code=400, detail=f"Cannot pause task in {task.status} status")
     
     # 异步暂停任务
-    result = celery_app.send_task(
-        'app.workers.task_tasks.pause_spider_task',
-        args=[task_id]
-    )
+    from app.services.local_executor import get_local_executor
+    ok = await get_local_executor().pause_task(task_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="暂停任务失败（进程不存在或已结束）")
     
     return {
         "message": "Pause task requested",
         "task_id": task_id,
-        "celery_task_id": result.id
     }
 
 
@@ -132,15 +138,14 @@ async def resume_task(
         raise HTTPException(status_code=400, detail=f"Cannot resume task in {task.status} status")
     
     # 异步恢复任务
-    result = celery_app.send_task(
-        'app.workers.task_tasks.resume_spider_task',
-        args=[task_id]
-    )
+    from app.services.local_executor import get_local_executor
+    ok = await get_local_executor().resume_task(task_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="恢复任务失败（进程不存在或已结束）")
     
     return {
         "message": "Resume task requested",
         "task_id": task_id,
-        "celery_task_id": result.id
     }
 
 
@@ -160,15 +165,22 @@ async def stop_task(
         raise HTTPException(status_code=400, detail=f"Cannot stop task in {task.status} status")
     
     # 异步停止任务
-    result = celery_app.send_task(
-        'app.workers.task_tasks.stop_spider_task',
-        args=[task_id]
-    )
+    from app.services.local_executor import get_local_executor
+    ok = await get_local_executor().stop_task(task_id)
+    if not ok:
+        # 进程不存在时仍将数据库状态置为取消，保证记录可收敛
+        task.status = TaskStatus.CANCELLED
+        task.finished_at = datetime.utcnow()
+        db.commit()
+        logger.warning(f"Stop task {task_id}: process not found, marked CANCELLED")
+        return {
+            "message": "Task marked as cancelled",
+            "task_id": task_id,
+        }
     
     return {
         "message": "Stop task requested",
         "task_id": task_id,
-        "celery_task_id": result.id
     }
 
 
@@ -277,7 +289,7 @@ async def get_task_logs(
     )
 
 
-@router.get("/tasks", response_model=List[TaskResponse])
+@router.get("/tasks")
 async def list_tasks(
     spider_id: Optional[str] = None,
     status: Optional[str] = None,
@@ -302,31 +314,77 @@ async def list_tasks(
     if status:
         query = query.filter(TaskInstance.status == status)
     
-    tasks = query.order_by(TaskInstance.started_at.desc()).offset(offset).limit(limit).all()
+    total = query.count()
+    tasks = query.order_by(TaskInstance.id.desc()).offset(offset).limit(limit).all()
     
     result = []
     for task in tasks:
         spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
-        result.append(TaskResponse(
-            id=task.id,
-            spider_id=task.spider_id,
-            spider_name=spider.name if spider else "Unknown",
-            project_name=spider.project.name if spider and spider.project else None,
-            status=task.status,
-            schedule_id=task.schedule_id,
-            worker_node=task.worker_node,
-            container_id=task.container_id,
-            node_id=task.node_id,
-            node_name=task.node.name if task.node else None,
-            deploy_mode=task.deploy_mode,
-            created_at=task.created_at,
-            started_at=task.started_at,
-            finished_at=task.finished_at,
-            duration=task.duration,
-            error_message=task.error_message
-        ))
+        result.append(_serialize_task(task, spider))
     
-    return result
+    return {
+        "total": total,
+        "items": result,
+        "skip": offset,
+        "limit": limit
+    }
+
+
+def _serialize_task(task: TaskInstance, spider: Optional[Spider] = None) -> dict:
+    """任务序列化（供列表/详情复用）"""
+    if spider is None:
+        spider = task.spider
+    return {
+        "id": task.id,
+        "spider_id": task.spider_id,
+        "spider_name": spider.name if spider else task.spider_name,
+        "project_id": spider.project_id if spider else None,
+        "project_name": spider.project.name if spider and spider.project else None,
+        "status": task.status.value if hasattr(task.status, "value") else task.status,
+        "schedule_id": task.schedule_id,
+        "worker_node": task.worker_node,
+        "container_id": task.container_id,
+        "node_id": task.node_id,
+        "node_name": task.node.name if task.node else None,
+        "deploy_mode": task.deploy_mode,
+        "process_id": task.process_id,
+        "created_at": task.created_at,
+        "started_at": task.started_at,
+        "finished_at": task.finished_at,
+        "duration": float(task.duration) if task.duration is not None else None,
+        "error_message": task.error_message,
+        "pages_crawled": task.pages_crawled or 0,
+        "items_scraped": task.items_scraped or 0,
+        "errors_count": task.errors_count or 0,
+        "log_url": task.log_url,
+    }
+
+
+@router.get("/tasks/{task_id}")
+async def get_task_detail(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取任务完整详情（供执行详情页使用）"""
+    task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
+    data = _serialize_task(task, spider)
+
+    # 附带实时进程状态（本地执行器）
+    process_status = None
+    if task.process_id:
+        try:
+            from app.services.local_executor import get_local_executor
+            process_status = get_local_executor().get_task_status(str(task.id))
+        except Exception as e:
+            logger.warning(f"获取本地进程状态失败: {e}")
+
+    data["process_status"] = process_status
+    return data
 
 
 @router.delete("/tasks/{task_id}")

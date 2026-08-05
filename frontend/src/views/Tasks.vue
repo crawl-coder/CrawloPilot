@@ -223,6 +223,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { listTasks, stopTask, pauseTask, resumeTask, deleteTask, getTaskLogs, getTaskStats, retryTask } from '@/api/execution'
@@ -232,6 +233,7 @@ import { getTaskStatusType as getStatusType, getTaskStatusText as getStatusText,
 const loading = ref(false)
 const taskList = ref([])
 const spiders = ref([])
+const router = useRouter()
 
 const stats = reactive({
   total: 0,
@@ -421,7 +423,7 @@ const refreshLogs = async () => {
 }
 
 const handleViewDetail = (row) => {
-  ElMessage.info(`查看任务详情: ${row.id}`)
+  router.push(`/tasks/${row.id}`)
 }
 
 let refreshTimer = null

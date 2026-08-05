@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import logging
+import asyncio
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,22 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+async def _node_health_monitor_loop():
+    """后台节点健康检查：每 60 秒轻量探活一次"""
+    while True:
+        try:
+            from app.core.database import SessionLocal
+            from app.services.node_service import NodeService
+            db = SessionLocal()
+            try:
+                NodeService(db).check_all_nodes_health_light()
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"节点健康检查失败: {e}")
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动和关闭时的生命周期管理"""
@@ -18,11 +35,16 @@ async def lifespan(app: FastAPI):
     executor = get_executor()
     await executor.initialize()
     logger.info("TaskExecutor initialized successfully")
-    
+
+    # 启动节点健康检查后台任务
+    health_task = asyncio.create_task(_node_health_monitor_loop())
+    logger.info("Node health monitor started")
+
     yield
-    
+
     # 关闭时清理执行器
     try:
+        health_task.cancel()
         logger.info("Cleaning up TaskExecutor...")
         await executor.cleanup()
         logger.info("TaskExecutor cleanup complete")

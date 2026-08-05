@@ -56,6 +56,16 @@ export function getTaskStatus(taskId) {
 }
 
 /**
+ * 获取任务完整详情
+ */
+export function getTaskDetail(taskId) {
+  return request({
+    url: `/execution/tasks/${taskId}`,
+    method: 'get'
+  })
+}
+
+/**
  * 获取任务日志
  */
 export function getTaskLogs(taskId, tail = 100) {

@@ -145,7 +145,7 @@ const getStatusType = (status) => {
 const getStatusText = (status) => {
   const textMap = {
     draft: '草稿',
-    active: '运行中',
+    active: '启用',
     disabled: '已禁用',
     error: '错误'
   }
@@ -171,8 +171,11 @@ const editSpider = (spider) => {
 
 const handleRun = async (spider) => {
   try {
-    await runSpider(spider.id)
+    const res = await runSpider(spider.id)
     ElMessage.success('爬虫运行指令已发送')
+    if (res?.task_id) {
+      router.push(`/tasks/${res.task_id}`)
+    }
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '运行失败')
   }

@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import User, TaskInstance, TaskStatus, Schedule
 import logging
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,11 @@ async def list_task_instances(
         query = query.filter(TaskInstance.schedule_id == schedule_id)
     
     if status:
-        query = query.filter(TaskInstance.status == TaskStatus(status))
+        try:
+            task_status = TaskStatus(status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="无效的任务状态")
+        query = query.filter(TaskInstance.status == task_status)
     
     tasks = query.order_by(
         TaskInstance.created_at.desc()
@@ -82,10 +87,9 @@ async def get_tasks_by_schedule(
     current_user: User = Depends(get_current_user)
 ):
     """获取调度配置的任务实例"""
-    task_store = TaskInstanceStore(db)
-    tasks = task_store.get_tasks_by_schedule(schedule_id, limit)
-    
-    return tasks
+    return db.query(TaskInstance).filter(
+        TaskInstance.schedule_id == schedule_id
+    ).order_by(TaskInstance.created_at.desc()).limit(limit).all()
 
 
 @router.get("/status/{status}", response_model=List[TaskInstanceResponse])
@@ -101,10 +105,9 @@ async def get_tasks_by_status(
     except ValueError:
         raise HTTPException(status_code=400, detail="无效的任务状态")
     
-    task_store = TaskInstanceStore(db)
-    tasks = task_store.get_tasks_by_status(task_status, limit)
-    
-    return tasks
+    return db.query(TaskInstance).filter(
+        TaskInstance.status == task_status
+    ).order_by(TaskInstance.created_at.desc()).limit(limit).all()
 
 
 @router.get("/running", response_model=List[TaskInstanceResponse])
@@ -113,10 +116,9 @@ async def get_running_tasks(
     current_user: User = Depends(get_current_user)
 ):
     """获取运行中的任务"""
-    task_store = TaskInstanceStore(db)
-    tasks = task_store.get_running_tasks()
-    
-    return tasks
+    return db.query(TaskInstance).filter(
+        TaskInstance.status == TaskStatus.RUNNING
+    ).order_by(TaskInstance.created_at.desc()).all()
 
 
 @router.get("/stats/summary")
@@ -126,10 +128,25 @@ async def get_task_stats(
     current_user: User = Depends(get_current_user)
 ):
     """获取任务统计"""
-    task_store = TaskInstanceStore(db)
-    stats = task_store.get_task_stats(schedule_id)
-    
-    return stats
+    query = db.query(TaskInstance)
+    if schedule_id:
+        query = query.filter(TaskInstance.schedule_id == schedule_id)
+
+    total = query.count()
+    running = query.filter(TaskInstance.status == TaskStatus.RUNNING).count()
+    success = query.filter(TaskInstance.status == TaskStatus.SUCCESS).count()
+    failed = query.filter(TaskInstance.status == TaskStatus.FAILED).count()
+    today_start = datetime.utcnow() - timedelta(days=1)
+    today = query.filter(TaskInstance.created_at >= today_start).count()
+
+    return {
+        "total": total,
+        "running": running,
+        "failed": failed,
+        "success": success,
+        "today": today,
+        "success_rate": round(success / total * 100, 2) if total > 0 else 0,
+    }
 
 
 @router.post("/{task_id}/retry")
@@ -202,20 +219,18 @@ async def stop_task(
     if task.status != TaskStatus.RUNNING:
         raise HTTPException(status_code=400, detail="只能停止运行中的任务")
     
-    # TODO: 实现停止逻辑
-    # - 发送停止信号给 Worker
-    # - 停止 Docker 容器
-    # - 更新任务状态
+    from app.services.local_executor import get_local_executor
+    ok = await get_local_executor().stop_task(str(task_id))
+    if not ok:
+        raise HTTPException(status_code=500, detail="停止任务失败（进程不存在或已结束）")
     
-    task_store = TaskInstanceStore(db)
-    task_store.update_task_status(task_id, TaskStatus.FAILED)
-    
-    return {"message": "任务已停止"}
+    return {"message": "任务已停止", "task_id": task_id}
 
 
 @router.get("/{task_id}/logs")
 async def get_task_logs(
     task_id: int,
+    tail: int = 100,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -224,18 +239,14 @@ async def get_task_logs(
     if not task:
         raise HTTPException(status_code=404, detail="任务实例不存在")
     
-    # TODO: 从日志系统获取日志
-    # - 如果任务有 log_url，从该 URL 获取
-    # - 否则从 Docker 容器获取日志
-    # - 或者从日志存储服务获取
-    
-    logs = {
+    from app.services.local_executor import get_local_executor
+    logs_text = get_local_executor().get_task_logs(str(task_id), tail=tail)
+    return {
         "task_id": task_id,
         "container_id": task.container_id,
-        "logs": "日志功能待实现"
+        "logs": logs_text,
+        "total_lines": len(logs_text.split("\n")) if logs_text else 0,
     }
-    
-    return logs
 
 
 @router.get("/recent", response_model=List[TaskInstanceResponse])
@@ -245,7 +256,6 @@ async def get_recent_tasks(
     current_user: User = Depends(get_current_user)
 ):
     """获取最近的任务实例"""
-    task_store = TaskInstanceStore(db)
-    tasks = task_store.get_recent_tasks(limit)
-    
-    return tasks
+    return db.query(TaskInstance).order_by(
+        TaskInstance.created_at.desc()
+    ).limit(limit).all()

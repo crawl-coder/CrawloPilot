@@ -52,7 +52,7 @@
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 150px">
             <el-option label="草稿" value="draft" />
-            <el-option label="运行中" value="active" />
+            <el-option label="启用" value="active" />
             <el-option label="已禁用" value="disabled" />
             <el-option label="错误" value="error" />
           </el-select>
@@ -672,7 +672,7 @@
         <el-form-item v-if="editingSpider" label="状态">
           <el-select v-model="spiderForm.status" style="width: 100%">
             <el-option label="草稿" value="draft" />
-            <el-option label="运行中" value="active" />
+            <el-option label="启用" value="active" />
             <el-option label="已禁用" value="disabled" />
           </el-select>
         </el-form-item>

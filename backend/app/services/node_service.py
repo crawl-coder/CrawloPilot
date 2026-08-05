@@ -219,19 +219,78 @@ class NodeService:
         }
     
     def _test_ssh_connection(self, node: Node) -> Dict[str, Any]:
-        """测试 SSH 端口可达性 (TCP ping)"""
+        """测试 SSH 连接（真实握手：认证 + Python 环境探测）"""
         target_host = node.ssh_host or node.host
         target_port = node.ssh_port or node.port or 22
-        
-        result = self._test_tcp_ping(target_host, target_port, node.name)
-        
-        if result["status"] == "connected":
+
+        try:
+            from app.services.ssh_executor import SshConnection
+            conn = SshConnection(
+                host=target_host,
+                port=target_port,
+                user=node.ssh_user or "root",
+                password=node.ssh_pwd,
+                key=node.ssh_key,
+            )
+            client = conn.connect()
+            transport = client.get_transport()
+            if not transport:
+                raise ConnectionError("SSH transport unavailable")
+
+            # 探测系统与 Python 环境
+            info = {}
+
+            def _run(cmd: str) -> str:
+                try:
+                    stdin, stdout, stderr = client.exec_command(cmd, timeout=10)
+                    return (stdout.read().decode("utf-8", errors="replace") or "").strip()
+                except Exception:
+                    return ""
+
+            info["python"] = _run("python3 --version 2>&1")
+            info["os"] = _run("uname -s")
+            info["release"] = _run("uname -r")
+            info["cpu_cores"] = _run("nproc")
+            info["mem_kb"] = _run(
+                "awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null || sysctl -n hw.memsize 2>/dev/null"
+            )
+            conn.close()
+
+            if not info["python"].startswith("Python"):
+                raise ConnectionError(f"节点缺少 Python3: {info['python'] or 'unknown'}")
+
+            node.os_type = info["os"] or None
+            node.os_version = info["release"] or None
+            node.cpu_cores = int(info["cpu_cores"]) if info["cpu_cores"].isdigit() else 0
+            if info["mem_kb"].isdigit():
+                node.memory_total = int(info["mem_kb"]) * 1024
+            node.resources = {
+                "os": node.os_type,
+                "os_version": node.os_version,
+                "cpu_cores": node.cpu_cores,
+                "memory_total": node.memory_total,
+                "python": info["python"],
+            }
             node.status = NodeStatus.ONLINE
             node.last_heartbeat = datetime.utcnow()
             self.db.commit()
-        
-        result["connect_type"] = "ssh"
-        return result
+
+            return {
+                "status": "connected",
+                "connect_type": "ssh",
+                "message": f"SSH 握手成功: {node.ssh_user or 'root'}@{target_host}:{target_port}",
+                "info": info,
+            }
+
+        except Exception as e:
+            node.status = NodeStatus.OFFLINE
+            self.db.commit()
+            return {
+                "status": "failed",
+                "connect_type": "ssh",
+                "message": f"SSH 连接失败: {target_host}:{target_port}",
+                "error": str(e),
+            }
     
     def _test_agent_connection(self, node: Node) -> Dict[str, Any]:
         """测试 Agent 连接（检查心跳时间）"""
@@ -324,6 +383,43 @@ class NodeService:
         
         self.db.commit()
         return results
+
+    def check_all_nodes_health_light(self) -> List[Dict[str, Any]]:
+        """
+        轻量健康检查（后台定时任务用）
+        - ssh/docker: TCP ping（快速探活）
+        - agent: 心跳时间
+        """
+        nodes = self.db.query(Node).all()
+        results = []
+        now = datetime.utcnow()
+
+        for node in nodes:
+            status = "offline"
+            try:
+                if node.connect_type == "agent":
+                    if node.last_heartbeat and (now - node.last_heartbeat).total_seconds() < 90:
+                        status = "online"
+                else:
+                    target_host = node.ssh_host or node.host
+                    target_port = node.ssh_port or node.port or 22
+                    ping = self._test_tcp_ping(target_host, target_port, node.name)
+                    status = "online" if ping["status"] == "connected" else "offline"
+            except Exception:
+                status = "offline"
+
+            node.status = NodeStatus.ONLINE if status == "online" else NodeStatus.OFFLINE
+            if status == "online":
+                node.last_heartbeat = now
+            results.append({
+                "node_id": node.id,
+                "name": node.name,
+                "status": status,
+                "connect_type": node.connect_type,
+            })
+
+        self.db.commit()
+        return results
     
     def drain_node(self, node_id: int) -> bool:
         """
@@ -373,14 +469,13 @@ class NodeService:
             return False
     
     def activate_node(self, node_id: int) -> bool:
-        """激活节点"""
+        """激活节点（必须先通过连接测试，避免"假在线"）"""
         node = self.db.query(Node).get(node_id)
         if not node:
             return False
-        
-        node.status = NodeStatus.ONLINE
-        self.db.commit()
-        return True
+
+        result = self.test_connection(node_id)
+        return result.get("status") == "connected"
     
     def get_node(self, node_id: int) -> Optional[Node]:
         """获取节点详情"""
