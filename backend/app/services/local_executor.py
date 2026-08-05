@@ -320,9 +320,11 @@ asyncio.run(CrawlerProcess().crawl('{spider_name_to_run or config.spider_name}')
             )
             # 匹配 "X pages, Y items" 格式
             alt_pattern = re.compile(r'(\d+)\s+pages?.*?(\d+)\s+items?', re.IGNORECASE)
-            # 匹配 crawlo 统计 dict 格式: 'item_successful_count': 42
-            crawlo_items_pattern = re.compile(r"['\"]item_successful_count['\"]\s*:\s*(\d+)")
-            crawlo_pages_pattern = re.compile(r"['\"]response_received_count['\"]\s*:\s*(\d+)")
+            # 匹配 crawlo 统计 dict 格式: 'crawlo:item_successful_count': 42（兼容旧格式无前缀）
+            crawlo_items_pattern = re.compile(r"['\"]crawlo:item_successful_count['\"]\s*:\s*(\d+)")
+            crawlo_items_legacy = re.compile(r"['\"]item_successful_count['\"]\s*:\s*(\d+)")
+            crawlo_pages_pattern = re.compile(r"['\"]crawlo:response_received_count['\"]\s*:\s*(\d+)")
+            crawlo_pages_legacy = re.compile(r"['\"]response_received_count['\"]\s*:\s*(\d+)")
             # 匹配错误计数: ERROR/WARNING/error
             error_pattern = re.compile(r'\[(?:ERROR|WARNING)\]', re.IGNORECASE)
             
@@ -343,10 +345,14 @@ asyncio.run(CrawlerProcess().crawl('{spider_name_to_run or config.spider_name}')
             # 兼容 crawlo 统计 dict 格式（真实爬虫日志）
             if not self.items_scraped:
                 m = crawlo_items_pattern.search(content)
+                if not m:
+                    m = crawlo_items_legacy.search(content)
                 if m:
                     self.items_scraped = int(m.group(1))
             if not self.pages_crawled:
                 m = crawlo_pages_pattern.search(content)
+                if not m:
+                    m = crawlo_pages_legacy.search(content)
                 if m:
                     self.pages_crawled = int(m.group(1))
             

@@ -251,7 +251,7 @@ async def run_spider(
         if node.connect_type == "ssh":
             return _run_via_ssh(spider, task, node, code_dir, background_tasks)
         elif node.connect_type == "docker":
-            return _run_via_remote_docker(spider, task, node, background_tasks)
+            return _run_via_remote_docker(spider, task, node, code_dir, background_tasks)
         elif node.connect_type == "agent":
             return _run_via_agent(spider, task, node, background_tasks)
         else:
@@ -342,21 +342,23 @@ def _run_via_ssh(spider, task, node, code_dir, background_tasks):
     }
 
 
-def _run_via_remote_docker(spider, task, node, background_tasks):
-    """在远程 Docker 节点上运行爬虫"""
-    from app.workers.celery_app import celery_app
+def _run_via_remote_docker(spider, task, node, code_dir, background_tasks):
+    """在远程 Docker 节点上运行爬虫（直连节点 Docker API，不依赖 Celery）"""
+    from app.services.docker_executor import get_docker_executor, DockerTaskConfig
 
-    celery_app.send_task(
-        'app.workers.task_tasks.execute_spider_task',
-        args=[str(task.id), str(spider.id), spider.spider_name or spider.name],
-        kwargs={
-            'git_url': spider.git_url,
-            'git_branch': spider.git_branch or 'main',
-            'entry_file': spider.entry_file,
-            'spider_name': spider.spider_name or spider.name,
-            'node_id': str(node.id),
-        }
+    docker_executor = get_docker_executor()
+    config = DockerTaskConfig(
+        task_id=str(task.id),
+        spider_id=str(spider.id),
+        spider_name=spider.spider_name or spider.name,
+        code_dir=code_dir,
+        entry_file=spider.entry_file,
+        spider_name_to_run=spider.spider_name or spider.name,
+        node_host=node.host,
+        node_port=node.port or 2375,
+        docker_host=node.docker_host,
     )
+    background_tasks.add_task(docker_executor.execute_task, config)
 
     # 更新爬虫统计
     from app.core.database import SessionLocal
@@ -372,12 +374,13 @@ def _run_via_remote_docker(spider, task, node, background_tasks):
         db_local.close()
 
     return {
-        "message": "爬虫运行指令已发送(远程Docker模式)",
+        "message": "爬虫运行指令已发送(Docker直连模式)",
         "task_id": task.id,
         "spider_id": spider.id,
         "mode": "docker",
         "node_id": node.id,
         "node_name": node.name,
+        "docker_host": f"{node.host}:{node.port or 2375}",
     }
 
 

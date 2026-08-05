@@ -24,11 +24,16 @@ def _get_executor_for_task(task):
     """
     按任务的部署模式返回对应执行器
     - ssh: SshExecutor（远程节点）
+    - docker: DockerExecutor（直连节点 Docker API）
     - 其他: LocalExecutor（本地进程）
     """
-    if getattr(task, 'deploy_mode', None) == 'ssh':
+    deploy_mode = getattr(task, 'deploy_mode', None)
+    if deploy_mode == 'ssh':
         from app.services.ssh_executor import get_ssh_executor
         return get_ssh_executor()
+    if deploy_mode == 'docker':
+        from app.services.docker_executor import get_docker_executor
+        return get_docker_executor()
     from app.services.local_executor import get_local_executor
     return get_local_executor()
 
@@ -216,8 +221,8 @@ async def get_task_status(
     container_status = None
     local_metrics = {}
     
-    # 如果有 process_id，从对应执行器获取实时状态
-    if getattr(task, 'process_id', None):
+    # 有进程（本地 PID / 远程 PID / 容器 ID）时从对应执行器获取实时状态
+    if getattr(task, 'process_id', None) or getattr(task, 'deploy_mode', None) in ('ssh', 'docker'):
         try:
             executor = _get_executor_for_task(task)
             status = executor.get_task_status(task_id)
@@ -276,8 +281,8 @@ async def get_task_logs(
     
     logs_text = ''
     
-    # 如果有 process_id，从对应执行器获取日志
-    if getattr(task, 'process_id', None):
+    # 有进程（本地 PID / 远程 PID / 容器 ID）时从对应执行器获取日志
+    if getattr(task, 'process_id', None) or getattr(task, 'deploy_mode', None) in ('ssh', 'docker'):
         try:
             executor = _get_executor_for_task(task)
             logs_text = executor.get_task_logs(task_id, tail=tail)
@@ -390,7 +395,7 @@ async def get_task_detail(
 
     # 附带实时进程状态（按部署模式取对应执行器）
     process_status = None
-    if task.process_id:
+    if task.process_id or getattr(task, 'deploy_mode', None) in ('ssh', 'docker'):
         try:
             executor = _get_executor_for_task(task)
             process_status = executor.get_task_status(str(task.id))

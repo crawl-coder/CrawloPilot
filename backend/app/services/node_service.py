@@ -194,7 +194,7 @@ class NodeService:
     
     def _test_docker_connection(self, node: Node) -> Dict[str, Any]:
         """测试 Docker API 连接"""
-        docker_url = f"tcp://{node.host}:{node.port}"
+        docker_url = node.docker_host or f"tcp://{node.host}:{node.port}"
         docker = DockerService(docker_host=docker_url)
         
         info = docker.get_info()

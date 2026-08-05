@@ -93,11 +93,15 @@ class DockerService:
         """
         self.docker_host = docker_host or settings.DOCKER_HOST
         try:
-            sock_path = _resolve_docker_socket(self.docker_host)
-            base_url = f'http+unix://{sock_path}'
+            if self.docker_host.startswith('tcp://'):
+                # 远程 Docker 节点：直连 TCP（Docker API）
+                base_url = self.docker_host
+            else:
+                sock_path = _resolve_docker_socket(self.docker_host)
+                base_url = f'http+unix://{sock_path}'
             self.client = docker.DockerClient(base_url=base_url)
             self.ping()
-            logger.info(f"Connected to Docker via: {sock_path}")
+            logger.info(f"Connected to Docker via: {base_url}")
         except DockerException as e:
             logger.error(f"Failed to connect to Docker: {e}")
             raise
@@ -166,6 +170,48 @@ class DockerService:
             }
         except APIError as e:
             logger.error(f"Failed to build image: {e}")
+            raise
+
+    def build_image_from_tar(
+        self,
+        tar_bytes: bytes,
+        tag: str,
+        dockerfile: str = "Dockerfile"
+    ) -> Dict[str, Any]:
+        """
+        通过流式构建上下文构建镜像（支持远程 Docker 节点）
+
+        Args:
+            tar_bytes: 构建上下文 tar 包字节（含 Dockerfile 与代码）
+            tag: 镜像标签
+            dockerfile: Dockerfile 文件名
+
+        Returns:
+            镜像信息
+        """
+        import io
+        try:
+            logger.info(f"Building image {tag} from tar context")
+            image, logs = self.client.images.build(
+                fileobj=io.BytesIO(tar_bytes),
+                custom_context=True,
+                tag=tag,
+                dockerfile=dockerfile,
+                rm=True,
+                nocache=False
+            )
+            build_logs = []
+            for log in logs:
+                if "stream" in log:
+                    build_logs.append(log["stream"].strip())
+            return {
+                "id": image.id,
+                "tag": tag,
+                "short_id": image.short_id,
+                "logs": build_logs
+            }
+        except APIError as e:
+            logger.error(f"Failed to build image from tar: {e}")
             raise
     
     def pull_image(self, repository: str, tag: str = "latest") -> Dict[str, Any]:
@@ -295,11 +341,14 @@ class DockerService:
         """获取容器信息"""
         try:
             container = self.client.containers.get(container_id)
+            state = container.attrs.get("State", {})
             return {
                 "id": container.id,
                 "short_id": container.short_id,
                 "name": container.name,
                 "status": container.status,
+                "state": state.get("Status"),
+                "exit_code": state.get("ExitCode"),
                 "image": container.image.tags[0] if container.image.tags else None,
                 "created": container.attrs.get("Created"),
                 "ports": container.attrs.get("NetworkSettings", {}).get("Ports", {}),
