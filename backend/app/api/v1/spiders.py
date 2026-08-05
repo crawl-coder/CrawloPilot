@@ -203,10 +203,10 @@ async def delete_spider(
 @router.post("/{spider_id}/run")
 async def run_spider(
     spider_id: int,
-    body: RunSpiderRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    body: RunSpiderRequest = RunSpiderRequest(),
 ):
     """运行爬虫"""
     spider = db.query(Spider).filter(Spider.id == spider_id).first()
@@ -262,68 +262,36 @@ async def run_spider(
 
 
 def _run_locally(spider, task, code_dir, db, background_tasks):
-    """本地模式运行爬虫"""
-    # 尝试使用 Docker 执行，如果 Docker 不可用则使用本地执行器
-    try:
-        import docker
-        docker_client = docker.from_env()
-        docker_client.ping()
-        use_docker = True
-        logger.info("Docker 可用，使用 Docker 模式执行")
-    except Exception:
-        use_docker = False
-        logger.info("Docker 不可用，使用本地进程模式执行")
+    """本地模式运行爬虫（v1 默认执行方式，不依赖 Docker / Celery）"""
+    from app.services.local_executor import get_local_executor, LocalTaskConfig
+    local_executor = get_local_executor()
 
-    if use_docker:
-        # Docker 模式：通过 Celery 异步执行
-        from app.workers.celery_app import celery_app
-        celery_app.send_task(
-            'app.workers.task_tasks.execute_spider_task',
-            args=[str(task.id), str(spider.id), spider.spider_name or spider.name],
-            kwargs={
-                'git_url': spider.git_url,
-                'git_branch': spider.git_branch or 'main',
-                'entry_file': spider.entry_file,
-                'spider_name': spider.spider_name or spider.name,
-            }
-        )
-        return {
-            "message": "爬虫运行指令已发送(Docker模式)",
-            "task_id": task.id,
-            "spider_id": spider.id,
-            "mode": "docker"
-        }
-    else:
-        # 本地模式：使用 LocalExecutor 后台执行
-        from app.services.local_executor import get_local_executor, LocalTaskConfig
-        local_executor = get_local_executor()
+    config = LocalTaskConfig(
+        task_id=str(task.id),
+        spider_id=str(spider.id),
+        spider_name=spider.spider_name or spider.name,
+        code_dir=code_dir,
+        entry_file=spider.entry_file,
+        spider_name_to_run=spider.spider_name or spider.name,
+    )
 
-        config = LocalTaskConfig(
-            task_id=str(task.id),
-            spider_id=str(spider.id),
-            spider_name=spider.spider_name or spider.name,
-            code_dir=code_dir,
-            entry_file=spider.entry_file,
-            spider_name_to_run=spider.spider_name or spider.name,
-        )
+    # 在后台运行
+    background_tasks.add_task(local_executor.execute_task, config)
 
-        # 在后台运行
-        background_tasks.add_task(local_executor.execute_task, config)
+    # 更新爬虫统计
+    spider.run_count = (spider.run_count or 0) + 1
+    spider.last_run_at = datetime.utcnow()
+    spider.last_run_status = "running"
+    db.commit()
 
-        # 更新爬虫统计
-        spider.run_count = (spider.run_count or 0) + 1
-        spider.last_run_at = datetime.utcnow()
-        spider.last_run_status = "running"
-        db.commit()
-
-        return {
-            "message": "爬虫已启动(本地模式)",
-            "task_id": task.id,
-            "spider_id": spider.id,
-            "mode": "local",
-            "code_dir": code_dir,
-            "entry_file": spider.entry_file
-        }
+    return {
+        "message": "爬虫已启动(本地模式)",
+        "task_id": task.id,
+        "spider_id": spider.id,
+        "mode": "local",
+        "code_dir": code_dir,
+        "entry_file": spider.entry_file
+    }
 
 
 def _run_via_ssh(spider, task, node, code_dir, background_tasks):
@@ -669,4 +637,3 @@ async def delete_spider_file(
         raise HTTPException(status_code=400, detail=result["message"])
 
     return result
-

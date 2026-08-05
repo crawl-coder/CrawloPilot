@@ -42,44 +42,9 @@ const routes = [
         component: () => import('@/views/Nodes.vue')
       },
       {
-        path: 'schedules',
-        name: 'Schedules',
-        component: () => import('@/views/Schedules.vue')
-      },
-      {
         path: 'tasks',
         name: 'Tasks',
         component: () => import('@/views/Tasks.vue')
-      },
-      {
-        path: 'monitoring',
-        name: 'Monitoring',
-        component: () => import('@/views/Monitoring.vue')
-      },
-      {
-        path: 'alerts',
-        name: 'Alerts',
-        component: () => import('@/views/Alerts.vue')
-      },
-      {
-        path: 'data-management',
-        name: 'DataManagement',
-        component: () => import('@/views/DataManagement.vue')
-      },
-      {
-        path: 'proxy-pool',
-        name: 'ProxyPool',
-        component: () => import('@/views/ProxyPool.vue')
-      },
-      {
-        path: 'api-management',
-        name: 'ApiManagement',
-        component: () => import('@/views/ApiManagement.vue')
-      },
-      {
-        path: 'audit-logs',
-        name: 'AuditLogs',
-        component: () => import('@/views/AuditLogs.vue')
       },
       {
         path: 'users',

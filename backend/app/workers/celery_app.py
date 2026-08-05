@@ -14,7 +14,6 @@ celery_app = Celery(
         "app.workers.deploy_tasks",
         "app.workers.container_tasks",
         "app.workers.task_tasks",
-        "app.workers.schedule_tasks",
     ]
 )
 
@@ -32,7 +31,6 @@ celery_app.conf.update(
         "app.workers.deploy_tasks.*": {"queue": "deploy"},
         "app.workers.container_tasks.*": {"queue": "container"},
         "app.workers.task_tasks.*": {"queue": "tasks"},
-        "app.workers.schedule_tasks.*": {"queue": "scheduler"},
     },
 
     # 并发设置

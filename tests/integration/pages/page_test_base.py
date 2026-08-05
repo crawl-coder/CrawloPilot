@@ -66,8 +66,6 @@ class PageTestBase:
                 
                 if resource_type == 'project':
                     self.client.delete(f'/api/v1/projects/{resource_id}')
-                elif resource_type == 'schedule':
-                    self.client.delete(f'/api/v1/schedules/{resource_id}')
                 elif resource_type == 'user':
                     self.client.delete(f'/api/v1/users/{resource_id}')
             except:

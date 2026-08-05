@@ -125,103 +125,6 @@
         </div>
       </el-tab-pane>
 
-      <!-- Git管理 -->
-      <el-tab-pane label="Git管理" name="git">
-        <div class="git-manage" v-loading="gitLoading">
-          <el-tabs v-model="gitActiveTab">
-            <!-- Git操作 -->
-            <el-tab-pane label="Git操作" name="operations">
-              <el-form :model="gitForm" label-width="120px" style="max-width: 600px">
-                <el-form-item label="Git地址">
-                  <el-input v-model="gitForm.url" placeholder="https://github.com/user/repo.git" />
-                </el-form-item>
-                
-                <el-form-item label="认证方式">
-                  <el-radio-group v-model="gitForm.authType">
-                    <el-radio label="password">密码/Token</el-radio>
-                    <el-radio label="ssh">SSH密钥</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-                
-                <template v-if="gitForm.authType === 'password'">
-                  <el-form-item label="用户名">
-                    <el-input v-model="gitForm.username" placeholder="可选" />
-                  </el-form-item>
-                  <el-form-item label="密码/Token">
-                    <el-input v-model="gitForm.password" type="password" show-password placeholder="可选" />
-                  </el-form-item>
-                </template>
-                
-                <template v-if="gitForm.authType === 'ssh'">
-                  <el-form-item label="SSH私钥">
-                    <el-input v-model="gitForm.sshKey" type="textarea" :rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
-                  </el-form-item>
-                  <el-form-item label="Passphrase">
-                    <el-input v-model="gitForm.passphrase" type="password" show-password placeholder="可选" />
-                  </el-form-item>
-                </template>
-                
-                <el-form-item label="分支">
-                  <el-input v-model="gitForm.branch" placeholder="main" />
-                </el-form-item>
-                
-                <el-form-item>
-                  <el-button type="primary" @click="handleGitClone" :loading="gitLoading">克隆仓库</el-button>
-                  <el-button @click="handleGitPull" :loading="gitLoading">拉取代码</el-button>
-                  <el-button type="warning" @click="handleGitPush" :loading="gitLoading">推送代码</el-button>
-                </el-form-item>
-              </el-form>
-            </el-tab-pane>
-
-            <!-- 分支管理 -->
-            <el-tab-pane label="分支管理" name="branches">
-              <el-button size="small" @click="loadBranches" style="margin-bottom: 10px">刷新</el-button>
-              <el-table :data="branches" border>
-                <el-table-column prop="name" label="分支名称" />
-                <el-table-column prop="is_current" label="当前" width="80">
-                  <template #default="{ row }">
-                    <el-tag v-if="row.is_current" type="success" size="small">是</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="100">
-                  <template #default="{ row }">
-                    <el-button size="small" @click="handleCheckoutBranch(row.name)" :disabled="row.is_current">
-                      切换
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
-
-            <!-- 提交历史 -->
-            <el-tab-pane label="提交历史" name="commits">
-              <el-button size="small" @click="loadCommits" style="margin-bottom: 10px">刷新</el-button>
-              <el-table :data="commits" border>
-                <el-table-column prop="hash" label="Hash" width="100">
-                  <template #default="{ row }">
-                    {{ row.hash.substring(0, 7) }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="author" label="作者" width="150" />
-                <el-table-column prop="message" label="提交信息" />
-                <el-table-column prop="date" label="时间" width="180" />
-              </el-table>
-            </el-tab-pane>
-
-            <!-- 仓库状态 -->
-            <el-tab-pane label="仓库状态" name="status">
-              <el-button size="small" @click="loadStatus" style="margin-bottom: 10px">刷新</el-button>
-              <el-descriptions :column="1" border>
-                <el-descriptions-item label="当前分支">{{ gitStatus.branch }}</el-descriptions-item>
-                <el-descriptions-item label="已修改">{{ gitStatus.modified?.length || 0 }} 个文件</el-descriptions-item>
-                <el-descriptions-item label="已暂存">{{ gitStatus.staged?.length || 0 }} 个文件</el-descriptions-item>
-                <el-descriptions-item label="未跟踪">{{ gitStatus.untracked?.length || 0 }} 个文件</el-descriptions-item>
-              </el-descriptions>
-            </el-tab-pane>
-          </el-tabs>
-        </div>
-      </el-tab-pane>
-
       <!-- 基本信息 -->
       <el-tab-pane label="基本信息" name="info">
         <el-descriptions :column="2" border>
@@ -327,7 +230,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Folder, Document, More, Back, VideoPlay, Delete, Edit, View, Check } from '@element-plus/icons-vue'
 import { getSpider, runSpider, deleteSpider, getSpiderFileTree, getSpiderFileContent, saveSpiderFileContent, createSpiderFileOrDir, deleteSpiderFileOrDir } from '@/api/spider'
-import { gitClone, gitPull, gitPush, gitGetBranches, gitBranchOperation, gitGetCommits, gitGetStatus } from '@/api/spider-git'
 import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, getSpiderTypeColor, formatDateTime as formatDate } from '@/utils/common'
 import { getNodes } from '@/api/node'
 import hljs from 'highlight.js'
@@ -352,23 +254,6 @@ const runForm = reactive({
 const selectedNode = computed(() => {
   if (!runForm.nodeId) return null
   return availableNodes.value.find(n => n.id === runForm.nodeId) || null
-})
-
-// Git管理
-const gitActiveTab = ref('operations')
-const gitLoading = ref(false)
-const branches = ref([])
-const commits = ref([])
-const gitStatus = ref({})
-
-const gitForm = reactive({
-  url: '',
-  username: '',
-  password: '',
-  branch: 'main',
-  authType: 'password',
-  sshKey: '',
-  passphrase: ''
 })
 
 // 文件浏览器
@@ -651,89 +536,6 @@ const handleDelete = async () => {
   }
 }
 
-// ==================== Git管理 ====================
-
-const handleGitClone = async () => {
-  if (!gitForm.url) {
-    ElMessage.warning('请输入Git仓库地址')
-    return
-  }
-  
-  try {
-    gitLoading.value = true
-    await gitClone(spiderId, gitForm)
-    ElMessage.success('克隆成功')
-    
-    // 更新爬虫信息
-    spider.value.git_url = gitForm.url
-    spider.value.git_branch = gitForm.branch
-  } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '克隆失败')
-  } finally {
-    gitLoading.value = false
-  }
-}
-
-const handleGitPull = async () => {
-  try {
-    gitLoading.value = true
-    await gitPull(spiderId)
-    ElMessage.success('拉取成功')
-  } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '拉取失败')
-  } finally {
-    gitLoading.value = false
-  }
-}
-
-const handleGitPush = async () => {
-  try {
-    gitLoading.value = true
-    await gitPush(spiderId)
-    ElMessage.success('推送成功')
-  } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '推送失败')
-  } finally {
-    gitLoading.value = false
-  }
-}
-
-const loadBranches = async () => {
-  try {
-    branches.value = await gitGetBranches(spiderId)
-  } catch (error) {
-    ElMessage.error('加载分支列表失败')
-  }
-}
-
-const handleCheckoutBranch = async (branchName) => {
-  try {
-    await gitBranchOperation(spiderId, {
-      branch_name: branchName,
-      checkout: true
-    })
-    ElMessage.success('切换分支成功')
-    loadBranches()
-  } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '切换分支失败')
-  }
-}
-
-const loadCommits = async () => {
-  try {
-    commits.value = await gitGetCommits(spiderId)
-  } catch (error) {
-    ElMessage.error('加载提交历史失败')
-  }
-}
-
-const loadStatus = async () => {
-  try {
-    gitStatus.value = await gitGetStatus(spiderId)
-  } catch (error) {
-    ElMessage.error('加载仓库状态失败')
-  }
-}
 </script>
 
 <style scoped>

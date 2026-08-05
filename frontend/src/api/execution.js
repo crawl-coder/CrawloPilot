@@ -86,3 +86,24 @@ export function deleteTask(taskId) {
     method: 'delete'
   })
 }
+
+/**
+ * 任务实例统计（task-instances API）
+ */
+export function getTaskStats(params) {
+  return request({
+    url: '/task-instances/stats/summary',
+    method: 'get',
+    params
+  })
+}
+
+/**
+ * 重试任务
+ */
+export function retryTask(taskId) {
+  return request({
+    url: `/task-instances/${taskId}/retry`,
+    method: 'post'
+  })
+}

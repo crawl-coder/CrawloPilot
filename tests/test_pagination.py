@@ -84,7 +84,6 @@ def main():
         ("Spiders API (爬虫列表)", "spiders"),
         ("Projects API (项目列表)", "projects"),
         ("Users API (用户列表)", "users"),
-        ("Schedules API (调度列表)", "schedules"),
     ]
     
     results = []

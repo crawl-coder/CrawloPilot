@@ -13,11 +13,8 @@ from datetime import datetime
 
 # 导入所有页面测试
 from test_login_page import TestLoginPage
-from test_dashboard_page import TestDashboardPage
 from test_projects_page import TestProjectsPage
 from test_users_page import TestUsersPage
-from test_schedules_page import TestSchedulesPage
-from test_monitoring_page import TestMonitoringPage
 
 
 class PageTestRunner:
@@ -39,11 +36,8 @@ class PageTestRunner:
         # 定义所有页面测试
         page_tests = [
             ("登录页面", TestLoginPage),
-            ("Dashboard首页", TestDashboardPage),
             ("项目管理", TestProjectsPage),
             ("用户管理", TestUsersPage),
-            ("任务调度", TestSchedulesPage),
-            ("监控告警", TestMonitoringPage),
         ]
         
         total_passed = 0

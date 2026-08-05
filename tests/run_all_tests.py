@@ -33,11 +33,6 @@ class TestRunner:
         unit_tests = [
             ('Phase 1: 用户认证', 'tests/unit/test_01_auth.py'),
             ('Phase 2: 项目管理', 'tests/unit/test_02_projects.py'),
-            ('Phase 3: 任务调度', 'tests/unit/test_03_schedule.py'),
-            ('Phase 4: 运行监控', 'tests/unit/test_04_monitor.py'),
-            ('Phase 5: 数据质量', 'tests/unit/test_05_quality.py'),
-            ('Phase 6: 代理池与API管理', 'tests/unit/test_06_proxy_api.py'),
-            ('Phase 7: 安全与审计', 'tests/unit/test_07_security_audit.py'),
             ('边界条件测试', 'tests/unit/test_edge_cases.py'),
             ('性能测试', 'tests/unit/test_performance.py'),
         ]
@@ -154,7 +149,6 @@ class TestRunner:
         services = {
             '后端API': TEST_CONFIG['base_url'],
             '前端服务': TEST_CONFIG['frontend_url'],
-            'Nginx': TEST_CONFIG['nginx_url'],
         }
 
         for name, url in services.items():

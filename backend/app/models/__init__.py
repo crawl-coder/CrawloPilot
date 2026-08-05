@@ -20,7 +20,6 @@ class User(Base):
     # Relationships
     teams = relationship("TeamMember", back_populates="user")
     roles = relationship("Role", secondary="user_role", back_populates="users")
-    audit_logs = relationship("AuditLog", back_populates="user")
 
 
 class Team(Base):
@@ -111,8 +110,6 @@ class Project(Base):
     team = relationship("Team", back_populates="projects")
     versions = relationship("ProjectVersion", back_populates="project")
     schedules = relationship("Schedule", back_populates="project")
-    alert_rules = relationship("AlertRule", back_populates="project")
-    api_configs = relationship("ApiConfig", back_populates="project")
     spiders = relationship("Spider", back_populates="project")
 
 
@@ -268,98 +265,6 @@ class TaskInstance(Base):
     schedule = relationship("Schedule", back_populates="task_instances")
     spider = relationship("Spider", back_populates="task_instances")
     node = relationship("Node", back_populates="task_instances")
-
-
-class AlertRuleType(str, enum.Enum):
-    STATUS = "status"
-    THRESHOLD = "threshold"
-    TIMEOUT = "timeout"
-    RESOURCE = "resource"
-    DATA = "data"
-
-
-class AlertRule(Base):
-    __tablename__ = "alert_rule"
-    
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
-    rule_type = Column(Enum(AlertRuleType), nullable=False)
-    condition = Column(JSON)
-    channel = Column(JSON)
-    enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    project = relationship("Project", back_populates="alert_rules")
-
-
-class ProxyProtocol(str, enum.Enum):
-    HTTP = "HTTP"
-    HTTPS = "HTTPS"
-    SOCKS5 = "SOCKS5"
-
-
-class ProxyStatus(str, enum.Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    BLOCKED = "blocked"
-
-
-class ProxyPool(Base):
-    __tablename__ = "proxy_pool"
-    
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    ip = Column(String(64), nullable=False, index=True)
-    port = Column(Integer, nullable=False)
-    protocol = Column(Enum(ProxyProtocol), nullable=False)
-    region = Column(String(64))
-    group_name = Column(String(64), index=True)
-    health_score = Column(DECIMAL(5, 2), default=100.00)
-    status = Column(Enum(ProxyStatus), default=ProxyStatus.ACTIVE)
-    last_checked_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class ApiAuthType(str, enum.Enum):
-    NONE = "none"
-    API_KEY = "api_key"
-    OAUTH2 = "oauth2"
-
-
-class ApiConfig(Base):
-    __tablename__ = "api_config"
-    
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
-    name = Column(String(128), nullable=False)
-    base_url = Column(String(512), nullable=False)
-    auth_type = Column(Enum(ApiAuthType), default=ApiAuthType.NONE)
-    api_key = Column(String(256))
-    rate_limit = Column(Integer, default=60)
-    circuit_breaker_threshold = Column(Integer, default=10)
-    enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    project = relationship("Project", back_populates="api_configs")
-
-
-class AuditLog(Base):
-    __tablename__ = "audit_log"
-    
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False)
-    action = Column(String(64), nullable=False)
-    resource_type = Column(String(64))
-    resource_id = Column(BigInteger)
-    old_value = Column(JSON)
-    new_value = Column(JSON)
-    ip_address = Column(String(64))
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    
-    # Relationships
-    user = relationship("User", back_populates="audit_logs")
 
 
 class EnvironmentConfig(Base):

@@ -174,27 +174,6 @@ class TestEdgeCases:
                 '不存在的项目返回错误', time.time() - start_time)
             return True
     
-    def test_nonexistent_schedule(self):
-        """测试访问不存在的调度"""
-        test_name = "不存在的调度"
-        start_time = time.time()
-        
-        try:
-            result = self.client.get('/api/v1/schedules/999999')
-            
-            if not result.get('id'):
-                self.reporter.add_result(self.module_name, test_name, 'PASS',
-                    '不存在的调度被正确处理', time.time() - start_time)
-                return True
-            else:
-                self.reporter.add_result(self.module_name, test_name, 'FAIL',
-                    '不存在的调度未正确处理', time.time() - start_time)
-                return False
-        except Exception as e:
-            self.reporter.add_result(self.module_name, test_name, 'PASS',
-                '不存在的调度返回错误', time.time() - start_time)
-            return True
-    
     def test_nonexistent_user(self):
         """测试访问不存在的用户"""
         test_name = "不存在的用户"
@@ -334,64 +313,6 @@ class TestEdgeCases:
                 '超大页码被正确处理', time.time() - start_time)
             return True
     
-    def test_invalid_cron_expression(self):
-        """测试无效Cron表达式"""
-        test_name = "无效Cron表达式"
-        start_time = time.time()
-        
-        try:
-            schedule_data = {
-                'project_id': 1,
-                'spider_name': 'test',
-                'schedule_type': 'cron',
-                'cron_expr': 'invalid-cron',
-                'enabled': True
-            }
-            
-            result = self.client.post('/api/v1/schedules/', json_data=schedule_data)
-            
-            if not result.get('id'):
-                self.reporter.add_result(self.module_name, test_name, 'PASS',
-                    '无效Cron表达式被正确拒绝', time.time() - start_time)
-                return True
-            else:
-                self.reporter.add_result(self.module_name, test_name, 'FAIL',
-                    '无效Cron表达式未被拒绝', time.time() - start_time)
-                return False
-        except Exception as e:
-            self.reporter.add_result(self.module_name, test_name, 'PASS',
-                '无效Cron表达式被正确拒绝', time.time() - start_time)
-            return True
-    
-    def test_negative_values(self):
-        """测试负数值"""
-        test_name = "负数值验证"
-        start_time = time.time()
-        
-        try:
-            schedule_data = {
-                'project_id': 1,
-                'spider_name': 'test',
-                'schedule_type': 'interval',
-                'interval_seconds': -100,  # 负数
-                'enabled': True
-            }
-            
-            result = self.client.post('/api/v1/schedules/', json_data=schedule_data)
-            
-            if not result.get('id'):
-                self.reporter.add_result(self.module_name, test_name, 'PASS',
-                    '负数值被正确拒绝', time.time() - start_time)
-                return True
-            else:
-                self.reporter.add_result(self.module_name, test_name, 'FAIL',
-                    '负数值未被拒绝', time.time() - start_time)
-                return False
-        except Exception as e:
-            self.reporter.add_result(self.module_name, test_name, 'PASS',
-                '负数值被正确拒绝', time.time() - start_time)
-            return True
-    
     def run_all_tests(self):
         """运行所有测试"""
         print(f"\n{'='*60}")
@@ -404,52 +325,43 @@ class TestEdgeCases:
         
         # 输入验证测试
         print("\n--- 输入验证测试 ---")
-        print("[1/14] 空用户名验证...")
+        print("[1/11] 空用户名验证...")
         self.test_empty_username()
         
-        print("[2/14] 空密码验证...")
+        print("[2/11] 空密码验证...")
         self.test_empty_password()
         
-        print("[3/14] 无效邮箱格式...")
+        print("[3/11] 无效邮箱格式...")
         self.test_invalid_email_format()
         
-        print("[4/14] 过短密码验证...")
+        print("[4/11] 过短密码验证...")
         self.test_short_password()
         
         # 资源不存在测试
         print("\n--- 资源不存在测试 ---")
-        print("[5/14] 不存在的项目...")
+        print("[5/11] 不存在的项目...")
         self.test_nonexistent_project()
         
-        print("[6/14] 不存在的调度...")
-        self.test_nonexistent_schedule()
-        
-        print("[7/14] 不存在的用户...")
+        print("[6/11] 不存在的用户...")
         self.test_nonexistent_user()
         
         # 权限测试
         print("\n--- 权限测试 ---")
-        print("[8/14] 未授权访问...")
+        print("[7/11] 未授权访问...")
         self.test_unauthorized_access()
         
         # 并发测试
         print("\n--- 并发测试 ---")
-        print("[9/14] 重复用户名...")
+        print("[8/11] 重复用户名...")
         self.test_duplicate_username()
         
-        print("[10/14] 重复邮箱...")
+        print("[9/11] 重复邮箱...")
         self.test_duplicate_email()
         
         # 数据边界测试
         print("\n--- 数据边界测试 ---")
-        print("[11/14] 超大页码...")
+        print("[10/11] 超大页码...")
         self.test_large_page_number()
-        
-        print("[12/14] 无效Cron表达式...")
-        self.test_invalid_cron_expression()
-        
-        print("[13/14] 负数值验证...")
-        self.test_negative_values()
         
         # 重新登录
         self.setup()

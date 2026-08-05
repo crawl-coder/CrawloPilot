@@ -56,16 +56,6 @@
 
       <el-col :span="6">
         <el-card shadow="hover" class="stat-card">
-          <el-statistic title="调度配置" :value="stats.schedules" suffix="个">
-            <template #suffix>
-              <el-icon><Clock /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
-      </el-col>
-
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
           <el-statistic title="在线节点" :value="stats.onlineNodes">
             <template #suffix>
               <el-icon><Monitor /></el-icon>
@@ -76,11 +66,7 @@
 
       <el-col :span="6">
         <el-card shadow="hover" class="stat-card">
-          <el-statistic title="活跃告警" :value="stats.activeAlerts">
-            <template #suffix>
-              <el-icon><Bell /></el-icon>
-            </template>
-          </el-statistic>
+          <el-statistic title="节点总数" :value="stats.totalNodes" />
         </el-card>
       </el-col>
     </el-row>
@@ -95,9 +81,9 @@
       <h4>快速开始</h4>
       <el-steps :space="200" direction="vertical">
         <el-step title="创建项目" description="在项目管理中创建您的第一个爬虫项目" />
-        <el-step title="创建爬虫" description="在项目中添加爬虫，支持 Git/上传/空模板" />
-        <el-step title="配置调度" description="设置定时任务或手动触发执行" />
-        <el-step title="监控运行" description="在监控中心查看实时运行状态和日志" />
+        <el-step title="创建爬虫" description="在项目中添加爬虫，支持上传/空模板" />
+        <el-step title="上传代码" description="通过项目文件管理上传爬虫代码" />
+        <el-step title="执行与监控" description="在任务管理中查看运行状态和实时日志" />
       </el-steps>
     </el-card>
   </div>
@@ -105,8 +91,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Files, Aim, VideoPlay, Document, SuccessFilled, Clock, Monitor, Bell } from '@element-plus/icons-vue'
-import { getDashboardData, getActiveAlerts } from '@/api/monitoring'
+import { Files, Aim, VideoPlay, Document, SuccessFilled, Monitor } from '@element-plus/icons-vue'
+import { getDashboardData } from '@/api/monitoring'
 import { getSpiders } from '@/api/spider'
 import { getNodes } from '@/api/deploy'
 
@@ -116,25 +102,22 @@ const stats = ref({
   runningTasks: 0,
   todayTasks: 0,
   successRate: 0,
-  schedules: 0,
   onlineNodes: 0,
-  activeAlerts: 0
+  totalNodes: 0
 })
 
 onMounted(async () => {
   try {
     // 并行加载各类统计数据
-    const [dashboard, spidersData, alerts, nodesData] = await Promise.allSettled([
+    const [dashboard, spidersData, nodesData] = await Promise.allSettled([
       getDashboardData().catch(() => ({})),
       getSpiders({ limit: 1 }).catch(() => ({ total: 0 })),
-      getActiveAlerts().catch(() => []),
       getNodes().catch(() => [])
     ])
 
     if (dashboard.status === 'fulfilled' && dashboard.value) {
       const d = dashboard.value
       stats.value.projects = d.projects?.total || 0
-      stats.value.schedules = d.schedules?.total || 0
       stats.value.runningTasks = d.tasks?.running || 0
       stats.value.todayTasks = d.tasks?.today || 0
       stats.value.successRate = d.tasks?.success_rate || 0
@@ -144,12 +127,9 @@ onMounted(async () => {
       stats.value.spiders = spidersData.value.total || 0
     }
 
-    if (alerts.status === 'fulfilled') {
-      stats.value.activeAlerts = Array.isArray(alerts.value) ? alerts.value.length : 0
-    }
-
     if (nodesData.status === 'fulfilled') {
       const nodes = Array.isArray(nodesData.value) ? nodesData.value : (nodesData.value?.items || [])
+      stats.value.totalNodes = nodes.length
       stats.value.onlineNodes = nodes.filter(n => n.status === 'online').length
     }
   } catch (error) {

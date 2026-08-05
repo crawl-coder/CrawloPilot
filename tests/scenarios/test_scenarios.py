@@ -140,155 +140,6 @@ class TestScenarios:
             )
             return False
     
-    # ==================== 场景2: 定时爬虫任务调度 ====================
-    
-    def test_scenario_02_scheduled_spider_task(self):
-        """场景2: 定时爬虫任务调度"""
-        test_name = "定时爬虫任务调度"
-        start_time = time.time()
-        
-        print("\n  模拟场景: 创建定时爬虫任务并监控执行")
-        
-        try:
-            # 1. 创建项目
-            timestamp = int(time.time())
-            project_data = {
-                'name': f'电商价格监控_{timestamp}',
-                'description': '定时采集电商商品价格',
-                'team_id': 1
-            }
-            
-            project = self.client.post('/api/v1/projects/', json_data=project_data)
-            if not project or not project.get('id'):
-                raise Exception('创建项目失败')
-            print(f"    ✓ 创建项目: {project['name']}")
-            
-            self.test_resources['projects'].append(project)
-            
-            # 2. 创建每日定时调度（每天早上8点）
-            schedule_data = {
-                'project_id': project['id'],
-                'spider_name': 'price_monitor',
-                'schedule_type': 'cron',
-                'cron_expr': '0 8 * * *',
-                'priority': 5,
-                'max_concurrency': 1,
-                'timeout_seconds': 7200,
-                'enabled': True
-            }
-            
-            schedule = self.client.post('/api/v1/schedules/', json_data=schedule_data)
-            print(f"    ✓ 创建定时调度: 每日8点执行")
-            
-            # 3. 创建间隔调度（每2小时）
-            interval_schedule = {
-                'project_id': project['id'],
-                'spider_name': 'price_monitor_realtime',
-                'schedule_type': 'interval',
-                'interval_seconds': 7200,
-                'priority': 3,
-                'enabled': True
-            }
-            
-            interval = self.client.post('/api/v1/schedules/', json_data=interval_schedule)
-            print(f"    ✓ 创建间隔调度: 每2小时执行")
-            
-            # 4. 手动触发一次测试
-            if schedule and schedule.get('id'):
-                task = self.client.post(f"/api/v1/schedules/{schedule['id']}/trigger")
-                print(f"    ✓ 手动触发测试任务")
-            
-            # 5. 查看任务执行状态
-            tasks = self.client.get('/api/v1/tasks/')
-            print(f"    ✓ 查看任务执行状态: {len(tasks) if tasks else 0}个任务")
-            
-            self.reporter.add_result(
-                self.module_name, test_name, 'PASS',
-                '定时爬虫任务调度测试成功', time.time() - start_time
-            )
-            return True
-            
-        except Exception as e:
-            self.reporter.add_result(
-                self.module_name, test_name, 'FAIL',
-                f'定时爬虫任务调度测试失败: {str(e)}', time.time() - start_time
-            )
-            return False
-    
-    # ==================== 场景3: 故障恢复测试 ====================
-    
-    def test_scenario_03_failure_recovery(self):
-        """场景3: 故障恢复测试"""
-        test_name = "故障恢复测试"
-        start_time = time.time()
-        
-        print("\n  模拟场景: 任务失败后的重试和恢复")
-        
-        try:
-            # 1. 创建项目和调度
-            timestamp = int(time.time())
-            project_data = {
-                'name': f'故障测试项目_{timestamp}',
-                'description': '用于测试故障恢复',
-                'team_id': 1
-            }
-            
-            project = self.client.post('/api/v1/projects/', json_data=project_data)
-            if not project or not project.get('id'):
-                raise Exception('创建项目失败')
-            print(f"    ✓ 创建项目: {project['name']}")
-            
-            self.test_resources['projects'].append(project)
-            
-            # 2. 创建带重试策略的调度
-            schedule_data = {
-                'project_id': project['id'],
-                'spider_name': 'test_spider',
-                'schedule_type': 'once',
-                'priority': 5,
-                'timeout_seconds': 600,
-                'retry_strategy': {
-                    'max_retries': 3,
-                    'retry_delay': 60,
-                    'backoff_factor': 2
-                },
-                'enabled': True
-            }
-            
-            schedule = self.client.post('/api/v1/schedules/', json_data=schedule_data)
-            print(f"    ✓ 创建带重试策略的调度")
-            
-            # 3. 创建告警规则（任务失败时告警）
-            if project:
-                alert_data = {
-                    'project_id': project['id'],
-                    'rule_type': 'status',
-                    'condition': {'status': ['failed', 'timeout']},
-                    'channel': {'type': 'email', 'recipients': ['admin@example.com']},
-                    'enabled': True
-                }
-                
-                alert = self.client.post('/api/v1/alert-rules/', json_data=alert_data)
-                print(f"    ✓ 创建失败告警规则")
-            
-            # 4. 触发任务
-            if schedule and schedule.get('id'):
-                task = self.client.post(f"/api/v1/schedules/{schedule['id']}/trigger")
-                print(f"    ✓ 触发任务")
-            
-            self.reporter.add_result(
-                self.module_name, test_name, 'PASS',
-                '故障恢复测试成功', time.time() - start_time
-            )
-            return True
-            
-        except Exception as e:
-            self.reporter.add_result(
-                self.module_name, test_name, 'FAIL',
-                f'故障恢复测试失败: {str(e)}', time.time() - start_time
-            )
-            return False
-    
     # ==================== 场景4: 多项目管理 ====================
     
     def test_scenario_04_multiple_projects_management(self):
@@ -414,69 +265,6 @@ class TestScenarios:
             )
             return False
     
-    # ==================== 场景6: 数据质量监控场景 ====================
-    
-    def test_scenario_06_data_quality_monitoring(self):
-        """场景6: 数据质量监控场景"""
-        test_name = "数据质量监控"
-        start_time = time.time()
-        
-        print("\n  模拟场景: 监控爬虫采集数据质量")
-        
-        try:
-            # 1. 创建项目
-            timestamp = int(time.time())
-            project_data = {
-                'name': f'数据质量测试项目_{timestamp}',
-                'description': '用于测试数据质量监控',
-                'team_id': 1
-            }
-            
-            project = self.client.post('/api/v1/projects/', json_data=project_data)
-            if not project or not project.get('id'):
-                raise Exception('创建项目失败')
-            print(f"    ✓ 创建项目: {project['name']}")
-            
-            self.test_resources['projects'].append(project)
-            
-            # 2. 配置数据质量检测规则
-            quality_config = {
-                'project_id': project['id'],
-                'rules': [
-                    {'type': 'volume', 'threshold': {'min': 100, 'max': 10000}},
-                    {'type': 'null_rate', 'threshold': {'max': 0.1}},
-                    {'type': 'duplicate_rate', 'threshold': {'max': 0.05}}
-                ]
-            }
-            
-            # 3. 触发数据质量检测
-            check_result = self.client.post(
-                '/api/v1/data-quality/check',
-                json_data={'project_id': project['id']}
-            )
-            print(f"    ✓ 触发数据质量检测")
-            
-            # 4. 查看质量报告
-            reports = self.client.get('/api/v1/data-quality/reports')
-            print(f"    ✓ 查看质量报告: {len(reports) if reports else 0}条")
-            
-            # 5. 查看数据统计
-            stats = self.client.get('/api/v1/data-quality/stats')
-            print(f"    ✓ 查看数据统计")
-            
-            self.reporter.add_result(
-                self.module_name, test_name, 'PASS',
-                '数据质量监控测试成功', time.time() - start_time
-            )
-            return True
-            
-        except Exception as e:
-            self.reporter.add_result(
-                self.module_name, test_name, 'FAIL',
-                f'数据质量监控测试失败: {str(e)}', time.time() - start_time
-            )
-            return False
-    
     def run_all_tests(self):
         """运行所有场景测试"""
         print(f"\n{'='*60}")
@@ -496,16 +284,6 @@ class TestScenarios:
         self.test_scenario_01_new_user_onboarding()
         
         print("\n" + "="*50)
-        print("[场景2] 定时爬虫任务调度")
-        print("="*50)
-        self.test_scenario_02_scheduled_spider_task()
-        
-        print("\n" + "="*50)
-        print("[场景3] 故障恢复测试")
-        print("="*50)
-        self.test_scenario_03_failure_recovery()
-        
-        print("\n" + "="*50)
         print("[场景4] 多项目管理")
         print("="*50)
         self.test_scenario_04_multiple_projects_management()
@@ -514,11 +292,6 @@ class TestScenarios:
         print("[场景5] 团队协作场景")
         print("="*50)
         self.test_scenario_05_team_collaboration()
-        
-        print("\n" + "="*50)
-        print("[场景6] 数据质量监控场景")
-        print("="*50)
-        self.test_scenario_06_data_quality_monitoring()
         
         # 清理
         print("\n[清理] 清理测试资源...")

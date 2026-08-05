@@ -142,7 +142,6 @@ def main():
         ("Spiders API (爬虫列表)", "spiders"),
         ("Projects API (项目列表)", "projects"),
         ("Users API (用户列表)", "users"),
-        ("Schedules API (调度列表)", "schedules"),
         ("Deploy API (部署列表)", "deploys"),  # 注意是 deploys 不是 deploy
     ]
     
@@ -174,7 +173,6 @@ def main():
         print("  - http://localhost:3000/spiders")
         print("  - http://localhost:3000/projects")
         print("  - http://localhost:3000/users")
-        print("  - http://localhost:3000/schedules")
         print("  - http://localhost:3000/deploy")
         return 0
     else:

@@ -358,13 +358,7 @@ class TestProjectsPage(PageTestBase):
             version_count = len(versions) if isinstance(versions, list) else 0
             self.log_step("项目版本", f"{version_count}个版本")
             
-            # 3. 获取项目调度
-            schedules = self.client.get('/api/v1/schedules/')
-            if isinstance(schedules, list):
-                project_schedules = [s for s in schedules if s.get('project_id') == project_id]
-                self.log_step("项目调度", f"{len(project_schedules)}个调度")
-            
-            # 4. 获取项目任务
+            # 3. 获取项目任务
             tasks = self.client.get('/api/v1/tasks/')
             if isinstance(tasks, list):
                 project_tasks = [t for t in tasks if t.get('project_id') == project_id]

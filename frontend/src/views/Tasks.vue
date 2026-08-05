@@ -225,8 +225,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, VideoPlay } from '@element-plus/icons-vue'
-import { listTasks, stopTask, pauseTask, resumeTask, deleteTask, getTaskLogs } from '@/api/execution'
-import { getTaskStats, retryTask } from '@/api/schedule'
+import { listTasks, stopTask, pauseTask, resumeTask, deleteTask, getTaskLogs, getTaskStats, retryTask } from '@/api/execution'
 import { getSpiders } from '@/api/spider'
 import { getTaskStatusType as getStatusType, getTaskStatusText as getStatusText, formatDateTime as formatTime } from '@/utils/common'
 

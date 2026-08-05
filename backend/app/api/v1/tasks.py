@@ -10,7 +10,6 @@ from typing import Any
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import User, TaskInstance, TaskStatus, Schedule
-from app.scheduler import TaskInstanceStore
 import logging
 
 logger = logging.getLogger(__name__)
@@ -148,13 +147,45 @@ async def retry_task(
     if task.status not in [TaskStatus.FAILED, TaskStatus.TIMEOUT]:
         raise HTTPException(status_code=400, detail="只能重试失败或超时的任务")
     
-    # 导入 Celery 任务
-    from app.workers.schedule_tasks import retry_failed_task
-    
-    # 异步重试
-    retry_failed_task.delay(task_id)
-    
-    return {"message": "任务重试已提交"}
+    # 查询爬虫并复用本地执行器重跑
+    from app.models import Spider
+    from app.services.local_executor import get_local_executor, LocalTaskConfig
+    from app.services.upload_service import UploadService
+    import os
+
+    spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
+    if not spider:
+        raise HTTPException(status_code=404, detail="爬虫不存在，无法重试")
+
+    upload_service = UploadService()
+    code_dir = upload_service.get_spider_code_dir(spider.project_id, spider.id)
+    if not code_dir or not os.path.exists(code_dir):
+        raise HTTPException(status_code=400, detail="爬虫代码目录不存在，请先上传代码")
+
+    # 创建新的任务实例并后台执行
+    new_task = TaskInstance(
+        spider_id=spider.id,
+        spider_name=spider.spider_name or spider.name,
+        schedule_id=None,
+        node_id=task.node_id,
+        deploy_mode="local",
+        status=TaskStatus.PENDING,
+    )
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+
+    config = LocalTaskConfig(
+        task_id=str(new_task.id),
+        spider_id=str(spider.id),
+        spider_name=spider.spider_name or spider.name,
+        code_dir=code_dir,
+        entry_file=spider.entry_file,
+        spider_name_to_run=spider.spider_name or spider.name,
+    )
+    background_tasks.add_task(get_local_executor().execute_task, config)
+
+    return {"message": "任务重试已提交", "task_id": new_task.id}
 
 
 @router.post("/{task_id}/stop")
