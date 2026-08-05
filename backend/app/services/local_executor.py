@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from threading import Lock, Thread
 
 from app.core.database import SessionLocal
-from app.models import TaskInstance, TaskStatus
+from app.models import TaskInstance, TaskStatus, Spider
 
 logger = logging.getLogger(__name__)
 
@@ -320,6 +320,9 @@ asyncio.run(CrawlerProcess().crawl('{spider_name_to_run or config.spider_name}')
             )
             # 匹配 "X pages, Y items" 格式
             alt_pattern = re.compile(r'(\d+)\s+pages?.*?(\d+)\s+items?', re.IGNORECASE)
+            # 匹配 crawlo 统计 dict 格式: 'item_successful_count': 42
+            crawlo_items_pattern = re.compile(r"['\"]item_successful_count['\"]\s*:\s*(\d+)")
+            crawlo_pages_pattern = re.compile(r"['\"]response_received_count['\"]\s*:\s*(\d+)")
             # 匹配错误计数: ERROR/WARNING/error
             error_pattern = re.compile(r'\[(?:ERROR|WARNING)\]', re.IGNORECASE)
             
@@ -336,6 +339,16 @@ asyncio.run(CrawlerProcess().crawl('{spider_name_to_run or config.spider_name}')
                     last_match = alt_matches[-1]
                     self.pages_crawled = int(last_match.group(1))
                     self.items_scraped = int(last_match.group(2))
+
+            # 兼容 crawlo 统计 dict 格式（真实爬虫日志）
+            if not self.items_scraped:
+                m = crawlo_items_pattern.search(content)
+                if m:
+                    self.items_scraped = int(m.group(1))
+            if not self.pages_crawled:
+                m = crawlo_pages_pattern.search(content)
+                if m:
+                    self.pages_crawled = int(m.group(1))
             
             # 统计错误数
             self.errors_count = len(error_pattern.findall(content))
@@ -487,6 +500,9 @@ class LocalExecutor:
                 process.items_scraped,
                 process.errors_count
             )
+
+            # 同步爬虫运行统计
+            self._update_spider_stats(task_id, process.status)
             
             logger.info(
                 f"[{task_id}] 进程完成: exit_code={exit_code}, "
@@ -521,6 +537,7 @@ class LocalExecutor:
                     process.errors_count,
                     error_message=f"任务超时 ({timeout}s)"
                 )
+                self._update_spider_stats(task_id, TaskStatus.TIMEOUT)
             except Exception as e:
                 logger.error(f"[{task_id}] 超时终止失败: {e}")
         except Exception as e:
@@ -536,6 +553,34 @@ class LocalExecutor:
                 0, 0, 0,
                 error_message=str(e)
             )
+            self._update_spider_stats(task_id, TaskStatus.FAILED)
+
+    def _update_spider_stats(self, task_id: str, status: TaskStatus):
+        """任务结束后同步爬虫的运行统计（last_run / 成功失败计数）"""
+        db = SessionLocal()
+        try:
+            if not str(task_id).isdigit():
+                return
+            task = db.query(TaskInstance).filter(TaskInstance.id == int(task_id)).first()
+            if not task or not task.spider_id:
+                return
+            spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
+            if not spider:
+                return
+
+            spider.last_run_at = datetime.utcnow()
+            spider.last_run_status = status.value
+            if status == TaskStatus.SUCCESS:
+                spider.success_count = (spider.success_count or 0) + 1
+            elif status in (TaskStatus.FAILED, TaskStatus.TIMEOUT):
+                spider.error_count = (spider.error_count or 0) + 1
+            db.commit()
+            logger.info(f"[{task_id}] 已更新爬虫统计: {spider.name} -> {status.value}")
+        except Exception as e:
+            logger.error(f"[{task_id}] 更新爬虫统计失败: {e}")
+            db.rollback()
+        finally:
+            db.close()
 
     def _delayed_cleanup(self, task_id: str):
         """延迟清理活动任务"""
