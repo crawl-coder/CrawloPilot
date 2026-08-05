@@ -253,7 +253,7 @@ async def run_spider(
         elif node.connect_type == "docker":
             return _run_via_remote_docker(spider, task, node, code_dir, background_tasks)
         elif node.connect_type == "agent":
-            return _run_via_agent(spider, task, node, background_tasks)
+            return _run_via_agent(spider, task, node, db)
         else:
             return _run_via_ssh(spider, task, node, code_dir, background_tasks)
     else:
@@ -384,37 +384,23 @@ def _run_via_remote_docker(spider, task, node, code_dir, background_tasks):
     }
 
 
-def _run_via_agent(spider, task, node, background_tasks):
-    """通过 Agent 运行爬虫（通过 Celery 转发到节点 Agent）"""
-    from app.workers.celery_app import celery_app
+def _run_via_agent(spider, task, node, db):
+    """通过 Agent 运行爬虫：任务保持 PENDING，由节点上的 agent 领取执行"""
+    from app.models import TaskStatus
 
-    celery_app.send_task(
-        'app.workers.task_tasks.execute_spider_task',
-        args=[str(task.id), str(spider.id), spider.spider_name or spider.name],
-        kwargs={
-            'git_url': spider.git_url,
-            'git_branch': spider.git_branch or 'main',
-            'entry_file': spider.entry_file,
-            'spider_name': spider.spider_name or spider.name,
-            'node_id': str(node.id),
-        }
-    )
+    task.deploy_mode = "agent"
+    task.node_id = node.id
+    task.status = TaskStatus.PENDING
+    db.commit()
 
     # 更新爬虫统计
-    from app.core.database import SessionLocal
-    db_local = SessionLocal()
-    try:
-        spider_obj = db_local.query(Spider).get(spider.id)
-        if spider_obj:
-            spider_obj.run_count = (spider_obj.run_count or 0) + 1
-            spider_obj.last_run_at = datetime.utcnow()
-            spider_obj.last_run_status = "running"
-            db_local.commit()
-    finally:
-        db_local.close()
+    spider.run_count = (spider.run_count or 0) + 1
+    spider.last_run_at = datetime.utcnow()
+    spider.last_run_status = "running"
+    db.commit()
 
     return {
-        "message": "爬虫运行指令已发送(Agent模式)",
+        "message": "任务已派发给节点 Agent",
         "task_id": task.id,
         "spider_id": spider.id,
         "mode": "agent",

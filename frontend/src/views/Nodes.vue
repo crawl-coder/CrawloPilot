@@ -70,6 +70,12 @@
                 <span class="label">Agent:</span>
                 <span class="value">v{{ node.agent_version }}</span>
               </div>
+              <div class="info-item" v-if="node.connect_type === 'agent'">
+                <span class="label">Agent状态:</span>
+                <el-tag :type="node.agent_status === 'online' ? 'success' : 'info'" size="small">
+                  {{ node.agent_status === 'online' ? '在线' : '离线' }}
+                </el-tag>
+              </div>
               <div class="info-item" v-if="node.last_heartbeat">
                 <span class="label">心跳:</span>
                 <span class="value">{{ formatTime(node.last_heartbeat) }}</span>
@@ -113,11 +119,7 @@
         <el-form-item label="连接方式" required>
           <el-radio-group v-model="nodeForm.connect_type" @change="onConnectTypeChange">
             <el-radio value="ssh">SSH 直连</el-radio>
-            <el-tooltip content="Agent 模式 v2 支持，当前版本请使用 SSH 直连" placement="top">
-              <span>
-                <el-radio value="agent" disabled>Agent 代理（即将支持）</el-radio>
-              </span>
-            </el-tooltip>
+            <el-radio value="agent">Agent 代理</el-radio>
             <el-radio value="docker">Docker API</el-radio>
           </el-radio-group>
         </el-form-item>
@@ -396,22 +398,27 @@ const handleAddNode = async () => {
 
   adding.value = true
   try {
-    await createNode(nodeForm)
-    ElMessage.success('节点添加成功，正在测试连接...')
+    const created = await createNode(nodeForm)
+    ElMessage.success('节点添加成功')
     showAddDialog.value = false
     loadNodes()
 
-    // 添加后自动测试连接，给出即时反馈
-    try {
-      const list = await getNodes()
-      const created = list.find(n => n.name === nodeForm.name)
-      if (created) {
+    if (nodeForm.connect_type === 'agent') {
+      // Agent 节点：展示注册令牌，由节点上的 agent 程序使用
+      ElMessageBox.alert(
+        `请在节点服务器上运行：\n\npython crawlo_agent.py --server http://<控制端>:8000 --token ${created.agent_token}\n\nAgent 启动后会自动注册并上线。`,
+        'Agent 注册令牌（仅显示一次）',
+        { confirmButtonText: '我已复制' }
+      )
+    } else {
+      // 其他类型：添加后自动测试连接，给出即时反馈
+      try {
         const result = await testNodeConnection(created.id)
         ElMessage.success(result.message || '连接测试成功')
         loadNodes()
+      } catch (testError) {
+        ElMessage.warning(testError.response?.data?.detail || '连接测试失败，节点状态为离线')
       }
-    } catch (testError) {
-      ElMessage.warning(testError.response?.data?.detail || '连接测试失败，节点状态为离线')
     }
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '添加节点失败')

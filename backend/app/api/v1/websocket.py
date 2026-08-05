@@ -162,11 +162,14 @@ async def task_websocket(websocket: WebSocket, task_id: str):
             elif deploy_mode == "docker":
                 from app.services.docker_executor import get_docker_executor
                 executor = get_docker_executor()
+            elif deploy_mode == "agent":
+                from app.services.agent_service import get_agent_service
+                executor = get_agent_service()
             else:
                 from app.services.local_executor import get_local_executor
                 executor = get_local_executor()
 
-            if mtype in ("pause", "resume") and deploy_mode in ("ssh", "docker"):
+            if mtype in ("pause", "resume") and deploy_mode in ("ssh", "docker", "agent"):
                 await send({"type": "error", "message": f"{deploy_mode.upper()} 模式暂不支持暂停/恢复"})
                 continue
 

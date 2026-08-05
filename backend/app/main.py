@@ -129,9 +129,10 @@ from app.api.v1 import spiders
 app.include_router(spiders.router, prefix=settings.API_PREFIX)
 
 # 部署与节点
-from app.api.v1 import deploy, nodes
+from app.api.v1 import deploy, nodes, agent
 app.include_router(deploy.router, prefix=settings.API_PREFIX)
 app.include_router(nodes.router, prefix=settings.API_PREFIX)
+app.include_router(agent.router, prefix=settings.API_PREFIX)
 
 # 任务
 from app.api.v1 import tasks, execution

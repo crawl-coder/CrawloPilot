@@ -9,6 +9,7 @@ from app.models import Node, NodeStatus, Container, ContainerStatus
 from app.services.docker_service import DockerService
 import logging
 import socket
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,8 @@ class NodeService:
             host=host,
             port=port,
             connect_type=connect_type,
+            agent_token=uuid.uuid4().hex if connect_type == "agent" else None,
+            agent_status="offline" if connect_type == "agent" else None,
             ssh_host=ssh_host or host,
             ssh_port=ssh_port or 22,
             ssh_user=ssh_user or "root",

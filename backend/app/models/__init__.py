@@ -354,6 +354,7 @@ class Node(Base):
     disk_usage = Column(DECIMAL(5,2), default=0.00)   # 磁盘使用率 %
     agent_version = Column(String(32))  # Agent 版本号
     agent_status = Column(String(16), default="offline")  # agent 状态
+    agent_token = Column(String(64), nullable=True, index=True)  # Agent 注册令牌
     public_ip = Column(String(64))      # 公网 IP
     private_ip = Column(String(64))     # 内网 IP
     container_count = Column(Integer, default=0)

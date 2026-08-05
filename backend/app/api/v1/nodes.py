@@ -73,6 +73,7 @@ class NodeResponse(BaseModel):
     disk_usage: float = 0.0
     agent_version: Optional[str] = None
     agent_status: str = "offline"
+    agent_token: Optional[str] = None
     public_ip: Optional[str] = None
     private_ip: Optional[str] = None
     container_count: int
@@ -191,6 +192,9 @@ async def list_nodes(
             limit=limit,
             offset=offset
         )
+        # 列表不暴露令牌
+        for n in nodes:
+            n.agent_token = None
         return nodes
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取节点列表失败: {str(e)}")
@@ -209,6 +213,8 @@ async def get_node(
         
         if not node:
             raise HTTPException(status_code=404, detail="节点不存在")
+
+        node.agent_token = None  # 详情不暴露令牌
         
         return node
     except HTTPException:
