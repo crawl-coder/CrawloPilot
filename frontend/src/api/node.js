@@ -33,3 +33,23 @@ export function testNodeConnection(nodeId) {
 export function deleteNode(nodeId) {
   return request.delete(`/nodes/${nodeId}`)
 }
+
+// 健康检查
+export function checkNodesHealth() {
+  return request.post('/nodes/health-check')
+}
+
+// 排空节点
+export function drainNode(nodeId) {
+  return request.post(`/nodes/${nodeId}/drain`)
+}
+
+// 激活节点
+export function activateNode(nodeId) {
+  return request.post(`/nodes/${nodeId}/activate`)
+}
+
+// 获取节点容器列表
+export function getNodeContainers(nodeId) {
+  return request.get(`/nodes/${nodeId}/containers`)
+}

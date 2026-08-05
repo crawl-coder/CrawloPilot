@@ -10,6 +10,7 @@ from typing import Any
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import User, TaskInstance, TaskStatus, Schedule
+from app.api.v1.execution import _get_executor_for_task
 import logging
 from datetime import datetime, timedelta
 
@@ -219,8 +220,8 @@ async def stop_task(
     if task.status != TaskStatus.RUNNING:
         raise HTTPException(status_code=400, detail="只能停止运行中的任务")
     
-    from app.services.local_executor import get_local_executor
-    ok = await get_local_executor().stop_task(str(task_id))
+    executor = _get_executor_for_task(task)
+    ok = await executor.stop_task(str(task_id))
     if not ok:
         raise HTTPException(status_code=500, detail="停止任务失败（进程不存在或已结束）")
     
@@ -239,8 +240,8 @@ async def get_task_logs(
     if not task:
         raise HTTPException(status_code=404, detail="任务实例不存在")
     
-    from app.services.local_executor import get_local_executor
-    logs_text = get_local_executor().get_task_logs(str(task_id), tail=tail)
+    executor = _get_executor_for_task(task)
+    logs_text = executor.get_task_logs(str(task_id), tail=tail)
     return {
         "task_id": task_id,
         "container_id": task.container_id,

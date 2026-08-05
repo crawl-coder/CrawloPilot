@@ -147,9 +147,25 @@ async def task_websocket(websocket: WebSocket, task_id: str):
             if mtype not in ("pause", "resume", "stop"):
                 continue
 
-            from app.services.local_executor import get_local_executor
-            executor = get_local_executor()
             new_status = {"pause": "paused", "resume": "running", "stop": "cancelled"}[mtype]
+
+            db = SessionLocal()
+            try:
+                task = _get_task(db, task_id)
+                deploy_mode = getattr(task, "deploy_mode", "local") if task else "local"
+            finally:
+                db.close()
+
+            if deploy_mode == "ssh":
+                from app.services.ssh_executor import get_ssh_executor
+                executor = get_ssh_executor()
+            else:
+                from app.services.local_executor import get_local_executor
+                executor = get_local_executor()
+
+            if mtype in ("pause", "resume") and deploy_mode == "ssh":
+                await send({"type": "error", "message": "SSH 模式暂不支持暂停/恢复"})
+                continue
 
             if mtype == "pause":
                 ok = await executor.pause_task(task_id)

@@ -130,6 +130,19 @@
         <el-form-item label="SSH 用户" v-if="nodeForm.connect_type === 'ssh'">
           <el-input v-model="nodeForm.ssh_user" placeholder="root" />
         </el-form-item>
+        <template v-if="nodeForm.connect_type === 'ssh'">
+          <el-form-item label="SSH 密码">
+            <el-input v-model="nodeForm.ssh_pwd" type="password" show-password placeholder="可选（与私钥二选一）" />
+          </el-form-item>
+          <el-form-item label="SSH 私钥">
+            <el-input
+              v-model="nodeForm.ssh_key"
+              type="textarea"
+              :rows="4"
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY----- ...（与密码二选一）"
+            />
+          </el-form-item>
+        </template>
         <el-form-item label="公网 IP">
           <el-input v-model="nodeForm.public_ip" placeholder="可选" />
         </el-form-item>
@@ -161,6 +174,19 @@
         <el-form-item label="SSH 用户" v-if="editForm.connect_type === 'ssh'">
           <el-input v-model="editForm.ssh_user" />
         </el-form-item>
+        <template v-if="editForm.connect_type === 'ssh'">
+          <el-form-item label="SSH 密码">
+            <el-input v-model="editForm.ssh_pwd" type="password" show-password placeholder="留空表示不修改" />
+          </el-form-item>
+          <el-form-item label="SSH 私钥">
+            <el-input
+              v-model="editForm.ssh_key"
+              type="textarea"
+              :rows="4"
+              placeholder="留空表示不修改"
+            />
+          </el-form-item>
+        </template>
         <el-form-item label="公网 IP">
           <el-input v-model="editForm.public_ip" />
         </el-form-item>
@@ -208,7 +234,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, ArrowDown } from '@element-plus/icons-vue'
-import { 
+import {
   createNode, 
   getNodes, 
   testNodeConnection, 
@@ -218,7 +244,7 @@ import {
   deleteNode,
   getNodeContainers,
   updateNode
-} from '@/api/deploy'
+} from '@/api/node'
 
 const nodes = ref([])
 const containers = ref([])
@@ -242,6 +268,8 @@ const nodeForm = reactive({
   port: 22,
   connect_type: 'ssh',
   ssh_user: 'root',
+  ssh_pwd: '',
+  ssh_key: '',
   public_ip: '',
   private_ip: '',
   labels: {}
@@ -254,6 +282,8 @@ const editForm = reactive({
   port: 22,
   connect_type: 'ssh',
   ssh_user: 'root',
+  ssh_pwd: '',
+  ssh_key: '',
   public_ip: '',
   private_ip: '',
   labels: {}
@@ -308,6 +338,8 @@ const openAddDialog = () => {
   nodeForm.port = 22
   nodeForm.connect_type = 'ssh'
   nodeForm.ssh_user = 'root'
+  nodeForm.ssh_pwd = ''
+  nodeForm.ssh_key = ''
   nodeForm.public_ip = ''
   nodeForm.private_ip = ''
   nodeForm.labels = {}
@@ -322,6 +354,8 @@ const openEditDialog = (node) => {
   editForm.port = node.port
   editForm.connect_type = node.connect_type
   editForm.ssh_user = node.ssh_user || 'root'
+  editForm.ssh_pwd = ''
+  editForm.ssh_key = ''
   editForm.public_ip = node.public_ip || ''
   editForm.private_ip = node.private_ip || ''
   
@@ -363,11 +397,24 @@ const handleAddNode = async () => {
   adding.value = true
   try {
     await createNode(nodeForm)
-    ElMessage.success('节点添加成功')
+    ElMessage.success('节点添加成功，正在测试连接...')
     showAddDialog.value = false
     loadNodes()
+
+    // 添加后自动测试连接，给出即时反馈
+    try {
+      const list = await getNodes()
+      const created = list.find(n => n.name === nodeForm.name)
+      if (created) {
+        const result = await testNodeConnection(created.id)
+        ElMessage.success(result.message || '连接测试成功')
+        loadNodes()
+      }
+    } catch (testError) {
+      ElMessage.warning(testError.response?.data?.detail || '连接测试失败，节点状态为离线')
+    }
   } catch (error) {
-    ElMessage.error('添加节点失败')
+    ElMessage.error(error.response?.data?.detail || '添加节点失败')
   } finally {
     adding.value = false
   }
@@ -378,6 +425,10 @@ const handleEditNode = async () => {
   try {
     const data = { ...editForm }
     delete data.id
+
+    // 密码/私钥留空表示不修改
+    if (!data.ssh_pwd) delete data.ssh_pwd
+    if (!data.ssh_key) delete data.ssh_key
     
     // 解析标签
     if (editLabelsInput.value) {
@@ -392,7 +443,7 @@ const handleEditNode = async () => {
     showEditDialog.value = false
     loadNodes()
   } catch (error) {
-    ElMessage.error('更新节点失败')
+    ElMessage.error(error.response?.data?.detail || '更新节点失败')
   } finally {
     editing.value = false
   }
@@ -404,7 +455,7 @@ const testConnection = async (node) => {
     ElMessage.success(result.message || '连接测试成功')
     loadNodes()
   } catch (error) {
-    ElMessage.error('连接测试失败')
+    ElMessage.error(error.response?.data?.detail || '连接测试失败')
   }
 }
 
@@ -414,7 +465,7 @@ const handleHealthCheck = async () => {
     ElMessage.success('健康检查完成')
     loadNodes()
   } catch (error) {
-    ElMessage.error('健康检查失败')
+    ElMessage.error(error.response?.data?.detail || '健康检查失败')
   }
 }
 
@@ -447,7 +498,7 @@ const handleNodeAction = async (action, node) => {
     loadNodes()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('操作失败')
+      ElMessage.error(error.response?.data?.detail || '操作失败')
     }
   }
 }
@@ -461,7 +512,7 @@ const viewContainers = async (node) => {
     const data = await getNodeContainers(node.id)
     containers.value = data.containers || []
   } catch (error) {
-    ElMessage.error('加载容器列表失败')
+    ElMessage.error(error.response?.data?.detail || '加载容器列表失败')
     containers.value = []
   } finally {
     loadingContainers.value = false

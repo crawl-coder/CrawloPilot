@@ -94,7 +94,7 @@ import { ref, onMounted } from 'vue'
 import { Files, Aim, VideoPlay, Document, SuccessFilled, Monitor } from '@element-plus/icons-vue'
 import { getDashboardData } from '@/api/monitoring'
 import { getSpiders } from '@/api/spider'
-import { getNodes } from '@/api/deploy'
+import { getNodes } from '@/api/node'
 
 const stats = ref({
   projects: 0,

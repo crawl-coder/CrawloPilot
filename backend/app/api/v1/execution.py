@@ -20,6 +20,19 @@ router = APIRouter(prefix="/execution", tags=["execution"])
 logger = logging.getLogger(__name__)
 
 
+def _get_executor_for_task(task):
+    """
+    按任务的部署模式返回对应执行器
+    - ssh: SshExecutor（远程节点）
+    - 其他: LocalExecutor（本地进程）
+    """
+    if getattr(task, 'deploy_mode', None) == 'ssh':
+        from app.services.ssh_executor import get_ssh_executor
+        return get_ssh_executor()
+    from app.services.local_executor import get_local_executor
+    return get_local_executor()
+
+
 @router.post("/tasks", response_model=TaskResponse)
 async def create_and_execute_task(
     task_data: TaskCreate,
@@ -110,7 +123,9 @@ async def pause_task(
     if task.status != TaskStatus.RUNNING:
         raise HTTPException(status_code=400, detail=f"Cannot pause task in {task.status} status")
     
-    # 异步暂停任务
+    if getattr(task, 'deploy_mode', None) == 'ssh':
+        raise HTTPException(status_code=400, detail="SSH 模式暂不支持暂停/恢复")
+
     from app.services.local_executor import get_local_executor
     ok = await get_local_executor().pause_task(task_id)
     if not ok:
@@ -137,7 +152,9 @@ async def resume_task(
     if task.status != TaskStatus.PAUSED:
         raise HTTPException(status_code=400, detail=f"Cannot resume task in {task.status} status")
     
-    # 异步恢复任务
+    if getattr(task, 'deploy_mode', None) == 'ssh':
+        raise HTTPException(status_code=400, detail="SSH 模式暂不支持暂停/恢复")
+
     from app.services.local_executor import get_local_executor
     ok = await get_local_executor().resume_task(task_id)
     if not ok:
@@ -164,9 +181,8 @@ async def stop_task(
     if task.status not in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
         raise HTTPException(status_code=400, detail=f"Cannot stop task in {task.status} status")
     
-    # 异步停止任务
-    from app.services.local_executor import get_local_executor
-    ok = await get_local_executor().stop_task(task_id)
+    executor = _get_executor_for_task(task)
+    ok = await executor.stop_task(task_id)
     if not ok:
         # 进程不存在时仍将数据库状态置为取消，保证记录可收敛
         task.status = TaskStatus.CANCELLED
@@ -200,12 +216,11 @@ async def get_task_status(
     container_status = None
     local_metrics = {}
     
-    # 如果有 process_id，尝试从本地执行器获取
+    # 如果有 process_id，从对应执行器获取实时状态
     if getattr(task, 'process_id', None):
         try:
-            from app.services.local_executor import get_local_executor
-            local_executor = get_local_executor()
-            status = local_executor.get_task_status(task_id)
+            executor = _get_executor_for_task(task)
+            status = executor.get_task_status(task_id)
             if status:
                 container_status = status.get('status', 'unknown')
                 local_metrics = {
@@ -214,7 +229,7 @@ async def get_task_status(
                     'errors_count': status.get('errors_count', 0),
                 }
         except Exception as e:
-            logger.warning(f"获取本地状态失败: {e}")
+            logger.warning(f"获取执行器状态失败: {e}")
     else:
         # 尝试通过 Celery 查询容器状态
         try:
@@ -261,14 +276,13 @@ async def get_task_logs(
     
     logs_text = ''
     
-    # 如果有 process_id，从本地执行器获取日志
+    # 如果有 process_id，从对应执行器获取日志
     if getattr(task, 'process_id', None):
         try:
-            from app.services.local_executor import get_local_executor
-            local_executor = get_local_executor()
-            logs_text = local_executor.get_task_logs(task_id, tail=tail)
+            executor = _get_executor_for_task(task)
+            logs_text = executor.get_task_logs(task_id, tail=tail)
         except Exception as e:
-            logger.warning(f"获取本地日志失败: {e}")
+            logger.warning(f"获取执行器日志失败: {e}")
     else:
         # 尝试通过 Celery 获取容器日志
         try:
@@ -374,14 +388,14 @@ async def get_task_detail(
     spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
     data = _serialize_task(task, spider)
 
-    # 附带实时进程状态（本地执行器）
+    # 附带实时进程状态（按部署模式取对应执行器）
     process_status = None
     if task.process_id:
         try:
-            from app.services.local_executor import get_local_executor
-            process_status = get_local_executor().get_task_status(str(task.id))
+            executor = _get_executor_for_task(task)
+            process_status = executor.get_task_status(str(task.id))
         except Exception as e:
-            logger.warning(f"获取本地进程状态失败: {e}")
+            logger.warning(f"获取执行器进程状态失败: {e}")
 
     data["process_status"] = process_status
     return data

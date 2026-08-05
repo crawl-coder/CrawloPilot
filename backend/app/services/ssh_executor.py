@@ -25,7 +25,7 @@ import paramiko
 from paramiko import SSHClient, AutoAddPolicy, RSAKey, Ed25519Key
 
 from app.core.database import SessionLocal
-from app.models import TaskInstance, TaskStatus, Node
+from app.models import TaskInstance, TaskStatus, Node, Spider
 
 logger = logging.getLogger(__name__)
 
@@ -817,11 +817,32 @@ class SshExecutor:
                     f"pages={pages_crawled}, items={items_scraped}, "
                     f"errors={errors_count}, duration={task.duration}s"
                 )
+                self._update_spider_stats(db, task, status)
         except Exception as e:
             logger.error(f"更新任务完成信息失败: {e}")
             db.rollback()
         finally:
             db.close()
+
+    def _update_spider_stats(self, db, task: TaskInstance, status: TaskStatus):
+        """同步爬虫运行统计（与本地执行器保持一致）"""
+        try:
+            if not task.spider_id:
+                return
+            spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
+            if not spider:
+                return
+            spider.last_run_at = datetime.utcnow()
+            spider.last_run_status = status.value
+            if status == TaskStatus.SUCCESS:
+                spider.success_count = (spider.success_count or 0) + 1
+            elif status in (TaskStatus.FAILED, TaskStatus.TIMEOUT):
+                spider.error_count = (spider.error_count or 0) + 1
+            db.commit()
+            logger.info(f"任务 {task.id} 已更新爬虫统计: {spider.name} -> {status.value}")
+        except Exception as e:
+            logger.error(f"更新爬虫统计失败: {e}")
+            db.rollback()
 
     async def cleanup(self):
         """清理所有活动任务"""
