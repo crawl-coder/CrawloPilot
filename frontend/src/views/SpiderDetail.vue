@@ -700,6 +700,12 @@ const handleDelete = async () => {
   height: 600px;
 }
 
+/* 修复: el-col 由 flex stretch 得到的高度不被 height:100% 子元素当作确定值，
+   导致代码预览区高度链条塌陷无法滚动，显式锁定列高 */
+.file-browser :deep(.el-col) {
+  height: 100%;
+}
+
 .file-tree-container {
   height: 100%;
   border: 1px solid #e4e7ed;
