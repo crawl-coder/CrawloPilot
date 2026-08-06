@@ -152,7 +152,7 @@ Compose 包含 V1 必需服务：`api-server`（FastAPI）、`frontend`（Nginx 
 ```mermaid
 flowchart LR
     A[创建项目] --> B[创建爬虫<br/>crawlo 框架]
-    B --> C[上传/编辑代码<br/>uploads/project_{id}/spider_{id}/]
+    B --> C["上传/编辑代码<br/>uploads/project_{id}/spider_{id}/"]
     C --> D[选择执行节点并运行]
     D --> E{节点类型}
     E -->|无节点| L[本地进程<br/>LocalExecutor]
@@ -227,7 +227,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    UI[Web UI (Vue3)] --> API[FastAPI 控制面]
+    UI["Web UI (Vue3)"] --> API[FastAPI 控制面]
     API --> DB[(MySQL)]
     API --> RD[(Redis)]
     API --> FS[uploads/ 代码与日志]
