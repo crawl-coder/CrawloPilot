@@ -17,6 +17,7 @@ import io
 import tarfile
 import logging
 from pathlib import Path
+from app.core.config import settings
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/nodes/agent", tags=["Agent节点"])
 
 # 任务日志目录（与本地/SSH/Docker 执行器共用：项目根 uploads/_task_logs）
-LOGS_DIR = Path(__file__).parent.parent.parent.parent.parent / "uploads" / "_task_logs"
+LOGS_DIR = Path(settings.UPLOAD_DIR) / "_task_logs"
 
 
 # ==================== Schemas ====================

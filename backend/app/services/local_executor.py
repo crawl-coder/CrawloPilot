@@ -24,11 +24,12 @@ from threading import Lock, Thread
 
 from app.core.database import SessionLocal
 from app.models import TaskInstance, TaskStatus, Spider
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # 日志目录
-LOGS_DIR = Path(__file__).parent.parent.parent.parent / "uploads" / "_task_logs"
+LOGS_DIR = Path(settings.UPLOAD_DIR) / "_task_logs"
 
 
 @dataclass

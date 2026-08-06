@@ -11,6 +11,7 @@ from datetime import datetime
 import logging
 from fastapi import UploadFile
 import uuid
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +19,15 @@ logger = logging.getLogger(__name__)
 class UploadService:
     """文件上传服务"""
     
-    def __init__(self, upload_base_dir: str = "uploads"):
+    def __init__(self, upload_base_dir: str = None):
         """
         初始化上传服务
         
         Args:
-            upload_base_dir: 上传文件基础目录
+            upload_base_dir: 上传文件基础目录（默认取 settings.UPLOAD_DIR）
         """
-        self.upload_base_dir = upload_base_dir
-        os.makedirs(upload_base_dir, exist_ok=True)
+        self.upload_base_dir = upload_base_dir or settings.UPLOAD_DIR
+        os.makedirs(self.upload_base_dir, exist_ok=True)
     
     async def upload_code_package(self, file: UploadFile, project_id: int) -> Dict:
         """

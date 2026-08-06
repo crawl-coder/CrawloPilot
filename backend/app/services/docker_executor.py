@@ -29,6 +29,7 @@ from threading import Thread
 from app.core.database import SessionLocal
 from app.models import TaskInstance, TaskStatus, Spider
 from app.services.docker_service import DockerService
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ BASE_IMAGE_TAG = f"crawlopilot/base:{CRAWLO_VERSION}"
 BASE_IMAGE_FALLBACK_TAG = "crawlopilot/spider-runner:latest"
 
 # 日志目录（与本地执行器共用，容器清理后仍可读日志）
-LOGS_DIR = Path(__file__).parent.parent.parent.parent / "uploads" / "_task_logs"
+LOGS_DIR = Path(settings.UPLOAD_DIR) / "_task_logs"
 
 
 @dataclass

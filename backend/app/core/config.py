@@ -55,7 +55,12 @@ class Settings(BaseSettings):
     
     # Docker
     DOCKER_HOST: str = "unix:///var/run/docker.sock"
-    
+
+    # 上传/代码/日志根目录
+    # 默认相对路径 "uploads"（本地开发 = backend/uploads，Docker = /app/uploads 挂载卷）
+    # 生产环境务必配置绝对路径，如 /data/crawlopilot/uploads
+    UPLOAD_DIR: str = "uploads"
+
     # Celery
     CELERY_BROKER_URL: str = ""
     CELERY_RESULT_BACKEND: str = ""

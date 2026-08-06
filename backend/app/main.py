@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 import logging
 import asyncio
+import os
+import time
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +40,30 @@ async def _node_health_monitor_loop():
         await asyncio.sleep(60)
 
 
+async def _task_log_cleanup_loop():
+    """任务日志保留清理：默认保留 30 天，可用 TASK_LOG_RETENTION_DAYS 配置（0 关闭）"""
+    while True:
+        try:
+            retention_days = int(os.environ.get("TASK_LOG_RETENTION_DAYS", "30"))
+            if retention_days > 0:
+                logs_dir = Path(settings.UPLOAD_DIR) / "_task_logs"
+                if logs_dir.is_dir():
+                    cutoff = time.time() - retention_days * 86400
+                    removed = 0
+                    for f in logs_dir.glob("task_*.log"):
+                        try:
+                            if f.stat().st_mtime < cutoff:
+                                f.unlink()
+                                removed += 1
+                        except OSError:
+                            continue
+                    if removed:
+                        logger.info(f"任务日志清理: 删除 {removed} 个超过 {retention_days} 天的日志")
+        except Exception as e:
+            logger.warning(f"任务日志清理失败: {e}")
+        await asyncio.sleep(86400)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动和关闭时的生命周期管理"""
@@ -50,11 +77,15 @@ async def lifespan(app: FastAPI):
     health_task = asyncio.create_task(_node_health_monitor_loop())
     logger.info("Node health monitor started")
 
+    # 启动任务日志保留清理（每天执行一次）
+    log_cleanup_task = asyncio.create_task(_task_log_cleanup_loop())
+
     yield
 
     # 关闭时清理执行器
     try:
         health_task.cancel()
+        log_cleanup_task.cancel()
         logger.info("Cleaning up TaskExecutor...")
         await executor.cleanup()
         logger.info("TaskExecutor cleanup complete")

@@ -78,6 +78,8 @@ cp .env.example .env
 | `DEBUG` | `true` | 开发模式；生产改为 `false` |
 | `API_PREFIX` | `/api/v1` | API 前缀 |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | 控制面默认 Docker 连接 |
+| `UPLOAD_DIR` | `uploads`（相对 backend 工作目录） | 代码/上传/任务日志根目录，**生产必须改为绝对路径** |
+| `TASK_LOG_RETENTION_DAYS` | `30` | 任务日志保留天数，`0` 表示不清理 |
 
 ### 5. 一键启动（推荐）
 
@@ -133,6 +135,30 @@ Compose 包含 V1 必需服务：`api-server`（FastAPI）、`frontend`（Nginx 
 1. `curl http://localhost:8000/health` 返回正常；
 2. 浏览器打开 http://localhost:3000，用 `admin / admin123` 登录；
 3. 左侧「项目管理」创建一个项目 →「爬虫管理」创建爬虫 → 上传代码 → 运行，确认有任务记录与日志。
+
+### 8.1 生产环境的存储规划
+
+默认所有运行时数据（爬虫代码、上传包、任务日志）都存放在 `UPLOAD_DIR`（默认
+`backend/uploads/`）下，目录结构为：
+
+```text
+{UPLOAD_DIR}/
+├── project_{id}/            # 每个项目一个目录
+│   └── spider_{id}/         # 每个爬虫的代码
+└── _task_logs/              # 所有任务的日志 task_{id}.log
+```
+
+生产建议：
+
+- **`UPLOAD_DIR` 配置为独立数据盘绝对路径**（如 `/data/crawlopilot/uploads`），
+  不要放在应用代码目录里，避免部署更新/镜像重建时数据丢失；
+- **多实例控制面**需把 `UPLOAD_DIR` 指向共享存储（NFS / EFS / 云盘），保证代码与日志一致；
+- **日志治理**：`TASK_LOG_RETENTION_DAYS` 默认保留 30 天，后台每天自动清理过期日志；
+- **备份**：Git 来源的代码可随时重新克隆重建；本地上传的 ZIP 是唯一代码来源，
+  建议对 `UPLOAD_DIR` 做定期备份。
+
+爬虫代码通常只有几百 KB ~ 几 MB，万级爬虫占用也在几十 GB 量级；真正需要治理的是
+任务日志，保留策略 + 定期清理即可。
 
 ### 9. 常见问题
 

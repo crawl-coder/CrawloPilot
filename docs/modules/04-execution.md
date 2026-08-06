@@ -119,3 +119,17 @@ error_message / log_url`。
 1. 更新任务状态/时长/指标
 2. 回写爬虫 `last_run_status / last_run_at / success_count / error_count`
 3. 日志落盘保留（容器/agent 清理后仍可查询）
+
+## 存储与日志保留
+
+- 代码、上传包、任务日志统一存放在 `settings.UPLOAD_DIR`（默认相对路径 `uploads`，
+  即 backend 工作目录下的 `uploads/`；**生产必须配置绝对路径**，如 `/data/crawlopilot/uploads`）：
+
+  ```text
+  {UPLOAD_DIR}/
+  ├── project_{id}/spider_{id}/   # 爬虫代码
+  └── _task_logs/task_{id}.log    # 任务日志
+  ```
+
+- 多实例控制面需把 `UPLOAD_DIR` 指向共享存储（NFS/EFS/云盘），保证代码与日志一致。
+- 任务日志默认保留 30 天（`TASK_LOG_RETENTION_DAYS=0` 关闭），后台每天清理一次。
