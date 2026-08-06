@@ -32,6 +32,8 @@ docs/
 │   ├── 06-tasks.md
 │   ├── 07-frontend.md
 │   └── 08-testing.md
+├── designs/                # 专项设计文档
+│   └── server-management.md  # Server 实体管理设计（含 API/前端/迁移）
 └── legacy/                 # 早期阶段历史文档（部分功能已裁剪）
 ```
 
