@@ -42,6 +42,11 @@ const routes = [
         component: () => import('@/views/Nodes.vue')
       },
       {
+        path: 'servers/:id',
+        name: 'ServerDetail',
+        component: () => import('@/views/ServerDetail.vue')
+      },
+      {
         path: 'tasks',
         name: 'Tasks',
         component: () => import('@/views/Tasks.vue')

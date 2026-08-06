@@ -5,6 +5,10 @@
         <div class="card-header">
           <h3>节点管理</h3>
           <div>
+            <el-button @click="openAddServer">
+              <el-icon><Plus /></el-icon>
+              添加服务器
+            </el-button>
             <el-button @click="handleHealthCheck">
               <el-icon><Refresh /></el-icon>
               健康检查
@@ -16,6 +20,14 @@
           </div>
         </div>
       </template>
+
+      <!-- 类型 Tab：服务器 / 三种通道 -->
+      <el-tabs v-model="activeType" class="node-tabs" @tab-change="resetPage">
+        <el-tab-pane :label="`服务器 (${servers.length})`" name="servers" />
+        <el-tab-pane :label="`SSH 通道 (${typeCount('ssh')})`" name="ssh" />
+        <el-tab-pane :label="`Docker 通道 (${typeCount('docker')})`" name="docker" />
+        <el-tab-pane :label="`Agent 通道 (${typeCount('agent')})`" name="agent" />
+      </el-tabs>
 
       <!-- 工具栏：搜索 / 状态筛选 / 统计 -->
       <div class="node-toolbar">
@@ -45,21 +57,64 @@
           </el-select>
         </div>
         <div class="node-summary">
-          <el-tag type="info" effect="plain">总数 {{ nodes.length }}</el-tag>
-          <el-tag type="success" effect="plain">在线 {{ onlineCount }}</el-tag>
-          <el-tag type="danger" effect="plain">离线 {{ offlineCount }}</el-tag>
-          <el-tag v-if="maintenanceCount > 0" type="warning" effect="plain">维护 {{ maintenanceCount }}</el-tag>
+          <template v-if="activeType === 'servers'">
+            <el-tag type="info" effect="plain">服务器 {{ servers.length }}</el-tag>
+            <el-tag type="success" effect="plain">在线 {{ serverOnlineCount }}</el-tag>
+            <el-tag type="danger" effect="plain">离线 {{ serverOfflineCount }}</el-tag>
+            <el-tag v-if="serverMaintenanceCount > 0" type="warning" effect="plain">维护 {{ serverMaintenanceCount }}</el-tag>
+          </template>
+          <template v-else>
+            <el-tag type="info" effect="plain">总数 {{ nodes.length }}</el-tag>
+            <el-tag type="success" effect="plain">在线 {{ onlineCount }}</el-tag>
+            <el-tag type="danger" effect="plain">离线 {{ offlineCount }}</el-tag>
+            <el-tag v-if="maintenanceCount > 0" type="warning" effect="plain">维护 {{ maintenanceCount }}</el-tag>
+          </template>
         </div>
       </div>
 
-      <!-- 节点列表（按类型 Tab 切换） -->
-      <el-tabs v-model="activeType" class="node-tabs" @tab-change="resetPage">
-        <el-tab-pane :label="`全部节点 (${nodes.length})`" name="all" />
-        <el-tab-pane :label="`SSH 节点 (${typeCount('ssh')})`" name="ssh" />
-        <el-tab-pane :label="`Docker 节点 (${typeCount('docker')})`" name="docker" />
-        <el-tab-pane :label="`Agent 节点 (${typeCount('agent')})`" name="agent" />
-      </el-tabs>
+      <!-- 服务器列表 -->
+      <el-row v-if="activeType === 'servers'" :gutter="20" class="node-group-row">
+        <el-col
+          v-for="sv in pagedServers"
+          :key="sv.id"
+          :xs="24" :sm="12" :md="8" :lg="6"
+          style="margin-bottom: 20px"
+        >
+          <el-card class="node-card" shadow="hover" @click="goServer(sv)">
+            <template #header>
+              <div class="node-header">
+                <span class="node-name">{{ sv.name }}</span>
+                <el-tag :type="serverStatusType(sv.status)" size="small">{{ serverStatusText(sv.status) }}</el-tag>
+              </div>
+            </template>
+            <div class="node-info">
+              <div class="info-item"><span class="label">IP:</span><span class="value">{{ sv.host }}</span></div>
+              <div class="info-item"><span class="label">机房:</span><span class="value">{{ sv.region || '-' }}</span></div>
+              <div class="info-item"><span class="label">系统:</span><span class="value">{{ sv.os_type ? sv.os_type + ' ' + (sv.os_version || '') : '未探测' }}</span></div>
+              <div class="info-item"><span class="label">资源:</span><span class="value">{{ sv.cpu_cores || '-' }}核 / {{ formatServerBytes(sv.memory_total) }}</span></div>
+              <div class="info-item">
+                <span class="label">通道:</span>
+                <span class="value">
+                  <el-tag v-if="sv.channel_summary?.ssh" size="small" effect="plain">SSH {{ sv.channel_summary.ssh }}</el-tag>
+                  <el-tag v-if="sv.channel_summary?.docker" size="small" effect="plain" style="margin-left:4px">Docker {{ sv.channel_summary.docker }}</el-tag>
+                  <el-tag v-if="sv.channel_summary?.agent" size="small" effect="plain" style="margin-left:4px">Agent {{ sv.channel_summary.agent }}</el-tag>
+                  <span v-if="sv.online_channels">· {{ sv.online_channels }} 在线</span>
+                </span>
+              </div>
+            </div>
+            <div class="node-actions" @click.stop>
+              <el-button size="small" type="primary" @click="goServer(sv)">详情</el-button>
+              <el-button size="small" @click="probeServerCard(sv)">探测</el-button>
+              <el-button size="small" type="danger" @click="deleteServerCard(sv)">删除</el-button>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+      <el-empty v-if="activeType === 'servers' && servers.length === 0" description="暂无服务器，请添加真实主机" />
+      <el-empty v-else-if="activeType === 'servers' && serverTotal === 0" description="无匹配的服务器" />
 
+      <!-- 通道列表 -->
+      <template v-if="activeType !== 'servers'">
       <el-row :gutter="20" class="node-group-row">
         <el-col
           v-for="node in pagedNodes"
@@ -156,10 +211,21 @@
 
       <el-empty v-if="nodes.length === 0" description="暂无节点" />
       <el-empty v-else-if="total === 0" description="无匹配的节点" />
+      </template>
 
       <!-- 分页（节点多时） -->
       <el-pagination
-        v-if="total > pageSize"
+        v-if="activeType === 'servers' && serverTotal > serverPageSize"
+        v-model:current-page="serverPage"
+        :page-size="serverPageSize"
+        :page-sizes="[12, 24, 48]"
+        :total="serverTotal"
+        layout="total, sizes, prev, pager, next"
+        style="margin-top: 12px; justify-content: flex-end"
+        @current-change="scrollTop"
+      />
+      <el-pagination
+        v-if="activeType !== 'servers' && total > pageSize"
         v-model:current-page="page"
         :page-size="pageSize"
         :page-sizes="[12, 24, 48]"
@@ -170,6 +236,28 @@
         @current-change="scrollTop"
       />
     </el-card>
+
+    <!-- 添加服务器对话框 -->
+    <el-dialog v-model="showAddServer" title="添加服务器" width="520px">
+      <el-form :model="serverForm" label-width="80px">
+        <el-form-item label="名称" required>
+          <el-input v-model="serverForm.name" placeholder="如 beijing-web-01" />
+        </el-form-item>
+        <el-form-item label="IP 地址" required>
+          <el-input v-model="serverForm.host" placeholder="如 117.72.16.51" />
+        </el-form-item>
+        <el-form-item label="机房">
+          <el-input v-model="serverForm.region" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="serverForm.description" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddServer = false">取消</el-button>
+        <el-button type="primary" :loading="addingServer" @click="handleAddServer">添加</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 添加节点对话框 -->
     <el-dialog v-model="showAddDialog" title="添加节点" width="600px">
@@ -295,8 +383,12 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, ArrowDown, Search } from '@element-plus/icons-vue'
+import {
+  getServers, createServer, deleteServer, probeServer
+} from '@/api/server'
 import {
   createNode, 
   getNodes, 
@@ -310,6 +402,7 @@ import {
 } from '@/api/node'
 
 const nodes = ref([])
+const router = useRouter()
 const containers = ref([])
 const loading = ref(false)
 const loadingContainers = ref(false)
@@ -324,9 +417,129 @@ const currentNode = ref(null)
 
 const keyword = ref('')
 const statusFilter = ref('')
-const activeType = ref('all')
+const activeType = ref('servers')
 const page = ref(1)
 const pageSize = ref(12)
+
+// ============ 服务器数据 ============
+
+const servers = ref([])
+const serverLoading = ref(false)
+const serverPage = ref(1)
+const serverPageSize = ref(12)
+const showAddServer = ref(false)
+const addingServer = ref(false)
+const serverForm = reactive({
+  name: '',
+  host: '',
+  region: '',
+  description: ''
+})
+
+const serverOnlineCount = computed(() => servers.value.filter((s) => s.status === 'online').length)
+const serverOfflineCount = computed(() => servers.value.filter((s) => s.status === 'offline').length)
+const serverMaintenanceCount = computed(() =>
+  servers.value.filter((s) => ['maintenance', 'unknown'].includes(s.status)).length
+)
+
+const filteredServers = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  return servers.value.filter((s) => {
+    if (statusFilter.value && s.status !== statusFilter.value) return false
+    if (kw && !`${s.name} ${s.host}`.toLowerCase().includes(kw)) return false
+    return true
+  })
+})
+
+const serverTotal = computed(() => filteredServers.value.length)
+const pagedServers = computed(() =>
+  filteredServers.value.slice(
+    (serverPage.value - 1) * serverPageSize.value,
+    serverPage.value * serverPageSize.value
+  )
+)
+
+const loadServers = async () => {
+  serverLoading.value = true
+  try {
+    const res = await getServers({ limit: 100 })
+    servers.value = res.items || []
+  } catch (error) {
+    ElMessage.error('加载服务器列表失败')
+  } finally {
+    serverLoading.value = false
+  }
+}
+
+const serverStatusType = (status) => {
+  const map = { online: 'success', offline: 'danger', maintenance: 'warning', unknown: 'info' }
+  return map[status] || 'info'
+}
+
+const serverStatusText = (status) => {
+  const map = { online: '在线', offline: '离线', maintenance: '维护中', unknown: '未探测' }
+  return map[status] || status
+}
+
+const formatServerBytes = (bytes) => {
+  if (!bytes) return '-'
+  const gb = bytes / (1024 ** 3)
+  return gb >= 1 ? `${gb.toFixed(1)}G` : `${Math.round(bytes / 1024 ** 2)}M`
+}
+
+const goServer = (sv) => {
+  router.push(`/servers/${sv.id}`)
+}
+
+const openAddServer = () => {
+  serverForm.name = ''
+  serverForm.host = ''
+  serverForm.region = ''
+  serverForm.description = ''
+  showAddServer.value = true
+}
+
+const handleAddServer = async () => {
+  if (!serverForm.name || !serverForm.host) {
+    ElMessage.warning('请填写名称和 IP')
+    return
+  }
+  addingServer.value = true
+  try {
+    const res = await createServer(serverForm)
+    ElMessage.success('服务器已添加')
+    showAddServer.value = false
+    loadServers()
+    if (res.probe) {
+      ElMessage.info(`探测完成: SSH ${res.probe.ports?.ssh ? '通' : '不通'} / Docker ${res.probe.ports?.docker ? '通' : '不通'}`)
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '添加服务器失败')
+  } finally {
+    addingServer.value = false
+  }
+}
+
+const probeServerCard = async (sv) => {
+  try {
+    const res = await probeServer(sv.id)
+    ElMessage.success(`探测完成: ${res.status}`)
+    loadServers()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '探测失败')
+  }
+}
+
+const deleteServerCard = async (sv) => {
+  await ElMessageBox.confirm(`删除服务器「${sv.name}」及其通道？`, '删除', { type: 'warning' })
+  try {
+    await deleteServer(sv.id)
+    ElMessage.success('服务器已删除')
+    loadServers()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '删除失败')
+  }
+}
 
 const onlineCount = computed(() => nodes.value.filter((n) => n.status === 'online').length)
 const offlineCount = computed(() => nodes.value.filter((n) => n.status === 'offline').length)
@@ -349,7 +562,7 @@ const filteredNodes = computed(() => {
 
 // 当前 Tab 下的节点（全部或指定类型）
 const displayNodes = computed(() => {
-  if (activeType.value === 'all') return filteredNodes.value
+  if (activeType.value === 'servers') return []
   return filteredNodes.value.filter((n) => n.connect_type === activeType.value)
 })
 
@@ -635,6 +848,7 @@ const viewContainers = async (node) => {
 
 onMounted(() => {
   loadNodes()
+  loadServers()
 })
 </script>
 
