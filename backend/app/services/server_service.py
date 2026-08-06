@@ -155,18 +155,27 @@ class ServerService:
         from app.services.node_service import NodeService
         node_service = NodeService(self.db)
         nodes = self.db.query(Node).filter(Node.server_id == server_id).all()
-        for node in nodes:
+
+        # 按可信度排序采集系统信息：ssh > docker > agent
+        # ssh/docker 是对服务器主机端口的直接握手；agent 是代理自报，可能运行在其他机器
+        _PRIORITY = {"ssh": 0, "docker": 1, "agent": 2}
+        sorted_nodes = sorted(
+            nodes,
+            key=lambda n: _PRIORITY.get(
+                n.connect_type.value if hasattr(n.connect_type, "value") else n.connect_type, 3
+            )
+        )
+        filled = set()
+        for node in sorted_nodes:
             try:
                 result = node_service.test_connection(node.id)
-                if result.get("status") == "connected":
-                    if node.os_type:
-                        server.os_type = node.os_type
-                    if node.os_version:
-                        server.os_version = node.os_version
-                    if node.cpu_cores:
-                        server.cpu_cores = node.cpu_cores
-                    if node.memory_total:
-                        server.memory_total = node.memory_total
+                if result.get("status") != "connected":
+                    continue
+                # 每个字段只采信最高优先级通道的值，避免多机数据拼接
+                for field in ("os_type", "os_version", "cpu_cores", "memory_total"):
+                    if field not in filled and getattr(node, field):
+                        setattr(server, field, getattr(node, field))
+                        filled.add(field)
             except Exception as e:
                 logger.warning(f"通道 {node.name} 握手失败: {e}")
 

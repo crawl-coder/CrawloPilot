@@ -124,7 +124,9 @@ const loadProject = async () => {
 const loadSpiders = async () => {
   try {
     loading.value = true
-    spiders.value = await getSpiders({ project_id: projectId })
+    const res = await getSpiders({ project_id: projectId })
+    // 后端返回 { total, items } 分页结构，el-table 需要纯数组
+    spiders.value = Array.isArray(res) ? res : (res.items || [])
   } catch (error) {
     ElMessage.error('加载爬虫列表失败')
   } finally {

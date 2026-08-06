@@ -162,8 +162,10 @@ async def retry_task(
     if not task:
         raise HTTPException(status_code=404, detail="任务实例不存在")
     
-    if task.status not in [TaskStatus.FAILED, TaskStatus.TIMEOUT]:
-        raise HTTPException(status_code=400, detail="只能重试失败或超时的任务")
+    # 终态任务都允许重试（失败/超时=纠错重跑，成功/取消=再跑一次）；活动状态禁止
+    TERMINAL_STATUSES = [TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.TIMEOUT, TaskStatus.CANCELLED]
+    if task.status not in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="运行中的任务不能重试，请先停止")
     
     # 查询爬虫并复用本地执行器重跑
     from app.models import Spider

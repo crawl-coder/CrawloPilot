@@ -31,6 +31,8 @@ class SpiderBase(BaseModel):
     spider_type: SpiderType = SpiderType.CRAWLO
     entry_file: Optional[str] = None  # 入口文件 (如 run.py)
     spider_name: Optional[str] = None  # 爬虫名称 (用于 crawlo run)
+    config: Optional[Dict[str, Any]] = None  # 运行配置 (超时/重试等)
+    schedule_config: Optional[Dict[str, Any]] = None  # 调度配置 (定时开关/cron)
     
     # Git相关
     git_url: Optional[str] = None
@@ -54,6 +56,7 @@ class SpiderUpdate(BaseModel):
     spider_type: Optional[SpiderType] = None
     status: Optional[SpiderStatus] = None
     entry_file: Optional[str] = None
+    spider_name: Optional[str] = None  # 运行名称 (用于 crawlo run)
     config: Optional[Dict[str, Any]] = None
     schedule_config: Optional[Dict[str, Any]] = None
 

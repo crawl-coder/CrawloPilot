@@ -199,7 +199,7 @@
           v-if="total > 0"
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
-          :page-sizes="[10, 20, 50, 100]"
+          :page-sizes="pageSizes"
           :total="total"
           layout="total, sizes, prev, pager, next, jumper"
           style="margin-top: 20px; justify-content: flex-end"
@@ -209,298 +209,13 @@
       </div>
     </el-card>
 
-    <!-- 创建/编辑对话框 - 分步向导 -->
-    <el-dialog
+    <!-- 创建/编辑对话框 - 分步向导（共享组件） -->
+    <SpiderFormDialog
       v-model="showDialog"
-      :title="editingSpider ? '编辑爬虫' : '创建爬虫'"
-      width="700px"
-      :close-on-click-modal="false"
-    >
-      <!-- 步骤条 -->
-      <el-steps :active="currentStep" finish-status="success" v-if="!editingSpider" style="margin-bottom: 30px">
-        <el-step title="基本信息" />
-        <el-step title="代码来源" />
-        <el-step title="运行配置" />
-      </el-steps>
-
-      <el-form :model="spiderForm" :rules="rules" ref="formRef" label-width="120px">
-        <!-- 步骤1: 基本信息 -->
-        <div v-show="currentStep === 0">
-          <el-form-item label="爬虫名称" prop="name">
-            <el-input v-model="spiderForm.name" placeholder="请输入爬虫名称" />
-          </el-form-item>
-
-          <el-form-item label="所属项目" prop="project_id">
-            <el-select v-model="spiderForm.project_id" placeholder="请选择项目" style="width: 100%">
-              <el-option
-                v-for="project in projects"
-                :key="project.id"
-                :label="project.name"
-                :value="project.id"
-              />
-            </el-select>
-          </el-form-item>
-
-          <el-form-item label="爬虫类型" prop="spider_type">
-            <el-select v-model="spiderForm.spider_type" style="width: 100%">
-              <el-option label="Crawlo ⭐推荐" value="crawlo">
-                <span style="float: left">Crawlo</span>
-                <span style="float: right; color: #8492a6; font-size: 13px; margin-left: 10px">⭐推荐 - 分布式爬虫框架</span>
-              </el-option>
-              <el-option label="Scrapy" value="scrapy">
-                <span style="float: left">Scrapy</span>
-                <span style="float: right; color: #8492a6; font-size: 13px; margin-left: 10px">Python爬虫框架</span>
-              </el-option>
-              <el-option label="Selenium" value="selenium">
-                <span style="float: left">Selenium</span>
-                <span style="float: right; color: #8492a6; font-size: 13px; margin-left: 10px">浏览器自动化</span>
-              </el-option>
-              <el-option label="Playwright" value="playwright">
-                <span style="float: left">Playwright</span>
-                <span style="float: right; color: #8492a6; font-size: 13px; margin-left: 10px">现代浏览器自动化</span>
-              </el-option>
-              <el-option label="Requests" value="requests">
-                <span style="float: left">Requests</span>
-                <span style="float: right; color: #8492a6; font-size: 13px; margin-left: 10px">HTTP请求库</span>
-              </el-option>
-              <el-option label="自定义" value="custom">
-                <span style="float: left">自定义</span>
-                <span style="float: right; color: #8492a6; font-size: 13px; margin-left: 10px">其他框架或脚本</span>
-              </el-option>
-            </el-select>
-          </el-form-item>
-
-          <el-form-item label="描述">
-            <el-input
-              v-model="spiderForm.description"
-              type="textarea"
-              :rows="3"
-              placeholder="请输入爬虫描述"
-            />
-          </el-form-item>
-
-          <el-alert
-            title="提示"
-            type="info"
-            :closable="false"
-            show-icon
-            style="margin-top: 10px"
-          >
-            <template #default>
-              <div style="font-size: 13px">
-                <strong>Crawlo 框架优势:</strong> 分布式架构、智能反反爬、自动去重、增量采集、性能监控
-              </div>
-            </template>
-          </el-alert>
-        </div>
-
-        <!-- 步骤2: 代码来源 -->
-        <div v-show="currentStep === 1 && !editingSpider">
-          <el-form-item label="代码来源">
-            <el-radio-group v-model="spiderForm.code_source" @change="onCodeSourceChange">
-              <el-radio-button value="git">Git 仓库</el-radio-button>
-              <el-radio-button value="upload">本地上传</el-radio-button>
-              <el-radio-button value="empty">空爬虫</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-
-          <!-- Git 仓库 -->
-          <div v-show="spiderForm.code_source === 'git'">
-            <el-form-item label="Git地址" prop="git_url">
-              <el-input v-model="spiderForm.git_url" placeholder="https://github.com/user/repo.git" />
-            </el-form-item>
-
-            <el-form-item label="认证方式">
-              <el-radio-group v-model="spiderForm.git_auth_type">
-                <el-radio label="password">密码/Token</el-radio>
-                <el-radio label="ssh">SSH密钥</el-radio>
-              </el-radio-group>
-            </el-form-item>
-
-            <template v-if="spiderForm.git_auth_type === 'password'">
-              <el-form-item label="用户名">
-                <el-input v-model="spiderForm.git_username" placeholder="可选" />
-              </el-form-item>
-              <el-form-item label="密码/Token">
-                <el-input v-model="spiderForm.git_password" type="password" show-password placeholder="可选" />
-              </el-form-item>
-            </template>
-
-            <template v-if="spiderForm.git_auth_type === 'ssh'">
-              <el-form-item label="SSH私钥">
-                <el-input v-model="spiderForm.git_ssh_key" type="textarea" :rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
-              </el-form-item>
-            </template>
-
-            <el-form-item label="分支">
-              <el-input v-model="spiderForm.git_branch" placeholder="main" />
-            </el-form-item>
-
-            <el-alert
-              title="提示"
-              type="info"
-              :closable="false"
-              show-icon
-            >
-              <template #default>
-                <div style="font-size: 13px">
-                  创建时将自动克隆仓库代码。请确保仓库包含完整的爬虫项目文件。
-                </div>
-              </template>
-            </el-alert>
-          </div>
-
-          <!-- 本地上传 -->
-          <div v-show="spiderForm.code_source === 'upload'">
-            <el-form-item label="上传代码">
-              <el-upload
-                drag
-                action="#"
-                :auto-upload="false"
-                :limit="1"
-                accept=".zip"
-                :on-change="handleFileChange"
-                :before-upload="beforeUpload"
-              >
-                <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-                <div class="el-upload__text">
-                  拖拽文件到此处或 <em>点击上传</em>
-                </div>
-                <template #tip>
-                  <div class="el-upload__tip">
-                    仅支持 .zip 格式文件，大小不超过 100MB
-                  </div>
-                </template>
-              </el-upload>
-            </el-form-item>
-
-            <el-alert
-              title="提示"
-              type="info"
-              :closable="false"
-              show-icon
-            >
-              <template #default>
-                <div style="font-size: 13px">
-                  请上传包含完整爬虫项目的 ZIP 文件。系统会自动解压并识别项目结构。
-                </div>
-              </template>
-            </el-alert>
-          </div>
-
-          <!-- 空爬虫 -->
-          <div v-show="spiderForm.code_source === 'empty'">
-            <el-alert
-              title="创建空爬虫"
-              type="success"
-              :closable="false"
-              show-icon
-            >
-              <template #default>
-                <div style="font-size: 13px">
-                  系统将创建基础目录结构和模板文件。您可以在创建后通过代码编辑器编写爬虫逻辑。
-                  <br/><br/>
-                  <strong>自动生成的文件:</strong>
-                  <ul style="margin: 5px 0; padding-left: 20px">
-                    <li>main.py - 爬虫入口文件</li>
-                    <li>config.json - 配置文件</li>
-                    <li>README.md - 说明文档</li>
-                  </ul>
-                </div>
-              </template>
-            </el-alert>
-          </div>
-        </div>
-
-        <!-- 步骤3: 运行配置 -->
-        <div v-show="currentStep === 2 && !editingSpider">
-          <el-form-item label="入口文件" prop="entry_file">
-            <el-input 
-              v-model="spiderForm.entry_file" 
-              placeholder="例如: run.py (默认使用 python run.py)" 
-            />
-            <div style="margin-top: 5px; color: #909399; font-size: 12px">
-              ℹ️ 留空则使用 Crawlo 命令行: crawlo run <爬虫名称>
-            </div>
-          </el-form-item>
-
-          <el-form-item label="爬虫名称" prop="spider_name">
-            <el-input 
-              v-model="spiderForm.spider_name" 
-              placeholder="例如: of_week (用于 crawlo run)" 
-            />
-            <div style="margin-top: 5px; color: #909399; font-size: 12px">
-              ℹ️ 当入口文件为空时使用,或通过 crawlo run {{ spiderForm.spider_name || 'spider_name' }}
-            </div>
-          </el-form-item>
-
-          <el-alert
-            title="启动方式说明"
-            type="info"
-            :closable="false"
-            show-icon
-            style="margin-top: 10px"
-          >
-            <template #default>
-              <div style="font-size: 13px">
-                <strong>优先级:</strong><br/>
-                1️⃣ 如果填写了入口文件 (如 run.py) → 执行: <code>python run.py</code><br/>
-                2️⃣ 如果未填写入口文件 → 执行: <code>crawlo run {{ spiderForm.spider_name || 'spider_name' }}</code><br/>
-                <br/>
-                <strong>推荐:</strong> 填写入口文件 <code>run.py</code>,使用项目自己的启动逻辑
-              </div>
-            </template>
-          </el-alert>
-
-          <el-form-item label="定时调度" style="margin-top: 20px">
-            <el-switch v-model="spiderForm.schedule_enabled" />
-            <span style="margin-left: 10px; color: #909399; font-size: 13px">
-              {{ spiderForm.schedule_enabled ? '已开启' : '已关闭' }}
-            </span>
-          </el-form-item>
-
-          <template v-if="spiderForm.schedule_enabled">
-            <el-form-item label="Cron表达式">
-              <el-input v-model="spiderForm.cron_expr" placeholder="例如: 0 */2 * * * (每2小时)" />
-            </el-form-item>
-          </template>
-
-          <el-form-item label="超时时间(秒)">
-            <el-input-number v-model="spiderForm.timeout_seconds" :min="60" :max="86400" :step="300" />
-            <span style="margin-left: 10px; color: #909399; font-size: 13px">
-              {{ formatTime(spiderForm.timeout_seconds) }}
-            </span>
-          </el-form-item>
-
-          <el-form-item label="重试次数">
-            <el-input-number v-model="spiderForm.retry_count" :min="0" :max="10" />
-            <span style="margin-left: 10px; color: #909399; font-size: 13px">
-              失败后自动重试次数
-            </span>
-          </el-form-item>
-        </div>
-
-        <!-- 编辑模式下的状态选择 -->
-        <el-form-item v-if="editingSpider" label="状态">
-          <el-select v-model="spiderForm.status" style="width: 100%">
-            <el-option label="草稿" value="draft" />
-            <el-option label="启用" value="active" />
-            <el-option label="已禁用" value="disabled" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <div style="display: flex; justify-content: space-between">
-          <el-button @click="showDialog = false">取消</el-button>
-          <div>
-            <el-button v-if="currentStep > 0 && !editingSpider" @click="currentStep--">上一步</el-button>
-            <el-button v-if="currentStep < 2 && !editingSpider" type="primary" @click="nextStep">下一步</el-button>
-            <el-button v-else type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
-          </div>
-        </div>
-      </template>
-    </el-dialog>
+      :spider="editingSpider"
+      :default-project-id="route.query.project_id ? parseInt(route.query.project_id) : null"
+      @saved="loadSpiders"
+    />
 
     <!-- 运行爬虫对话框 - 选择节点 -->
     <el-dialog
@@ -542,31 +257,27 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, UploadFilled, Grid, List, VideoPlay, Document, More, CircleCheck, CircleClose, Loading } from '@element-plus/icons-vue'
-import { getSpiders, createSpider, updateSpider, deleteSpider, runSpider, cloneSpiderGit, uploadSpiderCode } from '@/api/spider'
+import { Plus, Grid, List, VideoPlay, Document, More, CircleCheck, CircleClose, Loading } from '@element-plus/icons-vue'
+import { getSpiders, deleteSpider, runSpider } from '@/api/spider'
 import { getProjects } from '@/api/project'
 import { getNodes } from '@/api/node'
 import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, getSpiderTypeColor, formatDateTime as formatDate, formatRelativeTime, formatDuration as formatTime } from '@/utils/common'
+import SpiderFormDialog from '@/components/SpiderFormDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
 const spiders = ref([])
 const projects = ref([])
 const loading = ref(false)
-const submitting = ref(false)
 const showDialog = ref(false)
 const editingSpider = ref(null)
-const formRef = ref(null)
 const total = ref(0) // 总数
 const currentPage = ref(1) // 当前页
-const pageSize = ref(10) // 每页数量
-
-// 分步向导
-const currentStep = ref(0)
-const uploadFile = ref(null)
+// 每页数量按视图模式初始化：卡片 8（2行×4列），列表 10
+const pageSize = ref(localStorage.getItem('spiderViewMode') === 'list' ? 10 : 8)
 
 // 运行爬虫 - 节点选择
 const nodes = ref([])
@@ -601,7 +312,12 @@ watch(spiders, (newSpiders) => {
   if (!isViewModeInitialized && newSpiders.length > 0) {
     const savedMode = localStorage.getItem('spiderViewMode')
     if (!savedMode) {
-      viewMode.value = calculateViewMode(newSpiders.length)
+      const smartMode = calculateViewMode(newSpiders.length)
+      if (smartMode !== viewMode.value) {
+        viewMode.value = smartMode
+        // 智能切换导致每页数量变化时，按新 pageSize 重新加载
+        loadSpiders()
+      }
     }
     isViewModeInitialized = true
   }
@@ -610,68 +326,29 @@ watch(spiders, (newSpiders) => {
 // 监听视图模式变化,保存到localStorage
 watch(viewMode, (newMode) => {
   localStorage.setItem('spiderViewMode', newMode)
+  // 视图切换时调整每页数量：卡片视图 8（2行×4列），列表视图 10
+  pageSize.value = newMode === 'card' ? 8 : 10
+  currentPage.value = 1
+  if (isViewModeInitialized) loadSpiders()
 })
+
+// 分页选项随视图模式变化
+const pageSizes = computed(() => viewMode.value === 'card' ? [8, 16, 24, 48] : [10, 20, 50, 100])
 
 const searchForm = reactive({
   project_id: null,
   status: null
 })
 
-const spiderForm = reactive({
-  // 步顤1
-  name: '',
-  project_id: null,
-  spider_type: 'crawlo', // 默认 Crawlo
-  description: '',
-  
-  // 步顤2
-  code_source: 'git',
-  git_url: '',
-  git_auth_type: 'password',
-  git_username: '',
-  git_password: '',
-  git_ssh_key: '',
-  git_branch: 'main',
-  
-  // 步顤3
-  entry_file: 'run.py',  // 默认使用 run.py
-  spider_name: '',       // 爬虫名称 (用于 crawlo run)
-  schedule_enabled: false,
-  cron_expr: '',
-  timeout_seconds: 3600,
-  retry_count: 3,
-  
-  status: 'draft'
-})
-
-const rules = {
-  name: [{ required: true, message: '请输入爬虫名称', trigger: 'blur' }],
-  project_id: [{ required: true, message: '请选择项目', trigger: 'change' }],
-  spider_type: [{ required: true, message: '请选择爬虫类型', trigger: 'change' }],
-  git_url: [{ 
-    required: true, 
-    message: '请输入Git仓库地址', 
-    trigger: 'blur',
-    validator: (rule, value, callback) => {
-      if (spiderForm.code_source === 'git' && !value) {
-        callback(new Error('请输入Git仓库地址'))
-      } else {
-        callback()
-      }
-    }
-  }]
-}
-
 onMounted(() => {
   loadProjects()
   loadNodes()
-  
+
   // 从URL参数中读取project_id
   if (route.query.project_id) {
     searchForm.project_id = parseInt(route.query.project_id)
-    spiderForm.project_id = parseInt(route.query.project_id)
   }
-  
+
   loadSpiders()
 })
 
@@ -738,150 +415,15 @@ const handleCardAction = (command, spider) => {
   }
 }
 
-// 代码来源切换
-const onCodeSourceChange = (value) => {
-  // 根据代码来源设置默认入口文件
-  if (value === 'git' || value === 'upload') {
-    spiderForm.entry_file = 'main.py'
-  } else {
-    spiderForm.entry_file = 'main.py'
-  }
-}
-
-// 文件上传处理
-const handleFileChange = (file) => {
-  uploadFile.value = file.raw
-}
-
-const beforeUpload = (file) => {
-  const isZip = file.type === 'application/zip' || file.name.endsWith('.zip')
-  const isLt100M = file.size / 1024 / 1024 < 100
-
-  if (!isZip) {
-    ElMessage.error('只能上传 ZIP 格式的文件!')
-  }
-  if (!isLt100M) {
-    ElMessage.error('上传文件大小不能超过 100MB!')
-  }
-  return isZip && isLt100M
-}
-
-// 步骤控制
-const nextStep = async () => {
-  try {
-    // 验证当前步骤
-    if (currentStep.value === 0) {
-      await formRef.value.validateField(['name', 'project_id', 'spider_type'])
-    } else if (currentStep.value === 1) {
-      if (spiderForm.code_source === 'git') {
-        await formRef.value.validateField(['git_url'])
-      }
-    }
-    currentStep.value++
-  } catch (error) {
-    // 验证失败
-  }
-}
-
+// 创建/编辑对话框（向导逻辑在 SpiderFormDialog 组件内）
 const showCreateDialog = () => {
   editingSpider.value = null
-  currentStep.value = 0
-  Object.assign(spiderForm, {
-    name: '',
-    project_id: route.query.project_id ? parseInt(route.query.project_id) : null,
-    spider_type: 'crawlo', // 默认 Crawlo
-    description: '',
-    code_source: 'git',
-    git_url: '',
-    git_auth_type: 'password',
-    git_username: '',
-    git_password: '',
-    git_ssh_key: '',
-    git_branch: 'main',
-    entry_file: 'main.py',
-    schedule_enabled: false,
-    cron_expr: '',
-    timeout_seconds: 3600,
-    retry_count: 3,
-    status: 'draft'
-  })
-  uploadFile.value = null
   showDialog.value = true
 }
 
 const showEditDialog = (row) => {
   editingSpider.value = row
-  currentStep.value = 0
-  Object.assign(spiderForm, {
-    name: row.name,
-    project_id: row.project_id,
-    spider_type: row.spider_type,
-    entry_file: row.entry_file,
-    description: row.description,
-    status: row.status
-  })
   showDialog.value = true
-}
-
-const handleSubmit = async () => {
-  try {
-    await formRef.value.validate()
-    submitting.value = true
-
-    if (editingSpider.value) {
-      await updateSpider(editingSpider.value.id, spiderForm)
-      ElMessage.success('更新成功')
-    } else {
-      // 创建爬虫
-      const spiderData = {
-        name: spiderForm.name,
-        project_id: spiderForm.project_id,
-        spider_type: spiderForm.spider_type,
-        description: spiderForm.description,
-        entry_file: spiderForm.entry_file || null,  // 入口文件 (可选)
-        spider_name: spiderForm.spider_name || spiderForm.name,  // 爬虫名称 (用于 crawlo run)
-        // Git 配置
-        git_url: spiderForm.code_source === 'git' ? spiderForm.git_url : null,
-        git_auth_type: spiderForm.git_auth_type,
-        git_username: spiderForm.git_username || null,
-        git_password: spiderForm.git_password || null,
-        git_ssh_key: spiderForm.git_ssh_key || null,
-        git_branch: spiderForm.git_branch,
-      }
-      
-      const newSpider = await createSpider(spiderData)
-      
-      // 如果是 Git 仓库，触发克隆
-      if (spiderForm.code_source === 'git' && spiderForm.git_url) {
-        ElMessage.success('爬虫创建成功，开始克隆仓库...')
-        try {
-          await cloneSpiderGit(newSpider.id)
-          ElMessage.success('Git 仓库克隆成功')
-        } catch (error) {
-          ElMessage.error(error.response?.data?.detail || 'Git 仓库克隆失败')
-        }
-      } else if (spiderForm.code_source === 'upload' && uploadFile.value) {
-        ElMessage.success('爬虫创建成功，开始上传代码...')
-        try {
-          await uploadSpiderCode(newSpider.id, uploadFile.value)
-          ElMessage.success('代码上传成功')
-        } catch (error) {
-          ElMessage.error(error.response?.data?.detail || '代码上传失败')
-        }
-      } else {
-        ElMessage.success('爬虫创建成功')
-      }
-    }
-
-    showDialog.value = false
-    loadSpiders()
-  } catch (error) {
-    if (error.response?.data?.detail) {
-      ElMessage.error(error.response.data.detail)
-    }
-  } finally {
-    submitting.value = false
-  }
 }
 
 const viewSpider = (row) => {
@@ -1020,10 +562,11 @@ const handleDelete = async (row) => {
   display: flex;
   gap: 8px;
   padding-top: 12px;
-  border-top: 1px solid #EBEEF5;
+  border-top: 1px solid var(--cp-border-light);
 }
 
 .card-actions .el-button {
   flex: 1;
 }
+
 </style>

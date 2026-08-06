@@ -85,3 +85,35 @@ export function deleteSpiderFileOrDir(spiderId, path) {
     params: { path }
   })
 }
+
+// ==================== Git 工作流 ====================
+
+// 获取仓库状态（分支/改动/领先落后）
+export function getGitStatus(spiderId) {
+  return request.get(`/spiders/${spiderId}/git/status`)
+}
+
+// 获取分支列表
+export function getGitBranches(spiderId) {
+  return request.get(`/spiders/${spiderId}/git/branches`)
+}
+
+// 提交全部改动
+export function gitCommit(spiderId, message) {
+  return request.post(`/spiders/${spiderId}/git/commit`, { message })
+}
+
+// 推送当前分支
+export function gitPush(spiderId) {
+  return request.post(`/spiders/${spiderId}/git/push`)
+}
+
+// 拉取当前分支
+export function gitPull(spiderId) {
+  return request.post(`/spiders/${spiderId}/git/pull`)
+}
+
+// 切换/新建分支
+export function gitCheckout(spiderId, branch, create = false) {
+  return request.post(`/spiders/${spiderId}/git/checkout`, { branch, create })
+}

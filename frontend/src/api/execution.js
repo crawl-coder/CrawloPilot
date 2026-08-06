@@ -109,6 +109,17 @@ export function getTaskStats(params) {
 }
 
 /**
+ * 最近任务实例
+ */
+export function getRecentTasks(limit = 8) {
+  return request({
+    url: '/task-instances/recent',
+    method: 'get',
+    params: { limit }
+  })
+}
+
+/**
  * 重试任务
  */
 export function retryTask(taskId) {

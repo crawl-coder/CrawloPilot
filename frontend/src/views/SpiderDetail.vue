@@ -18,20 +18,12 @@
         <el-button type="success" @click="handleRun" :disabled="spider?.status === 'disabled'" :loading="running">
           <el-icon><VideoPlay /></el-icon> 运行
         </el-button>
-        <el-button @click="activeTab = 'code'">
-          <el-icon><Document /></el-icon> 代码
+        <el-button @click="editDialogVisible = true">
+          <el-icon><Edit /></el-icon> 编辑信息
         </el-button>
-        <el-dropdown trigger="click">
-          <el-button>
-            <el-icon><More /></el-icon> 更多
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item @click="showEditDialog">编辑信息</el-dropdown-item>
-              <el-dropdown-item divided @click="handleDelete" type="danger">删除爬虫</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <el-button type="danger" plain @click="handleDelete">
+          <el-icon><Delete /></el-icon> 删除
+        </el-button>
       </div>
     </div>
 
@@ -39,6 +31,42 @@
     <el-tabs v-model="activeTab" style="margin-top: 20px">
       <!-- 代码浏览 -->
       <el-tab-pane label="代码结构" name="code">
+        <!-- Git 工具条（仅 Git 来源的爬虫显示） -->
+        <div v-if="spider?.git_url" class="git-bar">
+          <el-tooltip content="切换分支" placement="top">
+            <div class="git-branch" @click="openBranchDialog">
+              <el-icon><Share /></el-icon>
+              <span>{{ gitStatus.branch || spider.git_branch || 'main' }}</span>
+              <el-icon class="git-branch-caret"><ArrowDown /></el-icon>
+            </div>
+          </el-tooltip>
+
+          <el-tag v-if="gitStatus.changed_count > 0" type="warning" size="small" effect="plain">
+            {{ gitStatus.changed_count }} 个改动
+          </el-tag>
+          <el-tag v-else-if="gitStatus.is_repo" type="success" size="small" effect="plain">工作区干净</el-tag>
+
+          <template v-if="gitStatus.ahead > 0 || gitStatus.behind > 0">
+            <el-tag v-if="gitStatus.ahead > 0" size="small" type="primary" effect="plain">↑{{ gitStatus.ahead }}</el-tag>
+            <el-tag v-if="gitStatus.behind > 0" size="small" type="danger" effect="plain">↓{{ gitStatus.behind }}</el-tag>
+          </template>
+
+          <div class="git-actions">
+            <el-button size="small" type="primary" :disabled="!gitStatus.changed_count" @click="commitDialogVisible = true">
+              <el-icon><EditPen /></el-icon> 提交
+            </el-button>
+            <el-button size="small" @click="handleGitPush" :loading="gitOperating === 'push'">
+              <el-icon><Top /></el-icon> 推送
+            </el-button>
+            <el-button size="small" @click="handleGitPull" :loading="gitOperating === 'pull'">
+              <el-icon><Bottom /></el-icon> 拉取
+            </el-button>
+            <el-button size="small" text @click="loadGitStatus" :loading="gitStatusLoading">
+              <el-icon><Refresh /></el-icon>
+            </el-button>
+          </div>
+        </div>
+
         <div class="file-browser" v-loading="fileLoading">
           <el-row :gutter="20" style="height: 600px">
             <!-- 文件树 -->
@@ -220,7 +248,12 @@
                 <span class="node-host">{{ node.host }}:{{ node.port }}</span>
               </div>
             </template>
-            <span v-else class="no-node">未部署到任何节点</span>
+            <!-- 未部署到远程节点时，默认在本机运行 -->
+            <div v-else class="deploy-node-item">
+              <el-tag type="info" size="small" style="margin-right: 6px">默认</el-tag>
+              <span class="node-label">本机</span>
+              <span class="node-host">local</span>
+            </div>
           </el-descriptions-item>
         </el-descriptions>
       </el-tab-pane>
@@ -289,6 +322,63 @@
         <el-button type="primary" @click="confirmRun" :loading="running">确认运行</el-button>
       </template>
     </el-dialog>
+
+    <!-- Git 提交对话框 -->
+    <el-dialog v-model="commitDialogVisible" title="提交改动" width="520px" @open="commitMessage = ''">
+      <el-alert type="info" :closable="false" style="margin-bottom: 12px">
+        将提交 {{ gitStatus.changed_count }} 个文件到分支 <strong>{{ gitStatus.branch }}</strong>（提交人：当前登录用户）
+      </el-alert>
+      <div v-if="gitStatus.changed_files?.length" class="changed-files">
+        <div v-for="f in gitStatus.changed_files.slice(0, 8)" :key="f" class="changed-file">{{ f }}</div>
+        <div v-if="gitStatus.changed_files.length > 8" class="changed-file more">
+          ... 共 {{ gitStatus.changed_files.length }} 个文件
+        </div>
+      </div>
+      <el-input
+        v-model="commitMessage"
+        type="textarea"
+        :rows="3"
+        placeholder="提交信息，例如: fix: 修复价格解析空指针"
+        style="margin-top: 12px"
+      />
+      <template #footer>
+        <el-button @click="commitDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleGitCommit" :loading="gitOperating === 'commit'"
+                   :disabled="!commitMessage.trim()">提交</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Git 分支切换对话框 -->
+    <el-dialog v-model="branchDialogVisible" title="切换分支" width="480px">
+      <el-tabs v-model="branchTab">
+        <el-tab-pane label="已有分支" name="existing">
+          <el-select v-model="selectedBranch" placeholder="选择分支" style="width: 100%" filterable>
+            <el-option-group label="本地分支">
+              <el-option v-for="b in gitBranches.local" :key="b" :label="b" :value="b"
+                         :disabled="b === gitBranches.current" />
+            </el-option-group>
+            <el-option-group label="远程分支">
+              <el-option v-for="b in remoteBranchNames" :key="b" :label="b" :value="b" />
+            </el-option-group>
+          </el-select>
+        </el-tab-pane>
+        <el-tab-pane label="新建分支" name="create">
+          <el-input v-model="newBranchName" placeholder="新分支名，基于当前分支创建" />
+        </el-tab-pane>
+      </el-tabs>
+      <template #footer>
+        <el-button @click="branchDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleGitCheckout" :loading="gitOperating === 'checkout'">切换</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑爬虫对话框（共享向导组件） -->
+    <SpiderFormDialog
+      v-if="spider"
+      v-model="editDialogVisible"
+      :spider="spider"
+      @saved="onEditSaved"
+    />
   </div>
 </template>
 
@@ -296,8 +386,9 @@
 import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Folder, Document, More, Back, VideoPlay, Delete, Edit, View, Check } from '@element-plus/icons-vue'
-import { getSpider, runSpider, deleteSpider, getSpiderFileTree, getSpiderFileContent, saveSpiderFileContent, createSpiderFileOrDir, deleteSpiderFileOrDir } from '@/api/spider'
+import { Refresh, Folder, Document, More, Back, VideoPlay, Delete, Edit, View, Check, Share, ArrowDown, EditPen, Top, Bottom } from '@element-plus/icons-vue'
+import { getSpider, runSpider, deleteSpider, getSpiderFileTree, getSpiderFileContent, saveSpiderFileContent, createSpiderFileOrDir, deleteSpiderFileOrDir, getGitStatus, getGitBranches, gitCommit, gitPush, gitPull, gitCheckout } from '@/api/spider'
+import SpiderFormDialog from '@/components/SpiderFormDialog.vue'
 import { listTasks, retryTask } from '@/api/execution'
 import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, getSpiderTypeColor, formatDateTime as formatDate } from '@/utils/common'
 import { getTaskStatusType, getTaskStatusText } from '@/utils/common'
@@ -456,7 +547,86 @@ const createForm = reactive({
 onMounted(() => {
   loadSpider()
   loadFileTree()  // 自动加载文件树
+  loadGitStatus()
 })
+
+// ==================== Git 工作流 ====================
+const gitStatus = ref({ is_repo: false, branch: '', changed_count: 0, changed_files: [], ahead: 0, behind: 0 })
+const gitBranches = ref({ current: '', local: [], remote: [] })
+const gitStatusLoading = ref(false)
+const gitOperating = ref('') // 'commit' | 'push' | 'pull' | 'checkout'
+const commitDialogVisible = ref(false)
+const commitMessage = ref('')
+const branchDialogVisible = ref(false)
+const branchTab = ref('existing')
+const selectedBranch = ref('')
+const newBranchName = ref('')
+
+// 远程分支显示名（去掉 origin/ 前缀）
+const remoteBranchNames = computed(() =>
+  (gitBranches.value.remote || []).map(b => b.replace(/^[^/]+\//, ''))
+)
+
+const loadGitStatus = async () => {
+  if (!spider.value?.git_url) return
+  gitStatusLoading.value = true
+  try {
+    gitStatus.value = await getGitStatus(spiderId)
+  } catch (e) {
+    // 非仓库或读取失败时不打扰用户
+    gitStatus.value = { is_repo: false, changed_count: 0 }
+  } finally {
+    gitStatusLoading.value = false
+  }
+}
+
+const openBranchDialog = async () => {
+  branchDialogVisible.value = true
+  branchTab.value = 'existing'
+  selectedBranch.value = ''
+  newBranchName.value = ''
+  try {
+    gitBranches.value = await getGitBranches(spiderId)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '读取分支失败')
+  }
+}
+
+const runGitOp = async (op, fn, successMsg) => {
+  gitOperating.value = op
+  try {
+    const res = await fn()
+    ElMessage.success(res?.message || successMsg)
+    await Promise.all([loadGitStatus(), loadFileTree()])
+    return true
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '操作失败')
+    return false
+  } finally {
+    gitOperating.value = ''
+  }
+}
+
+const handleGitCommit = () =>
+  runGitOp('commit', () => gitCommit(spiderId, commitMessage.value), '提交成功')
+    .then(ok => { if (ok) commitDialogVisible.value = false })
+
+const handleGitPush = () =>
+  runGitOp('push', () => gitPush(spiderId), '推送成功')
+
+const handleGitPull = () =>
+  runGitOp('pull', () => gitPull(spiderId), '拉取完成')
+
+const handleGitCheckout = () => {
+  const isCreate = branchTab.value === 'create'
+  const branch = isCreate ? newBranchName.value.trim() : selectedBranch.value
+  if (!branch) {
+    ElMessage.warning(isCreate ? '请输入新分支名' : '请选择分支')
+    return
+  }
+  runGitOp('checkout', () => gitCheckout(spiderId, branch, isCreate), '切换成功')
+    .then(ok => { if (ok) branchDialogVisible.value = false })
+}
 
 const loadSpider = async () => {
   try {
@@ -529,6 +699,7 @@ const saveFile = async () => {
     saving.value = true
     await saveSpiderFileContent(spiderId, currentFile.value.path, fileContent.value)
     ElMessage.success('保存成功')
+    loadGitStatus() // 保存后刷新改动数
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '保存失败')
   } finally {
@@ -582,8 +753,10 @@ const handleFileAction = async (command, data) => {
   }
 }
 
-const showEditDialog = () => {
-  ElMessage.info('编辑功能开发中')
+// 编辑对话框（共享向导组件，编辑模式）
+const editDialogVisible = ref(false)
+const onEditSaved = () => {
+  loadSpider() // 编辑保存后刷新详情
 }
 
 const handleRun = async () => {
@@ -927,5 +1100,70 @@ const handleDelete = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ===== Git 工具条 ===== */
+.git-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-sm);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--cp-card-bg);
+  border: 1px solid var(--cp-border-light);
+  border-radius: var(--cp-radius-sm);
+}
+
+.git-branch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--cp-radius-sm);
+  background: var(--cp-page-bg);
+  border: 1px solid var(--cp-border-light);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cp-text-primary);
+  cursor: pointer;
+  transition: all var(--cp-motion-fast) ease;
+}
+
+.git-branch:hover {
+  border-color: var(--cp-primary);
+  color: var(--cp-primary);
+}
+
+.git-branch-caret {
+  font-size: 12px;
+  color: var(--cp-text-secondary);
+}
+
+.git-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.changed-files {
+  max-height: 140px;
+  overflow-y: auto;
+  background: var(--cp-page-bg);
+  border-radius: var(--cp-radius-sm);
+  padding: 8px 12px;
+}
+
+.changed-file {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--cp-text-regular);
+  line-height: 1.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.changed-file.more {
+  color: var(--cp-text-secondary);
 }
 </style>

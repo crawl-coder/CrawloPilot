@@ -1,22 +1,31 @@
 <template>
   <div class="tasks-container">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>任务管理</span>
-          <div class="header-actions">
-            <span class="auto-refresh">
-              <el-switch v-model="autoRefresh" size="small" />
-              自动刷新
-            </span>
-            <el-button @click="refreshAll" :loading="loading">
-              <el-icon><Refresh /></el-icon>
-              刷新
-            </el-button>
-          </div>
-        </div>
-      </template>
+    <div class="page-header">
+      <h2>任务管理</h2>
+      <span class="page-subtitle">执行记录与实时监控</span>
+      <div class="header-actions">
+        <span class="auto-refresh">
+          <el-switch v-model="autoRefresh" size="small" />
+          自动刷新
+        </span>
+        <el-button @click="refreshAll" :loading="loading">
+          <el-icon><Refresh /></el-icon>
+          刷新
+        </el-button>
+      </div>
+    </div>
 
+    <!-- 统计概览 -->
+    <div class="stats-bar cp-animate-in" v-if="stats">
+      <div class="stat-pill"><span class="stat-num">{{ stats.total ?? 0 }}</span><span class="stat-label">总任务</span></div>
+      <div class="stat-pill"><span class="stat-num running">{{ stats.running ?? 0 }}</span><span class="stat-label">运行中</span></div>
+      <div class="stat-pill"><span class="stat-num success">{{ stats.success ?? 0 }}</span><span class="stat-label">成功</span></div>
+      <div class="stat-pill"><span class="stat-num failed">{{ stats.failed ?? 0 }}</span><span class="stat-label">失败</span></div>
+      <div class="stat-pill"><span class="stat-num">{{ stats.today ?? 0 }}</span><span class="stat-label">今日</span></div>
+      <div class="stat-pill"><span class="stat-num rate">{{ stats.success_rate ?? 0 }}%</span><span class="stat-label">成功率</span></div>
+    </div>
+
+    <el-card shadow="never" class="cp-animate-in">
       <!-- 筛选 -->
       <el-form :inline="true" class="filter-form">
         <el-form-item label="爬虫">
@@ -47,73 +56,63 @@
 
       <!-- 表格 -->
       <el-table :data="taskList" v-loading="loading" stripe style="width: 100%">
-        <el-table-column prop="id" label="任务ID" width="100">
+        <el-table-column prop="id" label="ID" width="70">
           <template #default="{ row }">
             <el-text type="primary" class="clickable" @click="handleViewDetail(row)">
               {{ row.id }}
             </el-text>
           </template>
         </el-table-column>
-        <el-table-column prop="spider_name" label="爬虫名称" width="150" />
-        <el-table-column label="项目名称" width="180">
+        <el-table-column prop="spider_name" label="爬虫" min-width="130" show-overflow-tooltip />
+        <el-table-column label="项目" width="130" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.project_name || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)" size="small">
               {{ getStatusText(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="调度ID" width="100">
-          <template #default="{ row }">
-            {{ row.schedule_id || '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="节点" width="160">
+        <el-table-column label="节点" min-width="150">
           <template #default="{ row }">
             <template v-if="row.worker_node">
-              {{ row.worker_node }}
+              <span class="cell-main">{{ row.worker_node }}</span>
             </template>
             <template v-else-if="row.node_name">
               <el-tag size="small" type="info">{{ row.node_name }}</el-tag>
               <el-tag v-if="row.deploy_mode === 'ssh'" size="small" type="warning" style="margin-left: 4px">SSH</el-tag>
               <el-tag v-else-if="row.deploy_mode" size="small" type="success" style="margin-left: 4px">{{ row.deploy_mode }}</el-tag>
+              <div v-if="row.container_id" class="cell-sub mono">{{ row.container_id.substring(0, 12) }}</div>
             </template>
-            <span v-else>-</span>
+            <span v-else class="cell-sub">本机</span>
           </template>
         </el-table-column>
-        <el-table-column label="容器ID" width="140">
+        <el-table-column label="执行时长" width="100" align="right">
           <template #default="{ row }">
-            <el-text size="small" type="info">
-              {{ row.container_id ? row.container_id.substring(0, 12) : '-' }}
-            </el-text>
+            <span class="mono">{{ displayDuration(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="执行时长" width="110">
+        <el-table-column label="开始时间" width="190">
           <template #default="{ row }">
-            {{ row.duration ? `${row.duration.toFixed(1)}s` : '-' }}
+            <span class="mono nowrap">{{ formatTime(row.started_at || row.created_at) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="开始时间" width="170">
+        <el-table-column label="结束时间" width="190">
           <template #default="{ row }">
-            {{ row.started_at ? formatTime(row.started_at) : formatTime(row.created_at) }}
+            <span class="mono nowrap">{{ row.finished_at ? formatTime(row.finished_at) : '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="结束时间" width="170">
-          <template #default="{ row }">
-            {{ row.finished_at ? formatTime(row.finished_at) : '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="256" fixed="right">
+        <el-table-column label="操作" width="330" fixed="right">
           <template #default="{ row }">
             <div style="display: flex; gap: 4px; white-space: nowrap">
               <el-button
                 v-if="row.status === 'running'"
                 size="small"
                 type="warning"
+                plain
                 :loading="actionLoading === row.id + '-pause'"
                 @click="handlePause(row)"
               >
@@ -123,24 +122,26 @@
                 v-if="row.status === 'paused'"
                 size="small"
                 type="success"
+                plain
                 :loading="actionLoading === row.id + '-resume'"
                 @click="handleResume(row)"
               >
                 恢复
               </el-button>
               <el-button
-                v-if="row.status === 'running' || row.status === 'pending' || row.status === 'paused'"
                 size="small"
                 type="danger"
+                :disabled="!['running', 'pending', 'paused'].includes(row.status)"
                 :loading="actionLoading === row.id + '-stop'"
                 @click="handleStopTask(row)"
               >
                 停止
               </el-button>
               <el-button
-                v-if="row.status === 'failed' || row.status === 'timeout'"
                 size="small"
                 type="primary"
+                plain
+                :disabled="!['failed', 'timeout', 'success', 'cancelled'].includes(row.status)"
                 :loading="actionLoading === row.id + '-retry'"
                 @click="handleRetry(row)"
               >
@@ -155,6 +156,7 @@
               <el-button
                 size="small"
                 type="danger"
+                plain
                 :loading="actionLoading === row.id + '-delete'"
                 @click="handleDeleteTask(row)"
               >
@@ -181,7 +183,7 @@
     <!-- 日志查看对话框 -->
     <el-dialog
       v-model="logDialogVisible"
-      :title="`任务日志 - ${currentTask?.spider_name || ''}`"
+      :title="`任务日志 #${currentTask?.id || ''} - ${currentTask?.spider_name || ''}`"
       width="800px"
       destroy-on-close
     >
@@ -201,14 +203,33 @@ import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import { listTasks, stopTask, pauseTask, resumeTask, deleteTask, getTaskLogs, retryTask } from '@/api/execution'
+import { listTasks, stopTask, pauseTask, resumeTask, deleteTask, getTaskLogs, retryTask, getTaskStats } from '@/api/execution'
 import { getSpiders } from '@/api/spider'
-import { getTaskStatusType as getStatusType, getTaskStatusText as getStatusText, formatDateTime as formatTime } from '@/utils/common'
+import { getTaskStatusType as getStatusType, getTaskStatusText as getStatusText, formatDateTime as formatTime, formatDuration } from '@/utils/common'
 
 const loading = ref(false)
 const taskList = ref([])
 const spiders = ref([])
+const stats = ref(null)
 const router = useRouter()
+
+// 执行时长展示：结束后用 duration，运行中按 started_at 实时估算（随自动刷新更新）
+const displayDuration = (row) => {
+  if (row.duration != null) return `${row.duration.toFixed(1)}s`
+  if (row.status === 'running' && row.started_at) {
+    const secs = (Date.now() - new Date(row.started_at).getTime()) / 1000
+    return secs > 0 ? formatDuration(Math.round(secs)) : '-'
+  }
+  return '-'
+}
+
+const loadStats = async () => {
+  try {
+    stats.value = await getTaskStats()
+  } catch (error) {
+    // 统计失败不打扰主流程
+  }
+}
 
 const filters = reactive({
   spider_id: '',
@@ -259,6 +280,7 @@ const loadSpiders = async () => {
 
 const refreshAll = () => {
   loadTasks()
+  loadStats()
 }
 
 const handleReset = () => {
@@ -401,6 +423,7 @@ watch(autoRefresh, (enabled) => {
 onMounted(() => {
   loadTasks()
   loadSpiders()
+  loadStats()
   startAutoRefresh()
 })
 
@@ -411,16 +434,30 @@ onUnmounted(() => {
 
 <style scoped>
 .tasks-container {
-  padding: 20px;
+  padding: 0;
 }
 
-.card-header {
+/* ===== 页头 ===== */
+.page-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: var(--cp-space-sm);
+  margin-bottom: var(--cp-space-md);
+}
+
+.page-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--cp-text-primary);
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--cp-text-secondary);
 }
 
 .header-actions {
+  margin-left: auto;
   display: flex;
   gap: 10px;
   align-items: center;
@@ -431,11 +468,67 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #909399;
+  color: var(--cp-text-secondary);
+}
+
+/* ===== 统计概览条 ===== */
+.stats-bar {
+  display: flex;
+  gap: var(--cp-space-xl);
+  padding: 14px var(--cp-space-lg);
+  margin-bottom: var(--cp-space-md);
+  background: var(--cp-card-bg);
+  border: 1px solid var(--cp-border-light);
+  border-radius: var(--cp-radius-md);
+  box-shadow: var(--cp-shadow-1);
+}
+
+.stat-pill {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.stat-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--cp-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-num.running { color: var(--cp-warning); }
+.stat-num.success { color: var(--cp-success); }
+.stat-num.failed { color: var(--cp-danger); }
+.stat-num.rate { color: var(--cp-primary); }
+
+.stat-label {
+  font-size: 12px;
+  color: var(--cp-text-secondary);
 }
 
 .filter-form {
-  margin-bottom: 20px;
+  margin-bottom: var(--cp-space-sm);
+}
+
+/* ===== 单元格层级 ===== */
+.cell-main {
+  font-size: 13px;
+  color: var(--cp-text-regular);
+}
+
+.cell-sub {
+  font-size: 12px;
+  color: var(--cp-text-secondary);
+  margin-top: 2px;
+}
+
+.mono {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 .clickable {

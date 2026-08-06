@@ -60,12 +60,15 @@ export function getSpiderTypeColor(type) {
 // ==================== 时间格式化 ====================
 
 /**
- * 格式化日期字符串为中文格式
+ * 格式化日期字符串为标准格式 YYYY-MM-DD HH:mm:ss
+ * 统一补零，对齐整齐（数据平台惯例），避免 toLocaleString 的 2026/8/6 样式
  */
 export function formatDateTime(dateStr) {
   const d = parseDate(dateStr)
   if (!d || isNaN(d.getTime())) return '-'
-  return d.toLocaleString('zh-CN')
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+         `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 /**

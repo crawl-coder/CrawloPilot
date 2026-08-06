@@ -1,25 +1,25 @@
 <template>
   <div class="nodes-container">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <h3>节点管理</h3>
-          <div>
-            <el-button @click="openAddServer">
-              <el-icon><Plus /></el-icon>
-              添加服务器
-            </el-button>
-            <el-button @click="handleHealthCheck">
-              <el-icon><Refresh /></el-icon>
-              健康检查
-            </el-button>
-            <el-button type="primary" @click="openAddDialog">
-              <el-icon><Plus /></el-icon>
-              添加节点
-            </el-button>
-          </div>
-        </div>
-      </template>
+    <div class="page-header">
+      <h2>节点管理</h2>
+      <span class="page-subtitle">服务器与执行通道</span>
+      <div class="header-actions">
+        <el-button type="primary" plain @click="openAddServer">
+          <el-icon><Plus /></el-icon>
+          添加服务器
+        </el-button>
+        <el-button type="primary" @click="openAddDialog">
+          <el-icon><Plus /></el-icon>
+          添加节点
+        </el-button>
+        <el-button type="success" plain @click="handleHealthCheck" :loading="healthChecking">
+          <el-icon><Refresh /></el-icon>
+          健康检查
+        </el-button>
+      </div>
+    </div>
+
+    <el-card shadow="never" class="cp-animate-in">
 
       <!-- 类型 Tab：服务器 / 三种通道 -->
       <el-tabs v-model="activeType" class="node-tabs" @tab-change="resetPage">
@@ -80,26 +80,33 @@
           :xs="24" :sm="12" :md="8" :lg="6"
           style="margin-bottom: 20px"
         >
-          <el-card class="node-card" shadow="hover" @click="goServer(sv)">
-            <template #header>
-              <div class="node-header">
-                <span class="node-name">{{ sv.name }}</span>
-                <el-tag :type="serverStatusType(sv.status)" size="small">{{ serverStatusText(sv.status) }}</el-tag>
+          <el-card class="node-card status-card cp-animate-in" shadow="hover" @click="goServer(sv)"
+                   :style="{ '--status-color': statusColor(sv.status) }">
+            <div class="server-card-head">
+              <div class="server-icon">
+                <el-icon :size="20"><Monitor /></el-icon>
               </div>
-            </template>
+              <div class="server-title">
+                <div class="node-name">{{ sv.name }}</div>
+                <div class="server-host">{{ sv.host }}</div>
+              </div>
+              <el-tag :type="serverStatusType(sv.status)" size="small">{{ serverStatusText(sv.status) }}</el-tag>
+            </div>
             <div class="node-info">
-              <div class="info-item"><span class="label">IP:</span><span class="value">{{ sv.host }}</span></div>
-              <div class="info-item"><span class="label">机房:</span><span class="value">{{ sv.region || '-' }}</span></div>
-              <div class="info-item"><span class="label">系统:</span><span class="value">{{ sv.os_type ? sv.os_type + ' ' + (sv.os_version || '') : '未探测' }}</span></div>
-              <div class="info-item"><span class="label">资源:</span><span class="value">{{ sv.cpu_cores || '-' }}核 / {{ formatServerBytes(sv.memory_total) }}</span></div>
-              <div class="info-item">
-                <span class="label">通道:</span>
-                <span class="value">
-                  <el-tag v-if="sv.channel_summary?.ssh" size="small" effect="plain">SSH {{ sv.channel_summary.ssh }}</el-tag>
-                  <el-tag v-if="sv.channel_summary?.docker" size="small" effect="plain" style="margin-left:4px">Docker {{ sv.channel_summary.docker }}</el-tag>
-                  <el-tag v-if="sv.channel_summary?.agent" size="small" effect="plain" style="margin-left:4px">Agent {{ sv.channel_summary.agent }}</el-tag>
-                  <span v-if="sv.online_channels">· {{ sv.online_channels }} 在线</span>
-                </span>
+              <div class="info-item"><span class="label">机房</span><span class="value">{{ sv.region || '-' }}</span></div>
+              <div class="info-item"><span class="label">系统</span><span class="value">{{ sv.os_type ? sv.os_type + ' ' + (sv.os_version || '') : '未探测' }}</span></div>
+              <div class="info-item"><span class="label">资源</span><span class="value">{{ sv.cpu_cores || '-' }}核 / {{ formatServerBytes(sv.memory_total) }}</span></div>
+              <div class="info-item channel-item">
+                <span class="label">通道</span>
+                <div class="channel-badges">
+                  <template v-if="hasChannels(sv)">
+                    <span v-if="sv.channel_summary?.ssh" class="channel-badge ssh">SSH × {{ sv.channel_summary.ssh }}</span>
+                    <span v-if="sv.channel_summary?.docker" class="channel-badge docker">Docker × {{ sv.channel_summary.docker }}</span>
+                    <span v-if="sv.channel_summary?.agent" class="channel-badge agent">Agent × {{ sv.channel_summary.agent }}</span>
+                    <span v-if="sv.online_channels" class="channel-online">{{ sv.online_channels }} 在线</span>
+                  </template>
+                  <span v-else class="value">-</span>
+                </div>
               </div>
             </div>
             <div class="node-actions" @click.stop>
@@ -122,21 +129,21 @@
           :xs="24" :sm="12" :md="8" :lg="6"
           style="margin-bottom: 20px"
         >
-          <el-card class="node-card" shadow="hover">
-            <template #header>
-              <div class="node-header">
-                <div class="node-title-row">
-                  <span class="node-name">{{ node.name }}</span>
-                  <el-tag v-if="node.connect_type === 'docker'" type="warning" size="small" effect="plain">Docker</el-tag>
-                  <el-tag v-else-if="node.connect_type === 'ssh'" type="success" size="small" effect="plain">SSH</el-tag>
-                  <el-tag v-else-if="node.connect_type === 'agent'" type="primary" size="small" effect="plain">Agent</el-tag>
-                </div>
-                <el-tag v-if="node.status === 'online'" type="success" size="small">在线</el-tag>
-                <el-tag v-else-if="node.status === 'offline'" type="danger" size="small">离线</el-tag>
-                <el-tag v-else-if="node.status === 'maintenance'" type="warning" size="small">维护中</el-tag>
-                <el-tag v-else type="info" size="small">{{ node.status }}</el-tag>
+          <el-card class="node-card status-card cp-animate-in" shadow="hover"
+                   :style="{ '--status-color': statusColor(node.status) }">
+            <div class="channel-card-head">
+              <span class="status-dot" :class="node.status"></span>
+              <div class="node-title-row">
+                <span class="node-name">{{ node.name }}</span>
+                <el-tag v-if="node.connect_type === 'docker'" type="warning" size="small" effect="plain">Docker</el-tag>
+                <el-tag v-else-if="node.connect_type === 'ssh'" type="success" size="small" effect="plain">SSH</el-tag>
+                <el-tag v-else-if="node.connect_type === 'agent'" type="primary" size="small" effect="plain">Agent</el-tag>
               </div>
-            </template>
+              <el-tag v-if="node.status === 'online'" type="success" size="small">在线</el-tag>
+              <el-tag v-else-if="node.status === 'offline'" type="danger" size="small">离线</el-tag>
+              <el-tag v-else-if="node.status === 'maintenance'" type="warning" size="small">维护中</el-tag>
+              <el-tag v-else type="info" size="small">{{ node.status }}</el-tag>
+            </div>
 
             <div class="node-info">
               <div class="info-item">
@@ -192,18 +199,11 @@
               <el-button size="small" @click="testConnection(node)">测试</el-button>
               <el-button size="small" v-if="node.connect_type === 'docker'" @click="viewContainers(node)">容器</el-button>
               <el-button size="small" type="primary" plain @click="openEditDialog(node)">编辑</el-button>
-              <el-dropdown @command="(cmd) => handleNodeAction(cmd, node)">
-                <el-button size="small">
-                  更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="activate" v-if="node.status !== 'online'">激活</el-dropdown-item>
-                    <el-dropdown-item command="drain" v-if="node.status === 'online' && node.connect_type === 'docker'">排空</el-dropdown-item>
-                    <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
+              <el-button v-if="node.status !== 'online'" size="small" type="success" plain
+                         @click="handleNodeAction('activate', node)">激活</el-button>
+              <el-button v-if="node.status === 'online' && node.connect_type === 'docker'" size="small" type="warning" plain
+                         @click="handleNodeAction('drain', node)">排空</el-button>
+              <el-button size="small" type="danger" plain @click="handleNodeAction('delete', node)">删除</el-button>
             </div>
           </el-card>
         </el-col>
@@ -385,7 +385,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, ArrowDown, Search } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, Monitor } from '@element-plus/icons-vue'
 import {
   getServers, createServer, deleteServer, probeServer
 } from '@/api/server'
@@ -413,6 +413,24 @@ const showAddDialog = ref(false)
 const showEditDialog = ref(false)
 const showContainersDialog = ref(false)
 const currentNode = ref(null)
+const healthChecking = ref(false)
+
+// 服务器是否有任何通道
+const hasChannels = (sv) => {
+  const s = sv.channel_summary
+  return !!(s && (s.ssh || s.docker || s.agent))
+}
+
+// 状态 → 颜色（卡片顶条/状态点）
+const statusColor = (status) => {
+  const map = {
+    online: 'var(--cp-success)',
+    offline: 'var(--cp-danger)',
+    maintenance: 'var(--cp-warning)',
+    draining: 'var(--cp-warning)'
+  }
+  return map[status] || 'var(--cp-info)'
+}
 
 // ============ 列表：搜索 / 筛选 / 分页 / 分组 ============
 
@@ -789,12 +807,15 @@ const testConnection = async (node) => {
 }
 
 const handleHealthCheck = async () => {
+  healthChecking.value = true
   try {
     await checkNodesHealth()
     ElMessage.success('健康检查完成')
     loadNodes()
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '健康检查失败')
+  } finally {
+    healthChecking.value = false
   }
 }
 
@@ -856,25 +877,134 @@ onMounted(() => {
 
 <style scoped>
 .nodes-container {
-  padding: 20px;
+  padding: 0;
 }
 
-.card-header {
+/* ===== 页头 ===== */
+.page-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: var(--cp-space-sm);
+  margin-bottom: var(--cp-space-lg);
+}
+
+.page-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--cp-text-primary);
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--cp-text-secondary);
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+/* ===== 状态卡片 ===== */
+.status-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.status-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--status-color, transparent);
+  z-index: 1;
 }
 
 .node-card {
   height: 100%;
   display: flex;
   flex-direction: column;
+  cursor: pointer;
 }
 
 .node-card :deep(.el-card__body) {
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+/* 服务器卡片头：图标 + 名称/主机 + 状态 */
+.server-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-sm);
+  margin-bottom: var(--cp-space-sm);
+}
+
+.server-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--cp-radius-md);
+  background: linear-gradient(135deg, var(--cp-primary) 0%, var(--cp-primary-light) 100%);
+  box-shadow: 0 6px 16px -4px rgba(59, 124, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.server-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.server-host {
+  font-size: 12px;
+  color: var(--cp-text-secondary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  margin-top: 2px;
+}
+
+/* 通道卡片头：状态点 + 名称 + 类型 + 状态 */
+.channel-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--cp-space-sm);
+  padding-bottom: var(--cp-space-sm);
+  border-bottom: 1px solid var(--cp-border-light);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--cp-info);
+}
+
+.status-dot.online {
+  background: var(--cp-success);
+  box-shadow: 0 0 8px var(--cp-success);
+  animation: dot-pulse 2s ease-in-out infinite;
+}
+
+.status-dot.offline {
+  background: var(--cp-danger);
+}
+
+.status-dot.maintenance,
+.status-dot.draining {
+  background: var(--cp-warning);
+  box-shadow: 0 0 8px var(--cp-warning);
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 .node-tabs {
@@ -891,7 +1021,7 @@ onMounted(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: var(--cp-space-md);
 }
 
 .node-filters {
@@ -908,67 +1038,115 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-.node-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .node-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .node-name {
   font-weight: 600;
-  font-size: 16px;
+  font-size: 15px;
+  color: var(--cp-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .node-info {
   flex: 1;
-  margin-bottom: 15px;
-  min-height: 150px;
+  margin-bottom: var(--cp-space-sm);
+  min-height: 130px;
 }
 
 .info-item {
   display: flex;
   justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
+  align-items: center;
+  padding: 5px 0;
 }
 
 .info-item .label {
-  color: #909399;
-  font-size: 14px;
+  color: var(--cp-text-secondary);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+/* ===== 通道徽章 ===== */
+.channel-item {
+  align-items: flex-start;
+}
+
+.channel-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.channel-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.channel-badge.ssh {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--cp-success);
+}
+
+.channel-badge.docker {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--cp-warning);
+}
+
+.channel-badge.agent {
+  background: rgba(59, 124, 255, 0.1);
+  color: var(--cp-primary);
+}
+
+.channel-online {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--cp-success);
+  white-space: nowrap;
+  align-self: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .info-item .value {
-  color: #303133;
-  font-size: 14px;
+  color: var(--cp-text-regular);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .resource-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 5px 0;
 }
 
 .resource-bar .label {
-  color: #909399;
-  font-size: 14px;
+  color: var(--cp-text-secondary);
+  font-size: 13px;
   min-width: 40px;
   flex-shrink: 0;
 }
 
 .resource-bar .value {
-  color: #909399;
+  color: var(--cp-text-secondary);
   font-size: 12px;
   min-width: 70px;
   text-align: right;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .resource-progress {
@@ -979,6 +1157,6 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   padding-top: 10px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--cp-border-light);
 }
 </style>
