@@ -17,14 +17,20 @@
         </div>
       </template>
 
-      <!-- 节点列表 -->
-      <el-row :gutter="20">
-        <el-col
-          v-for="node in nodes"
-          :key="node.id"
-          :xs="24" :sm="12" :md="8" :lg="6"
-          style="margin-bottom: 20px"
-        >
+      <!-- 节点列表（按类型分组展示） -->
+      <template v-for="group in nodeGroups" :key="group.type">
+        <div class="node-group-header">
+          <el-icon><component :is="group.icon" /></el-icon>
+          <span class="node-group-title">{{ group.label }}</span>
+          <el-tag size="small" effect="plain">{{ group.nodes.length }}</el-tag>
+        </div>
+        <el-row :gutter="20" class="node-group-row">
+          <el-col
+            v-for="node in group.nodes"
+            :key="node.id"
+            :xs="24" :sm="12" :md="8" :lg="6"
+            style="margin-bottom: 20px"
+          >
           <el-card class="node-card" shadow="hover">
             <template #header>
               <div class="node-header">
@@ -109,8 +115,9 @@
               </el-dropdown>
             </div>
           </el-card>
-        </el-col>
-      </el-row>
+          </el-col>
+        </el-row>
+      </template>
 
       <el-empty v-if="nodes.length === 0" description="暂无节点" />
     </el-card>
@@ -240,7 +247,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, Refresh, ArrowDown, Monitor, Box, Cpu } from '@element-plus/icons-vue'
 import {
   createNode, 
   getNodes, 
@@ -263,6 +270,18 @@ const showAddDialog = ref(false)
 const showEditDialog = ref(false)
 const showContainersDialog = ref(false)
 const currentNode = ref(null)
+
+// 按连接方式分组的节点列表
+const nodeGroups = computed(() => {
+  const defs = [
+    { type: 'ssh', label: 'SSH 节点', icon: Monitor },
+    { type: 'docker', label: 'Docker 节点', icon: Box },
+    { type: 'agent', label: 'Agent 节点', icon: Cpu },
+  ]
+  return defs
+    .map((d) => ({ ...d, nodes: nodes.value.filter((n) => n.connect_type === d.type) }))
+    .filter((g) => g.nodes.length > 0)
+})
 
 const portLabel = computed(() => {
   if (nodeForm.connect_type === 'docker') return 'Docker 端口'
@@ -557,6 +576,28 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+.node-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 14px;
+  padding-left: 4px;
+  font-size: 14px;
+  color: #606266;
+}
+
+.node-group-header:first-of-type {
+  margin-top: 4px;
+}
+
+.node-group-title {
+  font-weight: 600;
+}
+
+.node-group-row {
+  margin-bottom: 4px;
 }
 
 .node-header {
