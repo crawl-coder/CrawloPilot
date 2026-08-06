@@ -54,3 +54,26 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     user_id: Optional[int] = None
+
+
+# ==================== 个人 Git 凭据 ====================
+
+class GitCredentialPayload(BaseModel):
+    """保存个人 Git 凭据（秘密字段留空表示保留原值）"""
+    auth_type: str = "password"  # password 或 ssh
+    username: Optional[str] = None
+    password: Optional[str] = None      # 留空=保留原值
+    ssh_key: Optional[str] = None       # 留空=保留原值
+    passphrase: Optional[str] = None    # 留空=保留原值
+    default_branch: Optional[str] = None
+
+
+class GitCredentialInfo(BaseModel):
+    """个人 Git 凭据的脱敏信息"""
+    configured: bool = False
+    auth_type: Optional[str] = None
+    username: Optional[str] = None
+    default_branch: Optional[str] = None
+    has_password: bool = False
+    has_ssh_key: bool = False
+    has_passphrase: bool = False

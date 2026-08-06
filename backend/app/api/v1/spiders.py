@@ -107,10 +107,12 @@ async def get_spider(
         "git_url": spider.git_url,
         "git_auth_type": spider.git_auth_type,
         "git_username": spider.git_username,
-        "git_password": spider.git_password,
-        "git_ssh_key": spider.git_ssh_key,
-        "git_passphrase": spider.git_passphrase,
+        # 秘密字段不回传（前端编辑表单不消费这些值）
+        "git_password": None,
+        "git_ssh_key": None,
+        "git_passphrase": None,
         "git_branch": spider.git_branch,
+        "git_credential_id": spider.git_credential_id,
         "code_path": spider.code_path,
         "config": spider.config,
         "schedule_config": spider.schedule_config,
@@ -146,12 +148,40 @@ async def create_spider(
     if existing:
         raise HTTPException(status_code=400, detail="该项目下已存在同名爬虫")
     
+    # 解析 Git 凭据来源：共享凭据池 > 个人凭据 > 手动填写
+    data = spider_data.dict(exclude={"use_my_git_credential"})
+    if data.get("git_credential_id"):
+        from app.models import GitCredential
+        cred = db.query(GitCredential).filter(
+            GitCredential.id == data["git_credential_id"],
+            GitCredential.is_active == True,  # noqa: E712
+        ).first()
+        if not cred:
+            raise HTTPException(status_code=400, detail="所选共享 Git 凭据不存在或已停用")
+        # 使用共享凭据时清空内联凭据，避免双份凭据歧义
+        data["git_username"] = None
+        data["git_password"] = None
+        data["git_ssh_key"] = None
+        data["git_passphrase"] = None
+    elif spider_data.use_my_git_credential and data.get("git_url"):
+        from app.services.credential_service import unpack_user_credentials
+        my_cred = unpack_user_credentials(current_user)
+        if not my_cred:
+            raise HTTPException(status_code=400, detail="您还未配置个人 Git 凭据，请先在个人中心配置")
+        data["git_auth_type"] = my_cred.get("auth_type") or "password"
+        data["git_username"] = my_cred.get("username") or None
+        data["git_password"] = my_cred.get("password") or None
+        data["git_ssh_key"] = my_cred.get("ssh_key") or None
+        data["git_passphrase"] = my_cred.get("passphrase") or None
+        if not data.get("git_branch") and my_cred.get("default_branch"):
+            data["git_branch"] = my_cred["default_branch"]
+
     # 创建爬虫
     new_spider = Spider(
-        **spider_data.dict(),
+        **data,
         status="draft"
     )
-    
+
     db.add(new_spider)
     db.commit()
     db.refresh(new_spider)
@@ -173,6 +203,17 @@ async def update_spider(
     
     # 更新字段
     update_data = spider_data.dict(exclude_unset=True)
+
+    # 校验共享凭据引用（显式传 null 表示清除引用）
+    if "git_credential_id" in update_data and update_data["git_credential_id"]:
+        from app.models import GitCredential
+        cred = db.query(GitCredential).filter(
+            GitCredential.id == update_data["git_credential_id"],
+            GitCredential.is_active == True,  # noqa: E712
+        ).first()
+        if not cred:
+            raise HTTPException(status_code=400, detail="所选共享 Git 凭据不存在或已停用")
+
     for key, value in update_data.items():
         setattr(spider, key, value)
 
@@ -510,24 +551,28 @@ async def clone_spider_git_repo(
     if not scp_like and parsed.scheme not in ("http", "https", "ssh", "git"):
         raise HTTPException(status_code=400, detail="不支持的 Git 地址协议，仅支持 http/https/ssh")
 
+    # 解析实际使用的凭据（共享凭据池 > 爬虫内联凭据）
+    from app.services.credential_service import resolve_spider_git_credentials
+    git_cred = resolve_spider_git_credentials(db, spider)
+
     # 组装克隆 URL / SSH 环境
     clone_url = git_url
     env = dict(os.environ)
     key_path = None
-    if spider.git_auth_type == "password" and (spider.git_username or spider.git_password):
+    if git_cred.git_auth_type == "password" and (git_cred.git_username or git_cred.git_password):
         if parsed.scheme in ("http", "https"):
-            username = quote(spider.git_username or "x-access-token", safe="")
-            password = quote(spider.git_password or "", safe="")
+            username = quote(git_cred.git_username or "x-access-token", safe="")
+            password = quote(git_cred.git_password or "", safe="")
             netloc = f"{username}:{password}@{parsed.netloc}"
             clone_url = urlunparse(
                 (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
             )
-    elif spider.git_auth_type == "ssh" and spider.git_ssh_key:
+    elif git_cred.git_auth_type == "ssh" and git_cred.git_ssh_key:
         try:
             key_fd, key_path = tempfile.mkstemp(prefix="crawlo_git_key_")
             os.close(key_fd)
             with open(key_path, "w", encoding="utf-8") as f:
-                f.write(spider.git_ssh_key)
+                f.write(git_cred.git_ssh_key)
             os.chmod(key_path, 0o600)
             env["GIT_SSH_COMMAND"] = (
                 f"ssh -i {key_path} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
@@ -729,8 +774,9 @@ class GitCheckoutRequest(BaseModel):
 
 
 def _get_git_service(spider_id: int, db: Session):
-    """获取爬虫对应的 GitService，校验存在性与仓库状态"""
+    """获取爬虫对应的 GitService，校验存在性与仓库状态（凭据走统一解析）"""
     from app.services.git_service import GitService
+    from app.services.credential_service import resolve_spider_git_credentials
 
     spider = db.query(Spider).filter(Spider.id == spider_id).first()
     if not spider:
@@ -741,7 +787,7 @@ def _get_git_service(spider_id: int, db: Session):
     if not code_dir or not os.path.exists(code_dir):
         raise HTTPException(status_code=400, detail="爬虫代码目录不存在")
 
-    return spider, GitService(spider, code_dir)
+    return spider, GitService(resolve_spider_git_credentials(db, spider), code_dir)
 
 
 @router.get("/{spider_id}/git/status")

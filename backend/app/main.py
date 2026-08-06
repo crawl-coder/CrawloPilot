@@ -177,8 +177,9 @@ app.include_router(projects.router, prefix=settings.API_PREFIX)
 app.include_router(project_files.router, prefix=settings.API_PREFIX)
 
 # 爬虫管理
-from app.api.v1 import spiders
+from app.api.v1 import spiders, git_credentials
 app.include_router(spiders.router, prefix=settings.API_PREFIX)
+app.include_router(git_credentials.router, prefix=settings.API_PREFIX)
 
 # 部署与节点
 from app.api.v1 import deploy, nodes, agent, servers

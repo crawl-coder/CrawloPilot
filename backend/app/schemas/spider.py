@@ -42,11 +42,14 @@ class SpiderBase(BaseModel):
     git_ssh_key: Optional[str] = None
     git_passphrase: Optional[str] = None
     git_branch: str = "main"
+    # 引用的共享 Git 凭据（团队机器人凭据）ID
+    git_credential_id: Optional[int] = None
 
 
 class SpiderCreate(SpiderBase):
     """创建爬虫"""
-    pass
+    # True 时忽略内联 git 凭据字段，使用当前用户的个人 Git 凭据
+    use_my_git_credential: bool = False
 
 
 class SpiderUpdate(BaseModel):
@@ -59,6 +62,7 @@ class SpiderUpdate(BaseModel):
     spider_name: Optional[str] = None  # 运行名称 (用于 crawlo run)
     config: Optional[Dict[str, Any]] = None
     schedule_config: Optional[Dict[str, Any]] = None
+    git_credential_id: Optional[int] = None  # 更新引用的共享凭据（不传=不修改；显式传 null=清除引用）
 
 
 class SpiderInDB(SpiderBase):

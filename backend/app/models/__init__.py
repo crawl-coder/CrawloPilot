@@ -14,6 +14,8 @@ class User(Base):
     password_hash = Column(String(256), nullable=False)
     full_name = Column(String(128))
     is_active = Column(Boolean, default=True)
+    # 个人 Git 凭据（Fernet 加密的 JSON：auth_type/username/password/ssh_key/passphrase/default_branch）
+    git_credentials = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -135,6 +137,28 @@ class ProjectVersion(Base):
     project = relationship("Project", back_populates="versions")
 
 
+class GitCredential(Base):
+    """共享 Git 凭据（团队机器人账号 / Deploy Key），由管理员维护，创建爬虫时引用"""
+    __tablename__ = "git_credential"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), unique=True, nullable=False, index=True)
+    description = Column(String(512))
+    auth_type = Column(String(32), nullable=False, default="password")  # password 或 ssh
+    username = Column(String(128))           # Git 用户名（明文，用于展示/拼装 URL）
+    password = Column(Text)                  # Git 密码/Token（Fernet 加密）
+    ssh_key = Column(Text)                   # SSH 私钥（Fernet 加密）
+    passphrase = Column(Text)                # SSH 私钥密码（Fernet 加密）
+    default_branch = Column(String(128))     # 默认分支（可选，仅作创建时建议值）
+    is_active = Column(Boolean, default=True)
+    created_by = Column(BigInteger, ForeignKey("user.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    creator = relationship("User")
+
+
 class SpiderType(str, enum.Enum):
     CRAWLO = "crawlo"              # Crawlo 框架(主打)
     SCRAPY = "scrapy"              # Scrapy 框架
@@ -169,6 +193,8 @@ class Spider(Base):
     git_ssh_key = Column(Text)  # SSH私钥
     git_passphrase = Column(String(256))  # SSH私钥密码
     git_branch = Column(String(128), default="main")  # 分支
+    # 引用的共享 Git 凭据（团队机器人凭据）；设置后 git ops 优先使用凭据池中的凭据
+    git_credential_id = Column(BigInteger, ForeignKey("git_credential.id"), nullable=True)
     
     # 代码相关
     code_path = Column(String(512))  # 代码目录路径
@@ -192,6 +218,7 @@ class Spider(Base):
     # Relationships
     project = relationship("Project", back_populates="spiders")
     task_instances = relationship("TaskInstance", back_populates="spider")
+    git_credential = relationship("GitCredential")
 
 
 class ScheduleType(str, enum.Enum):

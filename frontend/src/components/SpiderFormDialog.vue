@@ -112,26 +112,65 @@
             <el-input v-model="spiderForm.git_url" placeholder="https://github.com/user/repo.git（创建时自动克隆）" />
           </el-form-item>
 
-          <el-form-item label="认证方式">
-            <el-radio-group v-model="spiderForm.git_auth_type">
-              <el-radio value="password">密码/Token</el-radio>
-              <el-radio value="ssh">SSH密钥</el-radio>
+          <el-form-item v-if="hasCredOptions" label="凭据来源">
+            <el-radio-group v-model="spiderForm.cred_source">
+              <el-radio value="manual">手动填写</el-radio>
+              <el-radio v-if="myCred.configured" value="mine">我的凭据</el-radio>
+              <el-radio v-if="sharedCreds.length > 0" value="shared">团队凭据</el-radio>
             </el-radio-group>
           </el-form-item>
 
-          <template v-if="spiderForm.git_auth_type === 'password'">
-            <el-form-item label="用户名">
-              <el-input v-model="spiderForm.git_username" placeholder="可选" />
-            </el-form-item>
-            <el-form-item label="密码/Token">
-              <el-input v-model="spiderForm.git_password" type="password" show-password placeholder="可选" />
+          <template v-if="spiderForm.cred_source === 'mine'">
+            <el-form-item label="我的凭据">
+              <el-tag type="success" effect="plain">
+                {{ myCred.auth_type === 'ssh' ? 'SSH密钥' : '密码/Token' }}{{ myCred.username ? ` · ${myCred.username}` : '' }}
+              </el-tag>
+              <div class="form-tip">
+                使用您在个人中心配置的 Git 凭据；<el-link type="primary" @click="goProfile">前往配置</el-link>
+              </div>
             </el-form-item>
           </template>
 
-          <template v-if="spiderForm.git_auth_type === 'ssh'">
-            <el-form-item label="SSH私钥">
-              <el-input v-model="spiderForm.git_ssh_key" type="textarea" :rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
+          <template v-else-if="spiderForm.cred_source === 'shared'">
+            <el-form-item label="团队凭据" prop="git_credential_id">
+              <el-select v-model="spiderForm.git_credential_id" placeholder="选择共享凭据" style="width: 100%">
+                <el-option
+                  v-for="cred in sharedCreds"
+                  :key="cred.id"
+                  :label="cred.name"
+                  :value="cred.id"
+                >
+                  <div class="type-option">
+                    <span class="type-name">{{ cred.name }}</span>
+                    <span class="type-desc">{{ cred.auth_type === 'ssh' ? 'SSH密钥' : '密码/Token' }}{{ cred.username ? ` · ${cred.username}` : '' }}</span>
+                  </div>
+                </el-option>
+              </el-select>
             </el-form-item>
+          </template>
+
+          <template v-else>
+            <el-form-item label="认证方式">
+              <el-radio-group v-model="spiderForm.git_auth_type">
+                <el-radio value="password">密码/Token</el-radio>
+                <el-radio value="ssh">SSH密钥</el-radio>
+              </el-radio-group>
+            </el-form-item>
+
+            <template v-if="spiderForm.git_auth_type === 'password'">
+              <el-form-item label="用户名">
+                <el-input v-model="spiderForm.git_username" placeholder="可选" />
+              </el-form-item>
+              <el-form-item label="密码/Token">
+                <el-input v-model="spiderForm.git_password" type="password" show-password placeholder="可选" />
+              </el-form-item>
+            </template>
+
+            <template v-if="spiderForm.git_auth_type === 'ssh'">
+              <el-form-item label="SSH私钥">
+                <el-input v-model="spiderForm.git_ssh_key" type="textarea" :rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
+              </el-form-item>
+            </template>
           </template>
 
           <el-form-item label="分支">
@@ -278,12 +317,17 @@
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, Link, FolderAdd } from '@element-plus/icons-vue'
 import { createSpider, updateSpider, cloneSpiderGit, uploadSpiderCode } from '@/api/spider'
 import { getProjects } from '@/api/project'
 import { getSchedules, createSchedule } from '@/api/schedule'
+import { getMyGitCredentials } from '@/api/auth'
+import { getGitCredentials } from '@/api/git-credential'
 import { formatDuration } from '@/utils/common'
+
+const router = useRouter()
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -306,6 +350,11 @@ const nameInputRef = ref(null)
 const existingScheduleId = ref(null)
 const existingScheduleCron = ref('')
 
+// Git 凭据来源（创建模式）
+const myCred = ref({ configured: false })
+const sharedCreds = ref([])
+const hasCredOptions = computed(() => myCred.value.configured || sharedCreds.value.length > 0)
+
 const spiderForm = reactive({
   name: '',
   project_id: null,
@@ -313,6 +362,8 @@ const spiderForm = reactive({
   description: '',
   code_source: 'git',
   git_url: '',
+  cred_source: 'manual',
+  git_credential_id: null,
   git_auth_type: 'password',
   git_username: '',
   git_password: '',
@@ -370,6 +421,16 @@ const rules = {
         callback()
       }
     }
+  }],
+  git_credential_id: [{
+    trigger: 'change',
+    validator: (rule, value, callback) => {
+      if (!isEdit.value && spiderForm.code_source === 'git' && spiderForm.cred_source === 'shared' && !value) {
+        callback(new Error('请选择团队凭据'))
+      } else {
+        callback()
+      }
+    }
   }]
 }
 
@@ -377,8 +438,35 @@ const rules = {
 const handleDialogOpen = () => {
   initForm()
   loadProjects()
+  loadCredOptions()
   formRef.value?.clearValidate()
   nextTick(() => nameInputRef.value?.focus())
+}
+
+// 加载凭据选项（个人凭据 + 团队共享凭据），仅创建模式需要
+const loadCredOptions = async () => {
+  if (isEdit.value) return
+  try {
+    myCred.value = await getMyGitCredentials()
+  } catch (error) {
+    myCred.value = { configured: false }
+  }
+  try {
+    sharedCreds.value = await getGitCredentials()
+  } catch (error) {
+    sharedCreds.value = []
+  }
+  // 默认优先使用我的凭据
+  if (myCred.value.configured) {
+    spiderForm.cred_source = 'mine'
+  } else if (sharedCreds.value.length > 0) {
+    spiderForm.cred_source = 'shared'
+  }
+}
+
+const goProfile = () => {
+  emit('update:modelValue', false)
+  router.push('/profile')
 }
 
 const initForm = () => {
@@ -400,6 +488,8 @@ const initForm = () => {
       spider_name: row.spider_name || '',
       code_source: row.git_url ? 'git' : 'empty',
       git_url: row.git_url || '',
+      cred_source: 'manual',
+      git_credential_id: row.git_credential_id || null,
       git_auth_type: row.git_auth_type || 'password',
       git_username: '',
       git_password: '',
@@ -420,6 +510,8 @@ const initForm = () => {
       description: '',
       code_source: 'git',
       git_url: '',
+      cred_source: 'manual',
+      git_credential_id: null,
       git_auth_type: 'password',
       git_username: '',
       git_password: '',
@@ -512,7 +604,7 @@ const nextStep = async () => {
       await formRef.value.validateField(['name', 'project_id', 'spider_type'])
     } else if (currentStep.value === 1) {
       if (spiderForm.code_source === 'git') {
-        await formRef.value.validateField(['git_url'])
+        await formRef.value.validateField(['git_url', 'git_credential_id'])
       } else if (spiderForm.code_source === 'upload' && !uploadFile.value) {
         ElMessage.warning('请先选择要上传的代码包')
         return
@@ -565,6 +657,9 @@ const handleSubmit = async () => {
       }
       ElMessage.success('更新成功')
     } else {
+      const isGit = spiderForm.code_source === 'git'
+      const useShared = isGit && spiderForm.cred_source === 'shared' && spiderForm.git_credential_id
+      const useMine = isGit && !useShared && spiderForm.cred_source === 'mine'
       const spiderData = {
         name: spiderForm.name,
         project_id: spiderForm.project_id,
@@ -572,12 +667,14 @@ const handleSubmit = async () => {
         description: spiderForm.description,
         entry_file: spiderForm.entry_file || null,
         spider_name: spiderForm.spider_name || spiderForm.name,
-        git_url: spiderForm.code_source === 'git' ? spiderForm.git_url : null,
+        git_url: isGit ? spiderForm.git_url : null,
         git_auth_type: spiderForm.git_auth_type,
-        git_username: spiderForm.git_username || null,
-        git_password: spiderForm.git_password || null,
-        git_ssh_key: spiderForm.git_ssh_key || null,
+        git_username: useMine || useShared ? null : (spiderForm.git_username || null),
+        git_password: useMine || useShared ? null : (spiderForm.git_password || null),
+        git_ssh_key: useMine || useShared ? null : (spiderForm.git_ssh_key || null),
         git_branch: spiderForm.git_branch,
+        use_my_git_credential: useMine,
+        git_credential_id: useShared ? spiderForm.git_credential_id : null,
         ...buildConfigPayload()
       }
 

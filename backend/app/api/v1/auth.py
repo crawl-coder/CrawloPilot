@@ -10,7 +10,7 @@ from app.core.security import verify_password, get_password_hash, create_access_
 from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.models import User
-from app.schemas.user import UserCreate, UserInDB, Token
+from app.schemas.user import UserCreate, UserInDB, Token, GitCredentialPayload, GitCredentialInfo
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -155,3 +155,69 @@ def get_current_user_info(
     current_user: User = Depends(get_current_user)
 ):
     return current_user
+
+
+# ==================== 个人 Git 凭据 ====================
+
+@router.get("/me/git-credentials", response_model=GitCredentialInfo)
+def get_my_git_credentials(
+    current_user: User = Depends(get_current_user)
+):
+    """获取当前用户的个人 Git 凭据（脱敏，不回传秘密本体）"""
+    from app.services.credential_service import mask_user_credentials
+
+    masked = mask_user_credentials(current_user)
+    if masked is None:
+        return GitCredentialInfo(configured=False)
+    return GitCredentialInfo(configured=True, **masked)
+
+
+@router.put("/me/git-credentials", response_model=GitCredentialInfo)
+def save_my_git_credentials(
+    payload: GitCredentialPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    保存/更新当前用户的个人 Git 凭据（加密落库）
+    秘密字段（password/ssh_key/passphrase）留空表示保留原值
+    """
+    from app.services.credential_service import (
+        pack_user_credentials, unpack_user_credentials, mask_user_credentials,
+    )
+
+    if payload.auth_type not in ("password", "ssh"):
+        raise HTTPException(status_code=400, detail="认证方式仅支持 password 或 ssh")
+
+    existing = unpack_user_credentials(current_user) or {}
+
+    new_password = payload.password if payload.password else existing.get("password")
+    new_ssh_key = payload.ssh_key if payload.ssh_key else existing.get("ssh_key")
+    if payload.auth_type == "password" and not new_password:
+        raise HTTPException(status_code=400, detail="密码/Token 不能为空")
+    if payload.auth_type == "ssh" and not new_ssh_key:
+        raise HTTPException(status_code=400, detail="SSH 私钥不能为空")
+
+    current_user.git_credentials = pack_user_credentials({
+        "auth_type": payload.auth_type,
+        "username": payload.username if payload.username is not None else existing.get("username"),
+        "password": new_password,
+        "ssh_key": new_ssh_key,
+        "passphrase": payload.passphrase if payload.passphrase else existing.get("passphrase"),
+        "default_branch": payload.default_branch if payload.default_branch is not None else existing.get("default_branch"),
+    })
+    db.commit()
+
+    masked = mask_user_credentials(current_user)
+    return GitCredentialInfo(configured=True, **masked)
+
+
+@router.delete("/me/git-credentials")
+def delete_my_git_credentials(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """清除当前用户的个人 Git 凭据"""
+    current_user.git_credentials = None
+    db.commit()
+    return {"message": "已清除个人 Git 凭据"}

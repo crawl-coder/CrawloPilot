@@ -122,7 +122,7 @@ const handleCommand = (command) => {
     ElMessage.success('已退出登录')
     router.push('/login')
   } else if (command === 'profile') {
-    ElMessage.info('个人信息页面开发中')
+    router.push('/profile')
   }
 }
 </script>
