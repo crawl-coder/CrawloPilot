@@ -75,11 +75,10 @@ async def get_spider(
     if not spider:
         raise HTTPException(status_code=404, detail="爬虫不存在")
     
-    # 查询部署节点信息
+    # 查询部署节点信息（按 spider_id 关联，爬虫改名不受影响）
     from app.models import Schedule, Node
     schedules = db.query(Schedule).filter(
-        Schedule.project_id == spider.project_id,
-        Schedule.spider_name == spider.name,
+        Schedule.spider_id == spider.id,
         Schedule.node_id.isnot(None)
     ).all()
     
@@ -242,14 +241,23 @@ async def delete_spider(
         raise HTTPException(status_code=404, detail="爬虫不存在")
 
     # 生命周期同步：删除爬虫 → 级联删除其调度并移除 job（任务历史保留）
-    from app.models import Schedule
+    from app.models import Schedule, TaskInstance
     from app.services.scheduler_service import get_scheduler_service
     scheduler = get_scheduler_service()
     for sched in db.query(Schedule).filter(Schedule.spider_id == spider.id).all():
         scheduler.remove_schedule(sched.id)
+        # 解除任务历史对调度的外键引用（历史保留，仅断开关联）
+        db.query(TaskInstance).filter(TaskInstance.schedule_id == sched.id).update(
+            {"schedule_id": None}, synchronize_session=False
+        )
         db.delete(sched)
     db.flush()
-    
+
+    # 解除任务历史对爬虫的外键引用（历史保留，仅断开关联）
+    db.query(TaskInstance).filter(TaskInstance.spider_id == spider.id).update(
+        {"spider_id": None}, synchronize_session=False
+    )
+
     db.delete(spider)
     db.commit()
     

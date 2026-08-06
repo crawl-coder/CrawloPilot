@@ -60,3 +60,21 @@ Local/Ssh/Docker/Agent 执行器，保证四种执行方式行为一致。
 任务列表 → 点击任务 ID → 执行详情页
 爬虫详情/项目详情 → 运行 → 自动跳转执行详情页
 ```
+
+## 定时调度（Schedule）
+
+任务来源有两种：手动运行（`schedule_id` 为空）与定时触发（`schedule_id` 指向调度）。
+
+- 调度引擎：`backend/app/services/scheduler_service.py`，进程内 APScheduler，
+  随 lifespan 启停；支持 cron / interval / once 三种触发，默认时区 Asia/Shanghai
+- 统一入口：`task_service.create_and_run_task`（手动与定时共用同一套校验/创建/分发）
+- 幂等：`task_instance.(schedule_id, expected_run_at)` 唯一索引兜底，
+  一次触发最多创建一个任务；run-now 不占幂等槽位（`expected_run_at=NULL`）
+- 并发守卫：同调度 PENDING+RUNNING 任务数 >= max_concurrency 时跳过本次触发
+- 错跑检测：重启后补偿窗口（默认 24h，env `SCHEDULE_COMPENSATION_HOURS`）内记
+  `skipped` 不追跑，超窗只推进 `next_run_time`
+- 一次性调度：触发后自动 `enabled=false` 并清空 `next_run_time`
+- 删除调度/爬虫：任务历史保留（外键引用置 NULL），调度行级联删除
+- API：`/schedules` CRUD / enable / disable / run-now / preview / history，
+  详见 `docs/designs/scheduling.md`
+- 测试：`tests/schedule_test.py`（35 项端到端，含真实触发等待）

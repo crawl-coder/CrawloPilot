@@ -21,6 +21,10 @@ cd .. && python tests/test_deployment_flow.py
 
 | 文件 | 说明 |
 |------|------|
+| `tests/full_flow_test.py` | 前后端全流程联调（41/41，覆盖 13 个页面接口） |
+| `tests/schedule_test.py` | 定时调度端到端（35/35，含 cron 真实触发/幂等/启停/once 自动停用/级联删除，约 4 分钟） |
+| `tests/git_credentials_test.py` | Git 凭据体系端到端（34/34，个人凭据/团队凭据池/引用保护/脱敏） |
+| `tests/ws_push_test.py` | WebSocket 日志与状态推送验证 |
 | `tests/unit/test_01_auth.py` | 认证单测（6/6） |
 | `tests/unit/test_02_projects.py` | 项目单测（部分用例与分页/删除接口格式不匹配，待修） |
 | `tests/unit/test_edge_cases.py` | 边界条件（已移除调度相关用例） |

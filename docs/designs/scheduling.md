@@ -1,7 +1,26 @@
 # 定时任务配置功能设计
 
-> 状态：设计稿（待评审）
+> 状态：**V1（方案 A）已实现并验证**（2026-08-07，提交 `529f45e` + 修复增补）
+> 端到端测试：`tests/schedule_test.py`（35 项，含 cron 真实触发/幂等/启停/once 自动停用/级联删除）
 > 关联文档：[设计哲学](../DESIGN_PHILOSOPHY.md)、[任务管理](../modules/06-tasks.md)、[部署执行](../modules/04-execution.md)
+
+## 0. 实现状态与偏差说明（2026-08-07）
+
+**已落地**：Schedule 模型扩展（spider_id 外键 + 迁移回填）、进程内 APScheduler（lifespan 启停 +
+启动恢复 + 错跑检测 skipped）、并发守卫、触发幂等（唯一索引方案）、once 自动停用、
+`/schedules` 全部 9 个端点、三层生命周期同步、enabled=false 保留行语义、
+前端 SpiderFormDialog 定时区块改走 `/schedules`（编辑回显默认调度）。
+
+**与设计的偏差**：
+
+- 幂等互斥采用**方案 2（`(schedule_id, expected_run_at)` 唯一索引）**，未用 GET_LOCK；
+- `triggered_by` 参数未实现，任务来源通过 `schedule_id` 是否为空区分（manual/schedule）；
+- `Schedule.success_count / fail_count` 列已建但**暂不回写**（执行器只回写 spider 级统计），
+  `last_run_status` 在任务终态后保持 `running`，待 V2 补终态回写；
+- 删除调度/爬虫时，任务历史通过**解除外键引用（SET NULL 语义）**保留，不删任务行；
+- run-now 不占幂等槽位（`expected_run_at=NULL`），避免与周期触发同秒撞唯一索引误报失败；
+- 启动恢复具备**单调度异常隔离**（一条脏 cron 不中断整体恢复）；
+- 独立「定时任务」页面、`spider.schedule_config` schema 层清理为 V2 增量（见第 7 节）。
 
 ## 1. 目标与范围
 

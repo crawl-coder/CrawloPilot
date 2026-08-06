@@ -55,21 +55,27 @@ class SchedulerService:
             now = datetime.utcnow()
             window = timedelta(hours=int(os.environ.get("SCHEDULE_COMPENSATION_HOURS", "24")))
             for sched in db.query(Schedule).filter(Schedule.enabled == True).all():
-                if sched.schedule_type == ScheduleType.ONCE:
-                    if sched.run_at and sched.run_at < now:
-                        # 一次性调度已过期：停用并记录 skipped
-                        sched.enabled = False
-                        sched.last_run_status = "skipped"
-                        db.commit()
-                        continue
-                elif sched.next_run_time and sched.next_run_time < now:
-                    # 错跑检测：补偿窗口内记录 skipped，超窗只推进不执行
-                    if sched.next_run_time >= now - window:
-                        sched.last_run_status = "skipped"
-                        db.commit()
-                self._register_job(sched)
-                self._sync_next_run_time(db, sched)
-                db.commit()
+                # 单调度异常隔离：一条脏数据（如非法 cron）不能中断整体恢复
+                try:
+                    if sched.schedule_type == ScheduleType.ONCE:
+                        if sched.run_at and sched.run_at < now:
+                            # 一次性调度已过期：停用并记录 skipped
+                            sched.enabled = False
+                            sched.next_run_time = None
+                            sched.last_run_status = "skipped"
+                            db.commit()
+                            continue
+                    elif sched.next_run_time and sched.next_run_time < now:
+                        # 错跑检测：补偿窗口内记录 skipped，超窗只推进不执行
+                        if sched.next_run_time >= now - window:
+                            sched.last_run_status = "skipped"
+                            db.commit()
+                    self._register_job(sched)
+                    self._sync_next_run_time(db, sched)
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"恢复调度 {sched.id} 失败（已跳过，不影响其他调度）: {e}")
         finally:
             db.close()
 
@@ -97,19 +103,9 @@ class SchedulerService:
         if self.scheduler.get_job(job_id):
             self.scheduler.remove_job(job_id)
 
-    def pause_schedule(self, schedule_id: int):
-        job_id = self._job_id(schedule_id)
-        job = self.scheduler.get_job(job_id)
-        if job:
-            job.pause()
-
-    def resume_schedule(self, schedule_id: int):
-        """启用：重新注册 job（resume 后 next_run_time 重新计算）"""
-        self.sync_schedule(schedule_id)
-
     def run_now(self, schedule_id: int):
-        """立即执行一次（不改变周期；忽略 enabled 状态）"""
-        self._fire_schedule(schedule_id, ignore_enabled=True)
+        """立即执行一次（不改变周期；忽略 enabled 状态；不占幂等槽位）"""
+        self._fire_schedule(schedule_id, ignore_enabled=True, expected_run_at=None)
 
     @staticmethod
     def _job_id(schedule_id: int) -> str:
@@ -136,11 +132,19 @@ class SchedulerService:
         logger.info(f"注册调度 job {job_id}: type={sched.schedule_type.value}, enabled={sched.enabled}")
 
     def _build_trigger(self, sched: Schedule):
-        tz = ZoneInfo(sched.timezone or DEFAULT_TZ)
+        try:
+            tz = ZoneInfo(sched.timezone or DEFAULT_TZ)
+        except Exception:
+            logger.warning(f"调度 {sched.id} 时区非法: {sched.timezone}，回退到 {DEFAULT_TZ}")
+            tz = ZoneInfo(DEFAULT_TZ)
         if sched.schedule_type == ScheduleType.CRON:
             if not sched.cron_expr:
                 return None
-            return CronTrigger.from_crontab(sched.cron_expr, timezone=tz)
+            try:
+                return CronTrigger.from_crontab(sched.cron_expr, timezone=tz)
+            except Exception as e:
+                logger.warning(f"调度 {sched.id} cron 表达式非法: {sched.cron_expr} ({e})")
+                return None
         if sched.schedule_type == ScheduleType.INTERVAL:
             seconds = sched.interval_seconds or 60
             return IntervalTrigger(seconds=seconds)
@@ -159,7 +163,7 @@ class SchedulerService:
 
     # ==================== 触发 ====================
 
-    def _fire_schedule(self, schedule_id: int, ignore_enabled: bool = False):
+    def _fire_schedule(self, schedule_id: int, ignore_enabled: bool = False, expected_run_at=None):
         db = SessionLocal()
         try:
             sched = db.query(Schedule).get(schedule_id)
@@ -179,7 +183,9 @@ class SchedulerService:
                 )
                 return
 
-            expected_run_at = datetime.utcnow()
+            # 周期触发用当前时刻占幂等槽位；run-now 传 None（MySQL 唯一索引允许多个 NULL，不撞周期触发）
+            if expected_run_at is None and not ignore_enabled:
+                expected_run_at = datetime.utcnow()
             from app.services.task_service import create_and_run_task
             result = create_and_run_task(
                 db,
@@ -196,6 +202,7 @@ class SchedulerService:
             if sched.schedule_type == ScheduleType.ONCE:
                 # 一次性调度触发后停用
                 sched.enabled = False
+                sched.next_run_time = None
                 self.remove_schedule(sched.id)
             else:
                 self._sync_next_run_time(db, sched)

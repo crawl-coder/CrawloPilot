@@ -1,6 +1,6 @@
 # CrawloPilot V1 状态与后续规划
 
-> 更新时间：2026-08-05
+> 更新时间：2026-08-07
 
 ## V1 目标
 
@@ -18,14 +18,20 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 - [x] Server 实体（真实服务器管理）：server 表 + 服务器 Tab/详情页 +
       服务器下创建 SSH/Docker/Agent 通道 + 状态聚合
 - [x] 任务状态 / 实时日志 / WebSocket 推送
+- [x] 定时调度（方案 A′）：进程内 APScheduler + Schedule 表驱动 + 爬虫表单入口，
+      cron/interval/once 三种触发、并发守卫、触发幂等、启停/run-now/预览/历史，
+      测试 `tests/schedule_test.py`（35/35 ✅）
+- [x] Git 工作流：完整克隆保留 .git，详情页提交/推送/拉取/切分支，
+      凭据单次注入不落盘（`git_service.py`）
+- [x] Git 凭据体系：个人凭据（Fernet 加密、创建爬虫自动填充）+
+      团队机器人凭据池（admin 维护、爬虫引用、轮换一处生效），
+      测试 `tests/git_credentials_test.py`（34/34 ✅）
 - [x] 部署流程验收测试：`tests/test_deployment_flow.py`（18/18 ✅）
 
 ## V1 已裁剪（V2 规划）
 
 | 功能 | 说明 |
 |------|------|
-| Git 管理 | project_git / spider_git / git_service |
-| 调度系统 | schedules API + scheduler 模块（依赖 Celery Worker） |
 | 监控告警 | alerts API + alert_engine + 通知渠道 |
 | 数据质量 | data_quality API / service / 模型 |
 | 数据统计/数据管理 | DataStatistics / DataManagement 页面 |
@@ -39,20 +45,18 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 
 ## V2 建议顺序
 
-1. 调度系统（进程内 APScheduler + 本地执行）
+1. 定时任务独立页面（/schedules 列表 + 爬虫详情入口 + 任务页调度跳转；
+   后端接口已全部就绪，纯前端增量）+ 调度终态统计回写（success_count/fail_count）
 2. 监控告警（基于任务状态与节点指标）
-3. Git 仓库管理（clone/pull/push）
-4. 数据质量与统计
-5. 代理池 / API 管理
-6. 操作审计（中间件按需开启）
+3. 数据质量与统计
+4. 代理池 / API 管理
+5. 操作审计（中间件按需开启）
 
 ## 待定问题（已记录）
 
-- **定时任务入口放在哪个页面（2026-08-05 用户提出，待确认）**
-  - 倾向方案：爬虫详情页加「定时调度」tab（调度绑定具体爬虫，上下文最直观）
-  - 二期补充：顶栏「调度管理」总览页（全局视角看下次执行/最近结果/一键启停）
-  - 技术路线：后端进程内 APScheduler + DB 持久化 + 复用 LocalExecutor 执行，
-    去掉 Celery 依赖（`schedule` 表与旧接口仍在，恢复成本低）
+- ~~定时任务入口放在哪个页面~~（2026-08-07 已落定方案 A′：
+  V1 走爬虫表单入口写 `schedule` 表，V2 拆独立页面，详见 `docs/designs/scheduling.md`）
+- 迁移机制双轨：`migrate_schedule.py` 幂等脚本与 alembic 并存，建议后续统一回 alembic
 
 ## 已知事项
 

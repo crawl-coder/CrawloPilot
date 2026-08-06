@@ -71,6 +71,7 @@ class ScheduleOut(BaseModel):
     next_run_time: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
     last_run_status: Optional[str] = None
+    last_run_task_id: Optional[int] = None
     run_count: int = 0
     description: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -89,7 +90,8 @@ def _to_utc_naive(dt: datetime, tz: str) -> datetime:
     return dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
-def _validate_payload(schedule_type: str, cron_expr, interval_seconds, run_at, timezone):
+def _validate_payload(schedule_type: str, cron_expr, interval_seconds, run_at, timezone,
+                      require_future_once: bool = False):
     """校验触发规则，非法抛 HTTPException(400)"""
     try:
         ZoneInfo(timezone)
@@ -109,6 +111,8 @@ def _validate_payload(schedule_type: str, cron_expr, interval_seconds, run_at, t
     elif schedule_type == "once":
         if not run_at:
             raise HTTPException(status_code=400, detail="once 类型必须提供 run_at")
+        if require_future_once and _to_utc_naive(run_at, timezone) <= datetime.utcnow():
+            raise HTTPException(status_code=400, detail="once 类型的运行时间必须是将来的时间")
     else:
         raise HTTPException(status_code=400, detail=f"不支持的调度类型: {schedule_type}")
 
@@ -168,6 +172,7 @@ def _serialize(sched: Schedule) -> ScheduleOut:
         next_run_time=sched.next_run_time,
         last_run_at=sched.last_run_at,
         last_run_status=sched.last_run_status,
+        last_run_task_id=sched.last_run_task_id,
         run_count=sched.run_count or 0,
         description=sched.description,
         created_at=sched.created_at,
@@ -271,7 +276,10 @@ async def create_schedule(
         if not node:
             raise HTTPException(status_code=404, detail="节点不存在")
 
-    _validate_payload(data.schedule_type, data.cron_expr, data.interval_seconds, data.run_at, data.timezone)
+    _validate_payload(
+        data.schedule_type, data.cron_expr, data.interval_seconds, data.run_at, data.timezone,
+        require_future_once=data.enabled,
+    )
 
     existing = db.query(Schedule).filter(Schedule.spider_id == data.spider_id).first()
     if existing:
@@ -334,6 +342,16 @@ async def update_schedule(
         sched.run_at,
         sched.timezone or "Asia/Shanghai",
     )
+    # once 未来时间检查：仅在改动 run_at 或重新启用时触发，避免编辑历史 once 调度被误伤
+    # 注意 sched.run_at 已是 UTC naive（库存储格式），直接与 utcnow 比较
+    if (
+        sched.enabled
+        and sched.schedule_type == ScheduleType.ONCE
+        and ("run_at" in payload or payload.get("enabled") is True)
+        and sched.run_at
+        and sched.run_at <= datetime.utcnow()
+    ):
+        raise HTTPException(status_code=400, detail="once 类型的运行时间必须是将来的时间")
     db.commit()
     from app.services.scheduler_service import get_scheduler_service
     get_scheduler_service().sync_schedule(sched.id)
@@ -349,6 +367,10 @@ async def delete_schedule(
     sched = _get_schedule_or_404(db, schedule_id)
     from app.services.scheduler_service import get_scheduler_service
     get_scheduler_service().remove_schedule(sched.id)
+    # 任务历史保留：解除外键引用后再删调度（task_instance.schedule_id 无 ON DELETE 行为）
+    db.query(TaskInstance).filter(TaskInstance.schedule_id == schedule_id).update(
+        {"schedule_id": None}, synchronize_session=False
+    )
     db.delete(sched)
     db.commit()
     return {"message": "调度已删除"}
