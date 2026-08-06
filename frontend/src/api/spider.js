@@ -39,6 +39,11 @@ export function stopSpider(spiderId) {
   return request.post(`/spiders/${spiderId}/stop`)
 }
 
+// 从 Git 仓库克隆代码
+export function cloneSpiderGit(spiderId) {
+  return request.post(`/spiders/${spiderId}/git/clone`)
+}
+
 // 获取爬虫文件树
 export function getSpiderFileTree(spiderId, path = '') {
   return request.get(`/spiders/${spiderId}/files/tree`, {
@@ -73,4 +78,3 @@ export function deleteSpiderFileOrDir(spiderId, path) {
     params: { path }
   })
 }
-

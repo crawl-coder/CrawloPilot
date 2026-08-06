@@ -546,7 +546,7 @@ import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, UploadFilled, Grid, List, VideoPlay, Document, More, CircleCheck, CircleClose, Loading } from '@element-plus/icons-vue'
-import { getSpiders, createSpider, updateSpider, deleteSpider, runSpider } from '@/api/spider'
+import { getSpiders, createSpider, updateSpider, deleteSpider, runSpider, cloneSpiderGit } from '@/api/spider'
 import { getProjects } from '@/api/project'
 import { getNodes } from '@/api/node'
 import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, getSpiderTypeColor, formatDateTime as formatDate, formatRelativeTime, formatDuration as formatTime } from '@/utils/common'
@@ -854,7 +854,12 @@ const handleSubmit = async () => {
       // 如果是 Git 仓库，触发克隆
       if (spiderForm.code_source === 'git' && spiderForm.git_url) {
         ElMessage.success('爬虫创建成功，开始克隆仓库...')
-        // TODO: 调用 git clone API
+        try {
+          await cloneSpiderGit(newSpider.id)
+          ElMessage.success('Git 仓库克隆成功')
+        } catch (error) {
+          ElMessage.error(error.response?.data?.detail || 'Git 仓库克隆失败')
+        }
       } else if (spiderForm.code_source === 'upload' && uploadFile.value) {
         ElMessage.success('爬虫创建成功，开始上传代码...')
         // TODO: 调用文件上传 API

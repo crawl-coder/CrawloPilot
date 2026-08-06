@@ -13,6 +13,7 @@ from app.models import User, Spider, Project, Node
 from app.schemas.spider import SpiderCreate, SpiderUpdate, SpiderInDB
 from app.services.upload_service import UploadService
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -627,3 +628,147 @@ async def delete_spider_file(
         raise HTTPException(status_code=400, detail=result["message"])
 
     return result
+
+
+@router.post("/{spider_id}/git/clone")
+async def clone_spider_git_repo(
+    spider_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    从 Git 仓库克隆代码到爬虫代码目录
+
+    - 支持公开仓库（http/https）与凭据仓库（密码/Token 或 SSH 私钥）
+    - 克隆到 uploads/project_{id}/spider_{id}/，移除 .git 只保留代码
+    """
+    from urllib.parse import urlparse, urlunparse, quote
+    import subprocess, tempfile, shutil, signal
+    from app.services.file_service import FileService
+
+    def _run_git_clone(cmd, timeout=180):
+        """运行 git clone，超时/失败时清理整个进程组"""
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except OSError:
+                pass
+            proc.communicate()
+            return "Git 克隆超时（180 秒）"
+        if proc.returncode != 0:
+            return (stderr or stdout).strip()
+        return None
+
+    spider = db.query(Spider).filter(Spider.id == spider_id).first()
+    if not spider:
+        raise HTTPException(status_code=404, detail="爬虫不存在")
+    if not spider.git_url:
+        raise HTTPException(status_code=400, detail="该爬虫未配置 Git 仓库地址")
+
+    git_url = spider.git_url.strip()
+    parsed = urlparse(git_url)
+    # 只允许 http/https/ssh/git 协议，或 scp 风格 git@host:path；拒绝 file:// 与本地路径
+    scp_like = bool(re.match(r"^[^/@\s]+@[^:\s]+:.+", git_url))
+    if not scp_like and parsed.scheme not in ("http", "https", "ssh", "git"):
+        raise HTTPException(status_code=400, detail="不支持的 Git 地址协议，仅支持 http/https/ssh")
+
+    # 组装克隆 URL / SSH 环境
+    clone_url = git_url
+    env = dict(os.environ)
+    key_path = None
+    if spider.git_auth_type == "password" and (spider.git_username or spider.git_password):
+        if parsed.scheme in ("http", "https"):
+            username = quote(spider.git_username or "x-access-token", safe="")
+            password = quote(spider.git_password or "", safe="")
+            netloc = f"{username}:{password}@{parsed.netloc}"
+            clone_url = urlunparse(
+                (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+            )
+    elif spider.git_auth_type == "ssh" and spider.git_ssh_key:
+        try:
+            key_fd, key_path = tempfile.mkstemp(prefix="crawlo_git_key_")
+            os.close(key_fd)
+            with open(key_path, "w", encoding="utf-8") as f:
+                f.write(spider.git_ssh_key)
+            os.chmod(key_path, 0o600)
+            env["GIT_SSH_COMMAND"] = (
+                f"ssh -i {key_path} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+            )
+        except OSError as e:
+            if key_path:
+                os.unlink(key_path)
+            raise HTTPException(status_code=500, detail=f"SSH 私钥写入失败: {e}")
+
+    upload_service = UploadService()
+    spider_code_dir = os.path.join(
+        upload_service.upload_base_dir,
+        f"project_{spider.project_id}",
+        f"spider_{spider.id}",
+    )
+    # 目录非空时不覆盖，避免误删已有代码
+    if os.path.isdir(spider_code_dir) and any(os.scandir(spider_code_dir)):
+        raise HTTPException(status_code=400, detail="爬虫代码目录非空，请先清空代码目录或删除爬虫后重试")
+
+    tmp_dir = tempfile.mkdtemp(prefix="crawlo_git_clone_")
+    try:
+        branch = (spider.git_branch or "main").strip()
+        cmds = [
+            ["git", "clone", "--depth", "1", "--branch", branch, clone_url, tmp_dir],
+            ["git", "clone", "--depth", "1", clone_url, tmp_dir],
+        ]
+        last_err = ""
+        for i, cmd in enumerate(cmds):
+            # 上一次尝试失败可能留下半成品，先清空
+            if i > 0:
+                for item in os.listdir(tmp_dir):
+                    p = os.path.join(tmp_dir, item)
+                    shutil.rmtree(p, ignore_errors=True) if os.path.isdir(p) else os.unlink(p)
+            last_err = _run_git_clone(cmd) or ""
+            if not last_err:
+                break
+
+        if last_err:
+            raise HTTPException(status_code=500, detail=f"Git 克隆失败: {last_err[-500:]}")
+
+        os.makedirs(spider_code_dir, exist_ok=True)
+        for item in os.listdir(tmp_dir):
+            src = os.path.join(tmp_dir, item)
+            dst = os.path.join(spider_code_dir, item)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dst)
+
+        # 只保留代码，去掉仓库元数据
+        git_meta = os.path.join(spider_code_dir, ".git")
+        if os.path.exists(git_meta):
+            shutil.rmtree(git_meta, ignore_errors=True)
+
+        file_service = FileService(spider_code_dir)
+        tree = file_service.get_file_tree("", max_depth=3)
+        return {
+            "message": "Git 仓库克隆成功",
+            "code_dir": spider_code_dir,
+            "files": tree,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Git 克隆失败: {e}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        if key_path:
+            try:
+                os.unlink(key_path)
+            except OSError:
+                pass
