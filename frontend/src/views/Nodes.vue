@@ -389,6 +389,7 @@ import { Plus, Refresh, ArrowDown, Search } from '@element-plus/icons-vue'
 import {
   getServers, createServer, deleteServer, probeServer
 } from '@/api/server'
+import { parseDate } from '@/utils/format'
 import {
   createNode, 
   getNodes, 
@@ -621,8 +622,8 @@ const formatBytes = (bytes) => {
 }
 
 const formatTime = (timeStr) => {
-  if (!timeStr) return '-'
-  const time = new Date(timeStr)
+  const time = parseDate(timeStr)
+  if (!time || isNaN(time.getTime())) return '-'
   const now = new Date()
   const diff = Math.floor((now - time) / 1000)
   
@@ -633,8 +634,9 @@ const formatTime = (timeStr) => {
 }
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
+  const d = parseDate(dateStr)
+  if (!d || isNaN(d.getTime())) return '-'
+  return d.toLocaleString('zh-CN')
 }
 
 const usageStatus = (value) => {

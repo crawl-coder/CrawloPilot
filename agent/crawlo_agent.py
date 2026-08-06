@@ -203,6 +203,7 @@ class AgentClient:
 
             # 2. 确保 crawlo 可用
             self._ensure_crawlo()
+            self._install_requirements(code_dir)
 
             # 3. 启动进程
             env = os.environ.copy()
@@ -306,6 +307,21 @@ class AgentClient:
             log("crawlo 安装完成")
         except Exception as e:
             log(f"crawlo 自动安装失败: {e}")
+
+    def _install_requirements(self, code_dir):
+        """安装项目 requirements.txt（如存在）"""
+        req_file = os.path.join(str(code_dir), "requirements.txt")
+        if not os.path.exists(req_file):
+            return
+        log(f"检测到 requirements.txt，安装依赖...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", req_file, "-i", PIP_INDEX],
+                timeout=600,
+            )
+            log("项目依赖安装完成")
+        except Exception as e:
+            log(f"项目依赖安装失败: {e}")
 
     # ============ 主循环 ============
 

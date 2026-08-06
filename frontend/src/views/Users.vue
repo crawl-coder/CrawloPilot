@@ -164,6 +164,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getUsers, createUser, updateUser, deleteUser, resetPassword, toggleUserStatus, getRoles } from '@/api/user'
+import { parseDate } from '@/utils/format'
 import Pagination from '@/components/Pagination.vue'
 
 const users = ref([])
@@ -395,8 +396,8 @@ const resetUserForm = () => {
 }
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
+  const date = parseDate(dateStr)
+  if (!date || isNaN(date.getTime())) return '-'
   return date.toLocaleString('zh-CN')
 }
 </script>

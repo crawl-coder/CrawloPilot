@@ -51,6 +51,8 @@ export const SPIDER_TYPE_COLORS = {
   custom: '#13C2C2'
 }
 
+import { parseDate } from './format'
+
 export function getSpiderTypeColor(type) {
   return SPIDER_TYPE_COLORS[type] || '#8C8C8C'
 }
@@ -61,8 +63,9 @@ export function getSpiderTypeColor(type) {
  * 格式化日期字符串为中文格式
  */
 export function formatDateTime(dateStr) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
+  const d = parseDate(dateStr)
+  if (!d || isNaN(d.getTime())) return '-'
+  return d.toLocaleString('zh-CN')
 }
 
 /**
@@ -72,7 +75,8 @@ export function formatRelativeTime(dateStr) {
   if (!dateStr) return '未运行'
 
   const now = new Date()
-  const date = new Date(dateStr)
+  const date = parseDate(dateStr)
+  if (!date || isNaN(date.getTime())) return '未运行'
   const diff = Math.floor((now - date) / 1000) // 秒
 
   if (diff < 60) return '刚刚'

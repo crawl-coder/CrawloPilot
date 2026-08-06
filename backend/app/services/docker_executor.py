@@ -70,6 +70,8 @@ def _build_context_tar(code_dir: str, base_tag: str) -> bytes:
         f"FROM {base_tag}\n"
         f"WORKDIR /app\n"
         f"COPY . /app\n"
+        f"RUN if [ -f /app/requirements.txt ]; then "
+        f"pip install --no-cache-dir -r /app/requirements.txt -i {PIP_INDEX_URL}; fi\n"
     )
 
     buf = io.BytesIO()

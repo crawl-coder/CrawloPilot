@@ -7,6 +7,7 @@
 """
 
 import os
+import asyncio
 import sys
 import re
 import subprocess
@@ -429,6 +430,9 @@ class LocalExecutor:
         process = LocalSpiderProcess(config.task_id)
 
         try:
+            # 运行前安装项目依赖（requirements.txt，如存在）
+            await asyncio.to_thread(self._install_requirements, config.code_dir)
+
             process.start(config)
             self.active_tasks[config.task_id] = process
 
@@ -467,6 +471,22 @@ class LocalExecutor:
                 error_message=str(e)
             )
             raise
+
+    def _install_requirements(self, code_dir: str):
+        """安装爬虫项目依赖（requirements.txt），避免运行时缺库"""
+        req_file = os.path.join(code_dir, "requirements.txt")
+        if not os.path.exists(req_file):
+            return
+        logger.info(f"检测到 requirements.txt，安装依赖: {req_file}")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", req_file,
+                 "-i", os.environ.get("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple")],
+                timeout=600,
+            )
+            logger.info("项目依赖安装完成")
+        except Exception as e:
+            logger.error(f"项目依赖安装失败: {e}")
 
     def _monitor_process(self, task_id: str, process: LocalSpiderProcess, timeout: int):
         """

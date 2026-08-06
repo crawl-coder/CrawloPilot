@@ -12,6 +12,7 @@ dist/
 build/
 .eggs/
 .qoder/cache/
+.qoder/skills
 
 # Node
 node_modules/

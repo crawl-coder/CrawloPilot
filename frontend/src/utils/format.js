@@ -56,19 +56,34 @@ export function getStatusText(status) {
   return map[status] || status || '-'
 }
 
+/**
+ * 解析后端时间：后端为 UTC 无时区标记（如 2026-08-06T06:55:01），
+ * 按 UTC 解析并转本地时区显示；带时区标记的直接解析。
+ */
+export function parseDate(value) {
+  if (!value) return null
+  const s = String(value).trim()
+  const hasTz = /(Z|[+-]\d{2}:?\d{2})$/.test(s)
+  const iso = hasTz ? s : s.replace(' ', 'T') + 'Z'
+  return new Date(iso)
+}
+
 export function formatTime(time) {
-  if (!time) return '-'
-  return new Date(time).toLocaleString('zh-CN')
+  const d = parseDate(time)
+  if (!d || isNaN(d.getTime())) return '-'
+  return d.toLocaleString('zh-CN')
 }
 
 export function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
+  const d = parseDate(dateStr)
+  if (!d || isNaN(d.getTime())) return '-'
+  return d.toLocaleString('zh-CN')
 }
 
 export function formatRelativeTime(time) {
-  if (!time) return '-'
-  const diff = Date.now() - new Date(time).getTime()
+  const d = parseDate(time)
+  if (!d || isNaN(d.getTime())) return '-'
+  const diff = Date.now() - d.getTime()
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return '刚刚'
   if (mins < 60) return `${mins}分钟前`

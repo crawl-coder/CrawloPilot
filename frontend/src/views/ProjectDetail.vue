@@ -98,6 +98,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getProject } from '@/api/project'
 import { getSpiders, runSpider } from '@/api/spider'
+import { parseDate } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -152,8 +153,9 @@ const getStatusText = (status) => {
 }
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
+  const d = parseDate(dateStr)
+  if (!d || isNaN(d.getTime())) return '-'
+  return d.toLocaleString('zh-CN')
 }
 
 const viewSpider = (spider) => {
