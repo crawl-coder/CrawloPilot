@@ -175,6 +175,13 @@ async def update_spider(
     update_data = spider_data.dict(exclude_unset=True)
     for key, value in update_data.items():
         setattr(spider, key, value)
+
+    # 生命周期同步：爬虫改名 → 同步冗余展示列 schedule.spider_name
+    if "name" in update_data:
+        from app.models import Schedule
+        db.query(Schedule).filter(Schedule.spider_id == spider.id).update(
+            {"spider_name": spider.spider_name or spider.name}
+        )
     
     db.commit()
     db.refresh(spider)
@@ -192,6 +199,15 @@ async def delete_spider(
     spider = db.query(Spider).filter(Spider.id == spider_id).first()
     if not spider:
         raise HTTPException(status_code=404, detail="爬虫不存在")
+
+    # 生命周期同步：删除爬虫 → 级联删除其调度并移除 job（任务历史保留）
+    from app.models import Schedule
+    from app.services.scheduler_service import get_scheduler_service
+    scheduler = get_scheduler_service()
+    for sched in db.query(Schedule).filter(Schedule.spider_id == spider.id).all():
+        scheduler.remove_schedule(sched.id)
+        db.delete(sched)
+    db.flush()
     
     db.delete(spider)
     db.commit()
@@ -209,206 +225,18 @@ async def run_spider(
     current_user: User = Depends(get_current_user),
     body: RunSpiderRequest = RunSpiderRequest(),
 ):
-    """运行爬虫"""
-    spider = db.query(Spider).filter(Spider.id == spider_id).first()
-    if not spider:
-        raise HTTPException(status_code=404, detail="爬虫不存在")
-    
-    if spider.status == "disabled":
-        raise HTTPException(status_code=400, detail="爬虫已禁用，无法运行")
-    
-    # 检查代码目录
-    upload_service = UploadService()
-    code_dir = upload_service.get_spider_code_dir(spider.project_id, spider.id)
-    
-    if not code_dir or not os.path.exists(code_dir):
-        raise HTTPException(status_code=400, detail="爬虫代码目录不存在，请先上传代码或克隆Git仓库")
-    
-    # 创建任务实例
-    from app.models import TaskInstance, TaskStatus
-    task = TaskInstance(
-        spider_id=spider.id,
-        spider_name=spider.spider_name or spider.name,
-        schedule_id=None,
-        status=TaskStatus.PENDING,
-    )
-    
-    # 如果有指定节点，设置节点信息
-    if body.node_id:
-        node = db.query(Node).get(body.node_id)
-        if not node:
-            raise HTTPException(status_code=404, detail="节点不存在")
-        if node.status.value != "online":
-            raise HTTPException(status_code=400, detail=f"节点 {node.name} 状态为 {node.status.value}，不可用")
-        task.node_id = node.id
-    
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    
-    # 根据节点类型选择执行方式
-    if body.node_id:
-        node = db.query(Node).get(body.node_id)
-        if node.connect_type == "ssh":
-            return _run_via_ssh(spider, task, node, code_dir, background_tasks)
-        elif node.connect_type == "docker":
-            return _run_via_remote_docker(spider, task, node, code_dir, background_tasks)
-        elif node.connect_type == "agent":
-            return _run_via_agent(spider, task, node, db)
-        else:
-            return _run_via_ssh(spider, task, node, code_dir, background_tasks)
-    else:
-        # 无节点指定，使用本地执行
-        return _run_locally(spider, task, code_dir, db, background_tasks)
+    """运行爬虫（复用统一任务创建/分发服务）"""
+    from app.services.task_service import create_and_run_task
 
-
-def _run_locally(spider, task, code_dir, db, background_tasks):
-    """本地模式运行爬虫（v1 默认执行方式，不依赖 Docker / Celery）"""
-    from app.services.local_executor import get_local_executor, LocalTaskConfig
-    local_executor = get_local_executor()
-
-    config = LocalTaskConfig(
-        task_id=str(task.id),
-        spider_id=str(spider.id),
-        spider_name=spider.spider_name or spider.name,
-        code_dir=code_dir,
-        entry_file=spider.entry_file,
-        spider_name_to_run=spider.spider_name or spider.name,
-    )
-
-    # 在后台运行
-    background_tasks.add_task(local_executor.execute_task, config)
-
-    # 更新爬虫统计
-    spider.run_count = (spider.run_count or 0) + 1
-    spider.last_run_at = datetime.utcnow()
-    spider.last_run_status = "running"
-    db.commit()
-
-    return {
-        "message": "爬虫已启动(本地模式)",
-        "task_id": task.id,
-        "spider_id": spider.id,
-        "mode": "local",
-        "code_dir": code_dir,
-        "entry_file": spider.entry_file
-    }
-
-
-def _run_via_ssh(spider, task, node, code_dir, background_tasks):
-    """通过 SSH 在远程服务器上运行爬虫"""
-    from app.services.ssh_executor import get_ssh_executor, SshTaskConfig
-
-    ssh_executor = get_ssh_executor()
-
-    config = SshTaskConfig(
-        task_id=str(task.id),
-        spider_id=str(spider.id),
-        spider_name=spider.spider_name or spider.name,
-        ssh_host=node.ssh_host or node.host,
-        ssh_port=node.ssh_port or 22,
-        ssh_user=node.ssh_user or "root",
-        ssh_pwd=node.ssh_pwd,
-        ssh_key=node.ssh_key,
-        code_dir=code_dir,
-        entry_file=spider.entry_file,
-        spider_name_to_run=spider.spider_name or spider.name,
-    )
-
-    # 在后台执行
-    background_tasks.add_task(ssh_executor.execute_task, config)
-
-    # 更新爬虫统计
-    from app.core.database import SessionLocal
-    db_local = SessionLocal()
     try:
-        spider_obj = db_local.query(Spider).get(spider.id)
-        if spider_obj:
-            spider_obj.run_count = (spider_obj.run_count or 0) + 1
-            spider_obj.last_run_at = datetime.utcnow()
-            spider_obj.last_run_status = "running"
-            db_local.commit()
-    finally:
-        db_local.close()
-
-    return {
-        "message": "爬虫运行指令已发送(SSH模式)",
-        "task_id": task.id,
-        "spider_id": spider.id,
-        "mode": "ssh",
-        "node_id": node.id,
-        "node_name": node.name,
-        "host": node.ssh_host or node.host,
-        "workspace": f"/opt/crawlopilot/workspace/{task.id}/"
-    }
-
-
-def _run_via_remote_docker(spider, task, node, code_dir, background_tasks):
-    """在远程 Docker 节点上运行爬虫（直连节点 Docker API，不依赖 Celery）"""
-    from app.services.docker_executor import get_docker_executor, DockerTaskConfig
-
-    docker_executor = get_docker_executor()
-    config = DockerTaskConfig(
-        task_id=str(task.id),
-        spider_id=str(spider.id),
-        spider_name=spider.spider_name or spider.name,
-        project_id=spider.project_id,
-        code_dir=code_dir,
-        entry_file=spider.entry_file,
-        spider_name_to_run=spider.spider_name or spider.name,
-        node_host=node.host,
-        node_port=node.port or 2375,
-        docker_host=node.docker_host,
-    )
-    background_tasks.add_task(docker_executor.execute_task, config)
-
-    # 更新爬虫统计
-    from app.core.database import SessionLocal
-    db_local = SessionLocal()
-    try:
-        spider_obj = db_local.query(Spider).get(spider.id)
-        if spider_obj:
-            spider_obj.run_count = (spider_obj.run_count or 0) + 1
-            spider_obj.last_run_at = datetime.utcnow()
-            spider_obj.last_run_status = "running"
-            db_local.commit()
-    finally:
-        db_local.close()
-
-    return {
-        "message": "爬虫运行指令已发送(Docker直连模式)",
-        "task_id": task.id,
-        "spider_id": spider.id,
-        "mode": "docker",
-        "node_id": node.id,
-        "node_name": node.name,
-        "docker_host": f"{node.host}:{node.port or 2375}",
-    }
-
-
-def _run_via_agent(spider, task, node, db):
-    """通过 Agent 运行爬虫：任务保持 PENDING，由节点上的 agent 领取执行"""
-    from app.models import TaskStatus
-
-    task.deploy_mode = "agent"
-    task.node_id = node.id
-    task.status = TaskStatus.PENDING
-    db.commit()
-
-    # 更新爬虫统计
-    spider.run_count = (spider.run_count or 0) + 1
-    spider.last_run_at = datetime.utcnow()
-    spider.last_run_status = "running"
-    db.commit()
-
-    return {
-        "message": "任务已派发给节点 Agent",
-        "task_id": task.id,
-        "spider_id": spider.id,
-        "mode": "agent",
-        "node_id": node.id,
-        "node_name": node.name,
-    }
+        return create_and_run_task(
+            db,
+            spider_id=spider_id,
+            node_id=body.node_id,
+            background_tasks=background_tasks,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/{spider_id}/stop")
@@ -722,9 +550,10 @@ async def clone_spider_git_repo(
     tmp_dir = tempfile.mkdtemp(prefix="crawlo_git_clone_")
     try:
         branch = (spider.git_branch or "main").strip()
+        # 完整克隆（不用 --depth），保留分支历史以支持切换分支/提交/推送
         cmds = [
-            ["git", "clone", "--depth", "1", "--branch", branch, clone_url, tmp_dir],
-            ["git", "clone", "--depth", "1", clone_url, tmp_dir],
+            ["git", "clone", "--branch", branch, clone_url, tmp_dir],
+            ["git", "clone", clone_url, tmp_dir],
         ]
         last_err = ""
         for i, cmd in enumerate(cmds):
@@ -749,10 +578,15 @@ async def clone_spider_git_repo(
             else:
                 shutil.copy2(src, dst)
 
-        # 只保留代码，去掉仓库元数据
-        git_meta = os.path.join(spider_code_dir, ".git")
-        if os.path.exists(git_meta):
-            shutil.rmtree(git_meta, ignore_errors=True)
+        # 保留 .git 元数据（代码目录即完整仓库，支持提交/推送/切分支）
+        # 但需清理 remote URL 中的凭据，避免密码/Token 落盘到 .git/config
+        from app.services.git_service import sanitize_remote_url, set_repo_identity
+        sanitize_remote_url(spider_code_dir, git_url)
+        set_repo_identity(
+            spider_code_dir,
+            name=current_user.username or "CrawloPilot",
+            email=current_user.email or "bot@crawlo.local",
+        )
 
         file_service = FileService(spider_code_dir)
         tree = file_service.get_file_tree("", max_depth=3)
@@ -879,3 +713,140 @@ async def upload_spider_code(
         raise HTTPException(status_code=500, detail=f"代码上传失败: {e}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ==================== Git 工作流（提交/推送/拉取/分支） ====================
+
+class GitCommitRequest(BaseModel):
+    """提交改动请求"""
+    message: str
+
+
+class GitCheckoutRequest(BaseModel):
+    """切换分支请求"""
+    branch: str
+    create: bool = False
+
+
+def _get_git_service(spider_id: int, db: Session):
+    """获取爬虫对应的 GitService，校验存在性与仓库状态"""
+    from app.services.git_service import GitService
+
+    spider = db.query(Spider).filter(Spider.id == spider_id).first()
+    if not spider:
+        raise HTTPException(status_code=404, detail="爬虫不存在")
+
+    upload_service = UploadService()
+    code_dir = upload_service.get_spider_code_dir(spider.project_id, spider.id)
+    if not code_dir or not os.path.exists(code_dir):
+        raise HTTPException(status_code=400, detail="爬虫代码目录不存在")
+
+    return spider, GitService(spider, code_dir)
+
+
+@router.get("/{spider_id}/git/status")
+async def get_git_status(
+    spider_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取仓库状态：当前分支/改动文件数/领先落后远程"""
+    from app.services.git_service import GitOperationError
+
+    spider, git = _get_git_service(spider_id, db)
+    if not git.is_repo():
+        return {"is_repo": False, "detail": "代码目录不是 Git 仓库"}
+    try:
+        return {"is_repo": True, **git.status()}
+    except GitOperationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{spider_id}/git/branches")
+async def get_git_branches(
+    spider_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取分支列表：当前/本地/远程"""
+    from app.services.git_service import GitOperationError
+
+    _, git = _get_git_service(spider_id, db)
+    try:
+        return git.branches()
+    except GitOperationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{spider_id}/git/commit")
+async def git_commit(
+    spider_id: int,
+    body: GitCommitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """提交全部改动（提交人为当前登录用户）"""
+    from app.services.git_service import GitOperationError
+
+    _, git = _get_git_service(spider_id, db)
+    try:
+        return git.commit(
+            body.message,
+            author_name=current_user.username or "CrawloPilot",
+            author_email=current_user.email or "bot@crawlo.local",
+        )
+    except GitOperationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{spider_id}/git/push")
+async def git_push(
+    spider_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """推送当前分支到远程（自动使用爬虫配置的凭据）"""
+    from app.services.git_service import GitOperationError
+
+    spider, git = _get_git_service(spider_id, db)
+    if not spider.git_url:
+        raise HTTPException(status_code=400, detail="该爬虫未配置 Git 仓库地址")
+    try:
+        return git.push()
+    except GitOperationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{spider_id}/git/pull")
+async def git_pull(
+    spider_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """从远程拉取当前分支（有未提交改动时拒绝，冲突时提示手动处理）"""
+    from app.services.git_service import GitOperationError
+
+    spider, git = _get_git_service(spider_id, db)
+    if not spider.git_url:
+        raise HTTPException(status_code=400, detail="该爬虫未配置 Git 仓库地址")
+    try:
+        return git.pull()
+    except GitOperationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{spider_id}/git/checkout")
+async def git_checkout(
+    spider_id: int,
+    body: GitCheckoutRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """切换分支（create=true 时基于当前分支新建）"""
+    from app.services.git_service import GitOperationError
+
+    _, git = _get_git_service(spider_id, db)
+    try:
+        return git.checkout(body.branch, create=body.create)
+    except GitOperationError as e:
+        raise HTTPException(status_code=400, detail=str(e))

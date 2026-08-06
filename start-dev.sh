@@ -191,6 +191,7 @@ echo -e "${BLUE}[4/7]${NC} 初始化数据库..."
 cd ../backend
 alembic upgrade head 2>/dev/null || echo -e "  ${YELLOW}迁移跳过（可能已是最新）${NC}"
 python init_db.py 2>/dev/null || true
+python migrate_schedule.py 2>/dev/null || true
 echo -e "${GREEN}  ✓ 数据库就绪${NC}"
 
 # 5. 清理旧进程

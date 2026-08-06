@@ -85,12 +85,18 @@ async def lifespan(app: FastAPI):
     # 启动任务日志保留清理（每天执行一次）
     log_cleanup_task = asyncio.create_task(_task_log_cleanup_loop())
 
+    # 启动定时调度器（进程内 APScheduler）
+    from app.services.scheduler_service import get_scheduler_service
+    scheduler_service = get_scheduler_service()
+    scheduler_service.start()
+
     yield
 
     # 关闭时清理执行器
     try:
         health_task.cancel()
         log_cleanup_task.cancel()
+        scheduler_service.shutdown()
         logger.info("Cleaning up TaskExecutor...")
         await executor.cleanup()
         logger.info("TaskExecutor cleanup complete")
@@ -185,6 +191,10 @@ app.include_router(servers.router, prefix=settings.API_PREFIX)
 from app.api.v1 import tasks, execution
 app.include_router(tasks.router, prefix=settings.API_PREFIX)
 app.include_router(execution.router, prefix=settings.API_PREFIX)
+
+# 定时任务
+from app.api.v1 import schedules
+app.include_router(schedules.router, prefix=settings.API_PREFIX)
 
 # 监控（仪表盘与健康检查）
 from app.api.v1 import monitoring

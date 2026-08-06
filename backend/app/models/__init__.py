@@ -1,5 +1,5 @@
 from app.core.database import Base
-from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -205,23 +205,36 @@ class Schedule(Base):
     __tablename__ = "schedule"
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128))  # 调度名称（可空，默认"爬虫名-周期"）
     project_id = Column(BigInteger, ForeignKey("project.id"), nullable=False)
+    spider_id = Column(BigInteger, ForeignKey("spider.id"), nullable=True)  # 存量未匹配行可能为 NULL（已禁用）
     spider_name = Column(String(128), nullable=False)
     node_id = Column(BigInteger, ForeignKey("node.id"), nullable=True)
     schedule_type = Column(Enum(ScheduleType), nullable=False)
     cron_expr = Column(String(64))
     interval_seconds = Column(Integer)
+    run_at = Column(DateTime)  # once 触发时间
+    timezone = Column(String(64), default="Asia/Shanghai")
     priority = Column(Integer, default=5)
     max_concurrency = Column(Integer, default=1)
     timeout_seconds = Column(Integer, default=3600)
     retry_strategy = Column(JSON)
     enabled = Column(Boolean, default=True)
     next_run_time = Column(DateTime)
+    last_run_at = Column(DateTime)
+    last_run_status = Column(String(32))
+    last_run_task_id = Column(BigInteger)
+    run_count = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    fail_count = Column(Integer, default=0)
+    description = Column(Text)
+    created_by = Column(BigInteger, ForeignKey("user.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     project = relationship("Project", back_populates="schedules")
+    spider = relationship("Spider")
     node = relationship("Node")
     task_instances = relationship("TaskInstance", back_populates="schedule")
 
@@ -238,12 +251,17 @@ class TaskStatus(str, enum.Enum):
 
 class TaskInstance(Base):
     __tablename__ = "task_instance"
+    __table_args__ = (
+        # 调度触发幂等：同一调度同一期望触发时间最多一个任务
+        UniqueConstraint("schedule_id", "expected_run_at", name="uq_schedule_expected_run"),
+    )
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     schedule_id = Column(BigInteger, ForeignKey("schedule.id"), nullable=True)
     spider_id = Column(BigInteger, ForeignKey("spider.id"), nullable=True)
     node_id = Column(BigInteger, ForeignKey("node.id"), nullable=True)  # 部署目标节点
     spider_name = Column(String(128), nullable=True)
+    expected_run_at = Column(DateTime)  # 期望触发时间（调度幂等用）
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING)
     worker_node = Column(String(64))
     container_id = Column(String(64))
