@@ -11,7 +11,7 @@
 V1 范围：
 
 - 三种触发类型：**Cron 表达式 / 固定间隔 / 一次性**（依赖触发 DEPENDENCY 仅保留枚举，不实现）
-- 调度管理：创建、编辑、删除、启用/停用、立即执行一次、运行历史
+- 调度管理（V1 走爬虫表单入口，V2 拆独立页面）：创建/编辑、删除、启用/停用、立即执行一次、运行历史
 - 并发守卫：同一调度同时最多 N 个运行中任务（默认 1，防止重叠执行）
 - 时区：默认 `Asia/Shanghai`，支持按调度指定
 
@@ -34,10 +34,22 @@ V1 范围：
 仪表盘 / 项目管理 / 爬虫管理 / 任务管理 / 定时任务 / 节点管理 / 系统
 ```
 
+> **V1 过渡形态（方案 A′）**：为保留"创建爬虫顺手配定时"的习惯，V1 先不拆独立页面——
+> 爬虫创建/编辑表单里的「定时调度」区块保留，但**落库改为写入 `schedule` 表**
+> （不再写 `spider.schedule_config` JSON）。独立「定时任务」页面作为 V2 增量：
+> 数据模型与调度引擎一次到位，未来加页面只是前端增量，后端零迁移。
+
 ## 3. 数据模型
 
 复用现有 `schedule` 表并修正缺陷：当前表存 `spider_name` 而不是 `spider_id`，
 无法可靠关联爬虫（重名、改名都会断裂），必须改为外键。
+
+**关联方式决策：采用 `spider_id` 外键**（不沿用 `spider_name` 字符串关联）。
+
+- `spider_name` 仅作为冗余展示列，爬虫改名时在爬虫 update 事务中同步更新；
+- 存量数据迁移：按 `schedule.spider_name == spider.name` 匹配回填 `spider_id`，
+  匹配不到的存量行置 `enabled=false` 并提示，避免静默错绑；
+- 禁止用 `spider_name` 做查询/派生关联（如 deploy_nodes 统计），统一走 `spider_id`。
 
 ```python
 class Schedule(Base):
@@ -151,6 +163,35 @@ V1 假设**单实例控制面**（调度器只跑一个）。多实例部署时�
 - 出现海量任务队列/背压/重试需求时，才评估 Celery（beat + worker），
   且需重构执行层——V3 之后的议题。
 
+### 生命周期同步链（三层一致）
+
+爬虫与调度的生命周期必须三层同步，任何一层脱节都会产生"配置了但不触发"或"删了还在跑"：
+
+```text
+爬虫 create/update/delete
+  └─> Schedule upsert / disable / delete
+        └─> APScheduler job register / update / remove
+```
+
+实现约束：
+
+1. **爬虫创建（含"默认调度"配置）** → 事务内 upsert 一条 `Schedule(spider_id, enabled, cron)`；
+2. **爬虫更新** → 若调度配置变化 → 更新 Schedule 行 + `reschedule_job`；
+   爬虫改名 → 同步 `schedule.spider_name` 冗余列；
+3. **爬虫删除** → 级联删除其 Schedule 行 + `remove_job`（注意任务历史保留，
+   只删调度配置）；
+4. **服务重启** → 启动时从 `schedule` 表加载所有 `enabled` 行重建 job（已覆盖 ✅）；
+5. 任何一步失败 → 整体回滚并告警日志，避免半同步状态。
+
+### enabled=false 的语义
+
+**保留行、置 `enabled=false`、暂停 job，不删行**（用户关一次开关不应丢失 cron 表达式）。
+
+- 停用：`enabled=false` + `job.pause()`（或移除 job），保留 `next_run_time` 原值；
+- 启用：`enabled=true` + 按规则重新计算 `next_run_time` + `job.resume()`；
+- 只有显式删除调度（DELETE）才移除 Schedule 行；
+- `enabled=false` 的调度不参与启动重建、不触发、不计入统计。
+
 ## 5. API 设计
 
 ```text
@@ -243,12 +284,20 @@ def create_and_run_task(db, spider_id, node_id=None, schedule_id=None,
 
 ### 7.3 入口与改造
 
-- 新增路由 `/schedules` + 侧边栏一级菜单（任务管理之后）
-- 爬虫详情页（SpiderDetail.vue）增加"定时任务"按钮 → 跳转新建页并预填 `spider_id`
-- 任务管理页（Tasks.vue）："调度ID"列可点击跳转对应调度
-- **移除爬虫创建表单中的半成品调度字段**（[Spiders.vue](../../frontend/src/views/Spiders.vue)
-  的 `schedule_enabled / cron_expr / timeout_seconds / retry_count`），避免双入口混乱；
-  定时配置统一走新页面
+**V1（方案 A′）**：
+
+- 保留 [SpiderFormDialog.vue](../../frontend/src/components/SpiderFormDialog.vue) 的
+  「定时调度」区块，但提交时**不再写 `spider.schedule_config` JSON**，
+  改为调用 `POST /schedules`（或 upsert 接口）写入 `schedule` 表；
+- 编辑爬虫时回显该爬虫的默认调度（`GET /schedules?spider_id=...`）；
+- 爬虫详情页（SpiderDetail.vue）显示"定时任务"入口（后续版本做页面时跳转）。
+
+**V2（独立页面）**：
+
+- 新增路由 `/schedules` + 侧边栏一级菜单（任务管理之后），列表/表单/预览/历史；
+- 爬虫详情页"定时任务"按钮 → 跳转新建页并预填 `spider_id`；
+- 任务管理页（Tasks.vue）："调度ID"列可点击跳转对应调度；
+- `spider.schedule_config` JSON 列废弃（不再读写），保留兼容旧数据。
 
 ## 8. 测试策略
 
@@ -267,12 +316,16 @@ def create_and_run_task(db, spider_id, node_id=None, schedule_id=None,
 
 ## 9. 实施步骤拆分
 
-1. 数据模型：Schedule 表改造 + `task_instance.expected_run_at` 列 +
-   alembic 迁移 + 存量数据回填
+1. 数据模型：Schedule 表加 `spider_id / name / run_at / timezone / run_count` 等列 +
+   `task_instance.expected_run_at` 列 + alembic 迁移 +
+   存量数据按 `spider_name` 回填 `spider_id`（匹配不到置 disabled）
 2. `SchedulerService`（APScheduler 集成）+ lifespan 启停 +
-   **启动错跑检测（机制一）** + `task_service.create_and_run_task` 抽取
-3. 触发链路**幂等/互斥（机制二：GET_LOCK 或唯一索引）** + 并发守卫
+   **启动错跑检测（机制一）** + `task_service.create_and_run_task` 抽取 +
+   **三层生命周期同步**（spider create/update/delete ↔ schedule ↔ job）
+3. 触发链路**幂等/互斥（机制二：GET_LOCK 或唯一索引）** + 并发守卫 +
+   **enabled=false 保留行暂停 job 语义**
 4. `/schedules` API（CRUD/启停/run-now/预览/历史）
-5. 前端：列表页 + 表单 + 路由/菜单 + 爬虫详情入口
-6. 清理 Spiders.vue 残留调度字段
-7. 测试（后端单测/集成 + 前端，含错跑检测与重复触发用例）
+5. 前端（V1/A′）：SpiderFormDialog 定时区块改走 `/schedules`，编辑回显默认调度
+6. 前端（V2）：独立页面 + 路由/菜单 + 爬虫详情入口 + 任务管理页跳转
+7. 清理 `spider.schedule_config` 读写（列保留兼容）
+8. 测试（后端单测/集成 + 前端，含错跑检测、重复触发、生命周期同步、改名/禁用用例）
