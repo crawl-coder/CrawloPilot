@@ -15,7 +15,7 @@ V1 范围：
 - 并发守卫：同一调度同时最多 N 个运行中任务（默认 1，防止重叠执行）
 - 时区：默认 `Asia/Shanghai`，支持按调度指定
 
-不做（后续版本）：错过任务的追跑补偿、跨实例分布式调度、调度成功率告警。
+不做（后续版本）：跨实例分布式调度（互斥已有方案，见第 4 节）、调度成功率告警。
 
 ## 2. 页面归属（回答"定时任务在哪个页面"）
 
@@ -95,14 +95,61 @@ class Schedule(Base):
   5. 回写 `last_run_*`、`next_run_time`
 - 错过执行：`misfire_grace_time=60s`，超时则跳过本次（一次性任务标记 skipped，不追跑）。
 
+### 补偿机制（设计硬性要求）
+
+**机制一：启动时的错跑检测（DB 驱动）**
+
+进程内 APScheduler 的 job 只存在于内存，后端重启/宕机期间到点的触发会丢失。
+因此启动时除"从 DB 重建 job"外，还必须做错跑检测：
+
+1. 扫描所有 `enabled` 调度，找出 `next_run_time` 已过期、且当前时间落在
+   `[next_run_time, next_run_time + 补偿窗口]` 内的调度；
+2. 按配置策略处理：
+   - 默认：**记录为 skipped**（写 `last_run_status=skipped`，不执行，避免追跑堆积）；
+   - 可选：**补跑一次**（`run-now` 语义，仅对 cron/interval 生效，once 直接 skipped）；
+3. 处理后按规则推进 `next_run_time`，保证不重复补偿。
+
+补偿窗口默认 24h（可配置），超过窗口的旧错过不再处理，只更新 `next_run_time`。
+
+**机制二：触发幂等 / 多实例互斥**
+
+触发入口必须幂等，防止以下两类重复：
+
+- 同一实例因重试或双 fire 产生重复任务；
+- 多实例各自运行调度器时，同一 cron 被触发多次。
+
+实现（二选一，推荐 GET_LOCK）：
+
+1. **MySQL `GET_LOCK`**：触发时以 `schedule-{id}-{期望触发时间戳}` 为锁名加锁，
+   拿到锁才创建任务，执行完释放；天然兼容多实例；
+2. **唯一约束**：`task_instance` 增加 `(schedule_id, expected_run_at)` 唯一索引
+   （新增列 `expected_run_at`），重复创建被数据库拒绝。
+
+任选其一即可满足"一次触发最多创建一个任务"。
+
+> 前端提示/运行记录层面，任务来源统一带 `triggered_by="schedule"` 与
+> `schedule_id`，便于排查重复。
+
 ### 多实例说明
 
 V1 假设**单实例控制面**（调度器只跑一个）。多实例部署时：
 
 - 方案 A（简单）：调度器只在主实例启用（环境变量 `ENABLE_SCHEDULER=true`）；
-- 方案 B（后续）：MySQL `GET_LOCK` 或独立 `schedule_lock` 表做触发互斥，保证一次触发只被一个实例消费。
+- 方案 B（推荐）：配合机制二的 `GET_LOCK`，允许每实例都跑调度器，
+  由锁保证一次触发只被一个实例消费（无需主从配置）。
 
 设计哲学一致：先保证单实例正确，再谈分布式。
+
+### APScheduler 适用边界与升级路径
+
+进程内 APScheduler 的**有效边界：单实例（或互斥后多实例）+ 容忍分钟级重启窗口**。
+
+- 边界内：V1/V2 完全覆盖，成本最低；
+- 出现"绝不能漏跑"或"双活控制面"硬需求时，升级为**独立调度器**：
+  把 APScheduler 放进独立进程/容器（仍不引入 Celery），触发逻辑不变
+  （纯 DB 操作 + `task_service.create_and_run_task` 调用），迁移成本低；
+- 出现海量任务队列/背压/重试需求时，才评估 Celery（beat + worker），
+  且需重构执行层——V3 之后的议题。
 
 ## 5. API 设计
 
@@ -220,9 +267,12 @@ def create_and_run_task(db, spider_id, node_id=None, schedule_id=None,
 
 ## 9. 实施步骤拆分
 
-1. 数据模型：Schedule 表改造 + alembic 迁移 + 存量数据回填
-2. `SchedulerService`（APScheduler 集成）+ lifespan 启停 + `task_service.create_and_run_task` 抽取
-3. `/schedules` API（CRUD/启停/run-now/预览/历史）
-4. 前端：列表页 + 表单 + 路由/菜单 + 爬虫详情入口
-5. 清理 Spiders.vue 残留调度字段
-6. 测试（后端单测/集成 + 前端）
+1. 数据模型：Schedule 表改造 + `task_instance.expected_run_at` 列 +
+   alembic 迁移 + 存量数据回填
+2. `SchedulerService`（APScheduler 集成）+ lifespan 启停 +
+   **启动错跑检测（机制一）** + `task_service.create_and_run_task` 抽取
+3. 触发链路**幂等/互斥（机制二：GET_LOCK 或唯一索引）** + 并发守卫
+4. `/schedules` API（CRUD/启停/run-now/预览/历史）
+5. 前端：列表页 + 表单 + 路由/菜单 + 爬虫详情入口
+6. 清理 Spiders.vue 残留调度字段
+7. 测试（后端单测/集成 + 前端，含错跑检测与重复触发用例）
