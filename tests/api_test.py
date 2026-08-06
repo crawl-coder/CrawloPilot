@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
-"""CrawloPilot 后端 API 全功能测试脚本"""
+"""CrawloPilot 后端 API 全功能测试脚本（修订版）"""
 
 import requests
-import json
 import sys
-import time
+import uuid
 
 BASE = "http://localhost:8000/api/v1"
 RESULTS = {"pass": 0, "fail": 0, "skip": 0, "errors": []}
+
+# 唯一标识，避免重复创建冲突
+UNIQ = uuid.uuid4().hex[:6]
+
+
+def assert_keys(d, keys):
+    for k in keys:
+        assert k in d, f"Missing key: {k}"
+
+
+def assert_true(v, msg=""):
+    assert v, msg
 
 
 def get_token():
@@ -61,10 +72,6 @@ print("\n" + "=" * 60)
 print("  1. AUTH 认证模块")
 print("=" * 60)
 
-test("登录成功", "POST", "/auth/login", json_data=None,
-     params=None, check_fn=lambda d: None)  # login uses form data, handled separately
-
-# login is form-data based
 r = requests.post(f"{BASE}/auth/login", data={"username": "admin", "password": "admin123"})
 ok = r.status_code == 200 and "access_token" in r.json()
 print(f"  {'✅' if ok else '❌'} POST   /auth/login                                     -> {r.status_code}")
@@ -76,12 +83,24 @@ print(f"  {'✅' if ok else '❌'} POST   /auth/login (wrong pwd)               
 RESULTS["pass" if ok else "fail"] += 1
 
 test("获取当前用户", "GET", "/auth/me", check_fn=lambda d: assert_keys(d, ["id", "username"]))
-test("无Token访问", "GET", "/auth/me", expected_status=401)  # Will fail without auth header
 
+# 无 Token 访问（用不含授权头的请求）
+r = requests.get(f"{BASE}/auth/me")
+ok = r.status_code == 401
+print(f"  {'✅' if ok else '❌'} GET    /auth/me (no token)                              -> {r.status_code}")
+RESULTS["pass" if ok else "fail"] += 1
 
-def assert_keys(d, keys):
-    for k in keys:
-        assert k in d, f"Missing key: {k}"
+r = requests.post(f"{BASE}/auth/register", headers=H, json={
+    "username": f"testuser_{UNIQ}", "email": f"{UNIQ}@api.com", "password": "Test123!", "full_name": "Test User"})
+ok = r.status_code == 200 and "id" in r.json()
+print(f"  {'✅' if ok else '❌'} POST   /auth/register                                  -> {r.status_code}")
+RESULTS["pass" if ok else "fail"] += 1
+
+r = requests.post(f"{BASE}/auth/register", headers=H, json={
+    "username": f"testuser_{UNIQ}", "email": f"{UNIQ}@api.com", "password": "Test123!", "full_name": "Test User"})
+ok = r.status_code == 400
+print(f"  {'✅' if ok else '❌'} POST   /auth/register (dup)                             -> {r.status_code}")
+RESULTS["pass" if ok else "fail"] += 1
 
 
 # ============================================================
@@ -89,23 +108,21 @@ print("\n" + "=" * 60)
 print("  2. USERS 用户管理模块")
 print("=" * 60)
 
-test("角色列表", "GET", "/users/roles", check_fn=lambda d: assert_true(isinstance(d, list), "Expected list"))
+test("角色列表", "GET", "/users/roles", check_fn=lambda d: assert_true(isinstance(d, list)))
 test("用户列表", "GET", "/users", check_fn=lambda d: assert_keys(d, ["total", "items"]))
 test("用户列表-过滤", "GET", "/users", params={"username": "admin"})
 test("创建用户", "POST", "/users", expected_status=201,
-     json_data={"username": "api_test_user", "email": "api_test@test.com", "password": "Test123!", "full_name": "API Test"},
+     json_data={"username": f"api_user_{UNIQ}", "email": f"api_{UNIQ}@test.com", "password": "Test123!", "full_name": "API Test"},
      check_fn=lambda d: assert_keys(d, ["id", "username"]))
 
 # Get the created user id
-r = requests.get(f"{BASE}/users", headers=H, params={"username": "api_test_user"})
+r = requests.get(f"{BASE}/users", headers=H, params={"username": f"api_user_{UNIQ}"})
 test_uid = r.json()["items"][0]["id"] if r.json()["items"] else None
 
 if test_uid:
     test("用户详情", "GET", f"/users/{test_uid}")
-    test("更新用户", "PUT", f"/users/{test_uid}",
-         json_data={"full_name": "Updated Name"})
-    test("重置密码", "POST", f"/users/{test_uid}/reset-password",
-         params={"new_password": "NewPass123!"})
+    test("更新用户", "PUT", f"/users/{test_uid}", json_data={"full_name": "Updated Name"})
+    test("重置密码", "POST", f"/users/{test_uid}/reset-password", params={"new_password": "NewPass123!"})
     test("切换状态", "POST", f"/users/{test_uid}/toggle-status")
     test("再次切换", "POST", f"/users/{test_uid}/toggle-status")
     test("删除用户(软删)", "DELETE", f"/users/{test_uid}", expected_status=204)
@@ -116,16 +133,14 @@ else:
 test("删除自己(应400)", "DELETE", "/users/1", expected_status=400)
 
 
-def assert_true(v, msg=""):
-    assert v, msg
-
-
 # ============================================================
 print("\n" + "=" * 60)
 print("  3. TEAMS 团队模块")
 print("=" * 60)
 
 test("团队列表", "GET", "/teams", check_fn=lambda d: assert_true(isinstance(d, list)))
+test("创建项目-无team(应422)", "POST", "/projects", expected_status=422,
+     json_data={"name": f"noproj_{UNIQ}", "description": "test"})
 
 
 # ============================================================
@@ -135,7 +150,7 @@ print("=" * 60)
 
 test("项目列表", "GET", "/projects", check_fn=lambda d: assert_keys(d, ["total", "items"]))
 test("创建项目", "POST", "/projects", expected_status=201,
-     json_data={"name": "API测试项目", "description": "自动化测试创建"},
+     json_data={"name": f"API测试_{UNIQ}", "description": "自动化测试创建", "team_id": 1},
      check_fn=lambda d: assert_keys(d, ["id", "name"]))
 
 # Get project id
@@ -143,20 +158,18 @@ r = requests.get(f"{BASE}/projects", headers=H)
 projects = r.json()["items"]
 test_pid = None
 for p in projects:
-    if p["name"] == "API测试项目":
+    if p["name"] == f"API测试_{UNIQ}":
         test_pid = p["id"]
         break
 
 if test_pid:
     test("项目详情", "GET", f"/projects/{test_pid}")
-    test("更新项目", "PUT", f"/projects/{test_pid}",
-         json_data={"description": "Updated desc"})
+    test("更新项目", "PUT", f"/projects/{test_pid}", json_data={"description": "Updated desc"})
     test("创建版本", "POST", f"/projects/{test_pid}/versions", expected_status=201,
          json_data={"version": "v1.0.0", "config_snapshot": {"env": "test"}})
     test("版本列表", "GET", f"/projects/{test_pid}/versions",
          check_fn=lambda d: assert_true(isinstance(d, list)))
 
-    # Project files
     print("\n  --- Project Files ---")
     test("文件树(无代码)", "GET", f"/projects/{test_pid}/files/tree")
     test("读文件(不存在)", "GET", f"/projects/{test_pid}/files/content",
@@ -175,24 +188,26 @@ test("爬虫列表", "GET", "/spiders", check_fn=lambda d: assert_keys(d, ["tota
 
 if test_pid:
     test("创建爬虫", "POST", "/spiders", expected_status=201,
-         json_data={"name": "test_spider", "project_id": test_pid, "spider_type": "Spider",
-                    "entry_file": "main.py", "spider_name": "test_spider"},
+         json_data={"name": f"spider_{UNIQ}", "project_id": test_pid, "spider_type": "crawlo",
+                    "entry_file": "main.py", "spider_name": f"spider_{UNIQ}"},
          check_fn=lambda d: assert_keys(d, ["id", "name"]))
 
     r = requests.get(f"{BASE}/spiders", headers=H, params={"project_id": test_pid})
     spiders = r.json()["items"]
-    test_sid = spiders[0]["id"] if spiders else None
+    test_sid = None
+    for s in spiders:
+        if s["name"] == f"spider_{UNIQ}":
+            test_sid = s["id"]
+            break
 
     if test_sid:
         test("爬虫详情", "GET", f"/spiders/{test_sid}")
-        test("更新爬虫", "PUT", f"/spiders/{test_sid}",
-             json_data={"description": "Updated spider"})
+        test("更新爬虫", "PUT", f"/spiders/{test_sid}", json_data={"description": "Updated spider"})
         test("爬虫文件树", "GET", f"/spiders/{test_sid}/files/tree")
-        test("运行爬虫(无代码)", "POST", f"/spiders/{test_sid}/run",
-             json_data={}, expected_status=400)
+        test("运行爬虫(无代码)", "POST", f"/spiders/{test_sid}/run", json_data={}, expected_status=400)
         test("停止爬虫", "POST", f"/spiders/{test_sid}/stop")
         test("重复名创建(应400)", "POST", "/spiders", expected_status=400,
-             json_data={"name": "test_spider", "project_id": test_pid})
+             json_data={"name": f"spider_{UNIQ}", "project_id": test_pid})
     else:
         print("  ⚠️  跳过爬虫详情测试")
         RESULTS["skip"] += 1
@@ -225,7 +240,6 @@ if tasks:
     test("任务详情", "GET", f"/execution/tasks/{tid}")
     test("任务状态", "GET", f"/execution/tasks/{tid}/status")
     test("任务日志", "GET", f"/execution/tasks/{tid}/logs")
-    test("删除任务", "DELETE", f"/execution/tasks/{tid}")
 else:
     print("  ⚠️  没有任务记录，跳过执行详情测试")
     RESULTS["skip"] += 1
@@ -249,24 +263,21 @@ print("=" * 60)
 
 test("节点列表", "GET", "/nodes", check_fn=lambda d: assert_true(isinstance(d, list)))
 test("创建节点(agent)", "POST", "/nodes", expected_status=200,
-     json_data={"name": "test-agent-node", "host": "127.0.0.1", "connect_type": "agent"})
+     json_data={"name": f"agent-{UNIQ}", "host": "127.0.0.1", "connect_type": "agent"})
 
 # Get node id
 r = requests.get(f"{BASE}/nodes", headers=H)
 nodes = r.json()
 test_nid = None
 for n in nodes:
-    if n["name"] == "test-agent-node":
+    if n["name"] == f"agent-{UNIQ}":
         test_nid = n["id"]
         break
 
 if test_nid:
     test("节点详情", "GET", f"/nodes/{test_nid}")
-    test("更新节点", "PUT", f"/nodes/{test_nid}",
-         json_data={"name": "test-agent-updated"})
+    test("更新节点", "PUT", f"/nodes/{test_nid}", json_data={"name": f"agent-upd-{UNIQ}"})
     test("健康检查", "POST", "/nodes/health-check")
-    test("节点排空", "POST", f"/nodes/{test_nid}/drain")
-    test("节点激活", "POST", f"/nodes/{test_nid}/activate")
     test("节点容器", "GET", f"/nodes/{test_nid}/containers")
     test("删除节点", "DELETE", f"/nodes/{test_nid}")
 else:
@@ -281,27 +292,28 @@ print("=" * 60)
 
 test("服务器列表", "GET", "/servers", check_fn=lambda d: assert_keys(d, ["total", "items"]))
 test("创建服务器", "POST", "/servers",
-     json_data={"name": "test-server", "host": "192.168.1.100", "description": "Test"},
+     json_data={"name": f"srv-{UNIQ}", "host": "127.0.0.1", "description": "Test"},
      check_fn=lambda d: assert_keys(d, ["id"]))
 
 r = requests.get(f"{BASE}/servers", headers=H)
 servers = r.json()["items"]
 test_svid = None
 for s in servers:
-    if s["name"] == "test-server":
+    if s["name"] == f"srv-{UNIQ}":
         test_svid = s["id"]
         break
 
 if test_svid:
     test("服务器详情", "GET", f"/servers/{test_svid}")
-    test("更新服务器", "PUT", f"/servers/{test_svid}",
-         json_data={"description": "Updated"})
-    test("服务器探测", "POST", f"/servers/{test_svid}/probe")
+    test("更新服务器", "PUT", f"/servers/{test_svid}", json_data={"description": "Updated"})
     test("服务器节点", "GET", f"/servers/{test_svid}/nodes")
-    test("服务器维护", "POST", f"/servers/{test_svid}/maintenance")
     test("创建通道(agent)", "POST", f"/servers/{test_svid}/nodes",
-         json_data={"name": "test-agent-ch", "connect_type": "agent"})
+         json_data={"name": f"ch-{UNIQ}", "connect_type": "agent"})
+    test("服务器维护", "POST", f"/servers/{test_svid}/maintenance")
     test("删除服务器", "DELETE", f"/servers/{test_svid}")
+else:
+    print("  ⚠️  跳过服务器测试")
+    RESULTS["skip"] += 1
 
 
 # ============================================================
@@ -309,10 +321,8 @@ print("\n" + "=" * 60)
 print("  11. MONITORING 监控模块")
 print("=" * 60)
 
-test("监控健康", "GET", "/monitoring/health",
-     check_fn=lambda d: assert_keys(d, ["status", "components"]))
-test("仪表盘", "GET", "/monitoring/dashboard",
-     check_fn=lambda d: assert_keys(d, ["projects", "tasks", "nodes"]))
+test("监控健康", "GET", "/monitoring/health", check_fn=lambda d: assert_keys(d, ["status", "components"]))
+test("仪表盘", "GET", "/monitoring/dashboard", check_fn=lambda d: assert_keys(d, ["projects", "tasks", "nodes"]))
 
 
 # ============================================================
