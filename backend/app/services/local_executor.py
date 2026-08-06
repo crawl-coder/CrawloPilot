@@ -486,9 +486,9 @@ class LocalExecutor:
             
             # 更新进程状态
             process.finished_at = datetime.utcnow()
-            if exit_code == 0:
+            if process.status in (TaskStatus.RUNNING, TaskStatus.PENDING) and exit_code == 0:
                 process.status = TaskStatus.SUCCESS
-            else:
+            elif process.status in (TaskStatus.RUNNING, TaskStatus.PENDING):
                 process.status = TaskStatus.FAILED
             
             # 解析日志中的指标
@@ -604,6 +604,7 @@ class LocalExecutor:
 
         success = process.stop()
         if success:
+            process.status = TaskStatus.CANCELLED
             process.parse_metrics_from_logs()
             self._update_task_completion(
                 task_id,

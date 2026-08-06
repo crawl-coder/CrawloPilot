@@ -8,6 +8,7 @@ SSH 远程爬虫执行器
 """
 
 import os
+import asyncio
 import re
 import io
 import stat
@@ -84,7 +85,9 @@ class SshConnection:
         if self._client and self._client.get_transport() and self._client.get_transport().is_active():
             return self._client
 
-        with self._lock:
+        if not self._lock.acquire(timeout=120):
+            raise TimeoutError("等待 SSH 连接锁超时")
+        try:
             # 双重检查
             if self._client and self._client.get_transport() and self._client.get_transport().is_active():
                 return self._client
@@ -121,6 +124,8 @@ class SshConnection:
             self._client.connect(**connect_kwargs)
             logger.info(f"SSH 连接已建立: {self.user}@{self.host}:{self.port}")
             return self._client
+        finally:
+            self._lock.release()
 
     def exec_command(self, command: str, timeout: int = 30, get_pty: bool = True) -> tuple:
         """
@@ -297,7 +302,9 @@ class SshSpiderProcess:
         5. 通过 nohup 启动爬虫
         6. 记录 PID
         """
-        with self._lock:
+        if not self._lock.acquire(timeout=180):
+            raise TimeoutError("等待任务启动锁超时")
+        try:
             from app.core.database import SessionLocal
 
             self.workspace = config.remote_workspace or f"{SSH_WORKSPACE_ROOT}/{config.task_id}"
@@ -357,6 +364,8 @@ class SshSpiderProcess:
                 f"[{self.task_id}] 远程爬虫已启动: PID={self.remote_pid}, "
                 f"workspace={self.workspace}"
             )
+        finally:
+            self._lock.release()
 
     def _build_start_command(self, config: SshTaskConfig) -> str:
         """构建远程启动命令"""
@@ -592,6 +601,10 @@ class SshExecutor:
         self.active_tasks: Dict[str, SshSpiderProcess] = {}
 
     async def execute_task(self, config: SshTaskConfig) -> str:
+        """执行远程 SSH 爬虫任务（阻塞操作放入线程池，避免阻塞事件循环）"""
+        return await asyncio.to_thread(self._execute_sync, config)
+
+    def _execute_sync(self, config: SshTaskConfig) -> str:
         """
         执行远程 SSH 爬虫任务
 
