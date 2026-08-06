@@ -19,7 +19,12 @@
 
       <!-- 节点列表 -->
       <el-row :gutter="20">
-        <el-col v-for="node in nodes" :key="node.id" :xs="24" :sm="12" :md="8" :lg="6">
+        <el-col
+          v-for="node in nodes"
+          :key="node.id"
+          :xs="24" :sm="12" :md="8" :lg="6"
+          style="margin-bottom: 20px"
+        >
           <el-card class="node-card" shadow="hover">
             <template #header>
               <div class="node-header">
@@ -543,7 +548,15 @@ onMounted(() => {
 }
 
 .node-card {
-  margin-bottom: 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.node-card :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .node-header {
@@ -564,7 +577,9 @@ onMounted(() => {
 }
 
 .node-info {
+  flex: 1;
   margin-bottom: 15px;
+  min-height: 150px;
 }
 
 .info-item {
@@ -614,5 +629,7 @@ onMounted(() => {
 .node-actions {
   display: flex;
   gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f0;
 }
 </style>
