@@ -98,7 +98,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getProject } from '@/api/project'
 import { getSpiders, runSpider } from '@/api/spider'
-import { parseDate } from '@/utils/format'
+import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, formatDateTime as formatDate } from '@/utils/common'
 
 const route = useRoute()
 const router = useRouter()
@@ -130,32 +130,6 @@ const loadSpiders = async () => {
   } finally {
     loading.value = false
   }
-}
-
-const getStatusType = (status) => {
-  const typeMap = {
-    draft: 'info',
-    active: 'success',
-    disabled: 'warning',
-    error: 'danger'
-  }
-  return typeMap[status] || 'info'
-}
-
-const getStatusText = (status) => {
-  const textMap = {
-    draft: '草稿',
-    active: '启用',
-    disabled: '已禁用',
-    error: '错误'
-  }
-  return textMap[status] || status
-}
-
-const formatDate = (dateStr) => {
-  const d = parseDate(dateStr)
-  if (!d || isNaN(d.getTime())) return '-'
-  return d.toLocaleString('zh-CN')
 }
 
 const viewSpider = (spider) => {

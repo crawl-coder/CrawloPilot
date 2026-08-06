@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 
 const routes = [
   {
@@ -59,6 +60,7 @@ const routes = [
       {
         path: 'users',
         name: 'Users',
+        meta: { requiresAdmin: true },
         component: () => import('@/views/Users.vue')
       }
     ]
@@ -71,22 +73,38 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
-  
+
   if (to.path === '/login') {
-    if (token) {
-      next('/')
-    } else {
-      next()
-    }
-  } else {
-    if (!token) {
+    if (token) next('/')
+    else next()
+    return
+  }
+
+  if (!token) {
+    next('/login')
+    return
+  }
+
+  // 需要 admin 权限的路由：确保用户信息已加载后再校验
+  if (to.meta?.requiresAdmin) {
+    try {
+      const userStore = useUserStore()
+      if (!userStore.user) {
+        await userStore.fetchUser()
+      }
+      if (!userStore.isAdmin) {
+        next('/dashboard')
+        return
+      }
+    } catch (e) {
       next('/login')
-    } else {
-      next()
+      return
     }
   }
+
+  next()
 })
 
 export default router

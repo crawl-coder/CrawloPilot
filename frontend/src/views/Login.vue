@@ -10,20 +10,20 @@
       
       <el-form :model="loginForm" :rules="rules" ref="loginFormRef" @submit.prevent="handleLogin">
         <el-form-item prop="username">
-          <el-input 
-            v-model="loginForm.username" 
+          <el-input
+            v-model="loginForm.username"
             placeholder="用户名"
-            prefix-icon="User"
+            :prefix-icon="User"
             size="large"
           />
         </el-form-item>
         
         <el-form-item prop="password">
-          <el-input 
-            v-model="loginForm.password" 
+          <el-input
+            v-model="loginForm.password"
             type="password"
             placeholder="密码"
-            prefix-icon="Lock"
+            :prefix-icon="Lock"
             size="large"
             show-password
           />
@@ -90,8 +90,11 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { login, register } from '@/api/auth'
+import { User, Lock } from '@element-plus/icons-vue'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const loginFormRef = ref(null)
 const registerFormRef = ref(null)
 const loading = ref(false)
@@ -140,7 +143,7 @@ const handleLogin = async () => {
   try {
     loading.value = true
     const res = await login(loginForm)
-    localStorage.setItem('token', res.access_token)
+    userStore.setToken(res.access_token)
     ElMessage.success('登录成功')
     router.push('/')
   } catch (error) {
@@ -169,7 +172,7 @@ const handleRegister = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--cp-login-gradient);
 }
 
 .login-card {

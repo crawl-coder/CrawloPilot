@@ -8,9 +8,9 @@
       <el-menu
         :default-active="$route.path"
         router
-        background-color="#304156"
-        text-color="#bfcbd9"
-        active-text-color="#409EFF"
+        background-color="var(--cp-sidebar-bg)"
+        text-color="var(--cp-sidebar-text)"
+        active-text-color="var(--cp-sidebar-active)"
       >
         <el-menu-item index="/dashboard">
           <el-icon><Odometer /></el-icon>
@@ -37,7 +37,7 @@
           <span>节点管理</span>
         </el-menu-item>
         
-        <el-sub-menu index="system">
+        <el-sub-menu v-if="userStore.isAdmin" index="system">
           <template #title>
             <el-icon><Setting /></el-icon>
             <span>系统管理</span>
@@ -60,7 +60,7 @@
           <div class="user-info">
             <el-dropdown @command="handleCommand">
               <span class="user-name">
-                {{ currentUser?.username || '用户' }}
+                {{ username }}
                 <el-icon><ArrowDown /></el-icon>
               </span>
               <template #dropdown>
@@ -82,26 +82,31 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Odometer, Files, User, ArrowDown, Monitor, List, Aim, Setting } from '@element-plus/icons-vue'
-import { getCurrentUser } from '@/api/auth'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
-const currentUser = ref(null)
+const userStore = useUserStore()
+
+const currentUser = computed(() => userStore.user)
+const username = computed(() => userStore.username || '用户')
 
 onMounted(async () => {
+  // 路由守卫可能已获取过用户（如访问需权限页面），避免重复请求
+  if (userStore.user) return
   try {
-    currentUser.value = await getCurrentUser()
+    await userStore.fetchUser()
   } catch (error) {
-    console.error('获取用户信息失败', error)
+    // token 失效（401）时 store 已自动 logout 并由拦截器跳转，不重复处理
   }
 })
 
 const handleCommand = (command) => {
   if (command === 'logout') {
-    localStorage.removeItem('token')
+    userStore.logout()
     ElMessage.success('已退出登录')
     router.push('/login')
   } else if (command === 'profile') {
@@ -116,7 +121,7 @@ const handleCommand = (command) => {
 }
 
 .el-aside {
-  background-color: #304156;
+  background-color: var(--cp-sidebar-bg);
   color: #fff;
 }
 
@@ -127,7 +132,7 @@ const handleCommand = (command) => {
   justify-content: center;
   gap: 8px;
   color: #fff;
-  background-color: #2b3a4a;
+  background-color: var(--cp-sidebar-logo-bg);
 }
 
 .logo-img {
@@ -148,8 +153,8 @@ const handleCommand = (command) => {
 }
 
 .el-header {
-  background-color: #fff;
-  box-shadow: 0 1px 4px rgba(0,21,41,.08);
+  background-color: var(--cp-header-bg);
+  box-shadow: var(--cp-header-shadow);
   padding: 0 20px;
 }
 
@@ -167,11 +172,11 @@ const handleCommand = (command) => {
 
 .user-name {
   cursor: pointer;
-  color: #606266;
+  color: var(--cp-text-regular);
 }
 
 .el-main {
-  background-color: #f0f2f5;
+  background-color: var(--cp-page-bg);
   padding: 20px;
 }
 </style>

@@ -1,6 +1,10 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+// 注意：不在模块顶层静态导入 @/router 或 @/stores/user，
+// 避免 request -> router -> stores/user -> api/auth -> request 的循环依赖。
+// 在 401 处理中通过动态 import 延迟获取。
+
 const request = axios.create({
   baseURL: '/api/v1',
   timeout: 30000
@@ -30,12 +34,15 @@ request.interceptors.response.use(
       switch (error.response.status) {
         case 401:
           ElMessage.warning('登录已过期，请重新登录')
-          localStorage.removeItem('token')
-          setTimeout(() => {
-            if (window.location.pathname !== '/login') {
-              window.location.href = '/login'
+          // 动态导入打破循环依赖；同步清理 Pinia 中的 token 与用户态
+          Promise.all([import('@/router'), import('@/stores/user')]).then(
+            ([{ default: router }, { useUserStore }]) => {
+              useUserStore().logout()
+              if (router.currentRoute.value.path !== '/login') {
+                setTimeout(() => router.push('/login'), 1500)
+              }
             }
-          }, 1500)
+          )
           break
         case 403:
           ElMessage.error('权限不足')

@@ -1,0 +1,50 @@
+/**
+ * CrawloPilot 设计 Token
+ * 统一管理颜色、间距等设计变量，替代散落的魔法色值
+ */
+:root {
+  /* ===== 品牌主色 ===== */
+  --cp-primary: #409eff;
+  --cp-primary-dark: #304156;
+  --cp-primary-dark-hover: #2b3a4a;
+
+  /* ===== 侧边栏 ===== */
+  --cp-sidebar-bg: #304156;
+  --cp-sidebar-logo-bg: #2b3a4a;
+  --cp-sidebar-text: #bfcbd9;
+  --cp-sidebar-active: #409eff;
+  --cp-sidebar-width: 200px;
+
+  /* ===== 页面背景 ===== */
+  --cp-page-bg: #f0f2f5;
+  --cp-header-bg: #ffffff;
+  --cp-header-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+
+  /* ===== 文字 ===== */
+  --cp-text-primary: #303133;
+  --cp-text-regular: #606266;
+  --cp-text-secondary: #909399;
+
+  /* ===== 语义色 ===== */
+  --cp-success: #67c23a;
+  --cp-warning: #e6a23c;
+  --cp-danger: #f56c6c;
+  --cp-info: #909399;
+
+  /* ===== 分隔线 ===== */
+  --cp-border-light: #f0f0f0;
+
+  /* ===== 登录页渐变 ===== */
+  --cp-login-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+  /* ===== 图表色板 ===== */
+  --cp-chart-1: #5470c6;
+  --cp-chart-2: #91cc75;
+  --cp-chart-3: #fac858;
+  --cp-chart-4: #ee6666;
+  --cp-chart-5: #73c0de;
+
+  /* ===== 深色终端（日志查看器） ===== */
+  --cp-terminal-bg: #0d1117;
+  --cp-terminal-text: #c9d1d9;
+}
