@@ -5,6 +5,7 @@
 首次接触本项目，建议按顺序阅读：
 
 1. [设计哲学](DESIGN_PHILOSOPHY.md) —— 为什么这样设计、核心决策
+1. [产品设计](PRODUCT_DESIGN.md) —— 产品定位、功能模块、技术方案
 2. [REMAINING_WORK.md](REMAINING_WORK.md) —— 当前版本状态与后续规划
 3. 模块文档（按业务链路）：
    - [认证与权限](modules/01-auth.md)
@@ -22,6 +23,7 @@
 docs/
 ├── README.md               # 本文档索引
 ├── DESIGN_PHILOSOPHY.md    # 设计哲学与关键决策
+├── PRODUCT_DESIGN.md       # 产品设计文档
 ├── REMAINING_WORK.md       # V1 状态与 V2 规划
 ├── modules/                # 按模块的功能与实现文档
 │   ├── 01-auth.md

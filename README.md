@@ -1,155 +1,146 @@
-# CrawloPilot - 爬虫管理部署平台
+# 🕷️ CrawloPilot
 
-CrawloPilot 是 Crawlo 爬虫框架的配套管理部署平台，提供爬虫项目全生命周期管理能力。
+> Crawlo 爬虫框架的配套管理部署平台 —— 项目、爬虫、部署、任务一站式管理。
 
-## V1 功能特性
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
+![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg)
+![Vue 3](https://img.shields.io/badge/Frontend-Vue3-4FC08D.svg)
+![Crawlo](https://img.shields.io/badge/Crawlo-1.7.2-purple.svg)
 
-- 用户认证与权限管理（JWT + RBAC）
-- 项目管理 + 代码文件上传（本地文件系统存储）
-- 爬虫管理（创建、代码文件浏览/编辑、运行/停止）
-- 部署执行（本地进程为默认；支持 SSH / Docker 直连 / Agent 三种节点模式）
-- 任务管理（状态查询、实时日志、WebSocket 推送、停止/重试）
-- 仪表盘（项目/爬虫/任务/节点统计）
+CrawloPilot 是围绕 [Crawlo](https://github.com/crawl-coder/Crawlo) 爬虫框架构建的管理平台，
+提供爬虫项目的全生命周期管理：创建项目、上传代码、创建爬虫、选择执行节点、
+运行任务、实时查看状态与日志、统计运行指标。
 
-## V2 规划（v1 已裁剪）
+## ✨ 特性
 
-Git 仓库管理、调度系统（APScheduler + Celery + DAG）、监控告警、数据质量、代理池、API 管理、操作审计。
+- **认证与权限**：JWT + RBAC，用户 / 角色 / 团队
+- **项目管理**：项目 CRUD、版本、代码文件上传与在线编辑
+- **爬虫管理**：爬虫 CRUD、代码文件树/编辑、运行与停止
+- **四种执行模式**：本地进程 / SSH 远程 / Docker 直连 / Agent 节点，执行器可插拔
+- **任务全生命周期**：状态机、实时日志（WebSocket）、暂停 / 恢复 / 停止 / 重试 / 删除
+- **Server 实体**：真实服务器 × SSH/Docker/Agent 三种执行通道统一管理
+- **运行统计**：自动解析爬虫指标（pages / items / errors），回写爬虫运行记录
+- **仪表盘**：项目 / 爬虫 / 任务 / 节点概览
 
-## 技术栈
+## 📚 文档
 
-- **后端**: FastAPI + Uvicorn + SQLAlchemy
-- **前端**: Vue3 + Element Plus + Pinia + Vue Router
-- **数据库**: MySQL 8.0 + Redis 7.x
-- **执行引擎**: 本地进程（subprocess）/ SSH / Docker
+| 文档 | 说明 |
+|------|------|
+| [设计哲学](docs/DESIGN_PHILOSOPHY.md) | 项目为什么这样设计、核心决策 |
+| [产品设计](docs/PRODUCT_DESIGN.md) | 产品定位、功能模块、技术方案 |
+| [模块文档](docs/modules/) | 认证 / 项目 / 爬虫 / 部署执行 / 节点 / 任务 / 前端 / 测试 |
+| [Server 管理设计](docs/designs/server-management.md) | 真实服务器实体管理方案 |
+| [文档索引](docs/README.md) | 完整文档入口 |
+| [Agent 使用说明](agent/README.md) | 节点 Agent 部署手册 |
 
-## 快速开始
+## 🚀 快速开始
 
-### 前置要求
+### 环境要求
 
-- Python 3.10+（本地开发，推荐 conda 环境 `crawlo_pilot`）
-- Node.js 18+（本地开发）
-- MySQL 8.0 + Redis（本地 Docker 或已有实例均可）
+- Python 3.10+（推荐 conda 环境 `crawlo_pilot`）
+- Node.js 18+
+- MySQL 8.0 + Redis 7.x（本机或 Docker）
 - Docker（可选，仅容器模式需要）
 
-### 本地开发环境（推荐，无需 Docker）
+### 本地开发
 
 ```bash
-# 1. 激活 conda 环境并安装依赖
+# 1. 配置数据库
+cp .env.example .env          # 编辑 MySQL/Redis 连接信息（默认指向本机）
+
+# 2. 启动后端
 conda activate crawlo_pilot
 cd backend
 pip install -r requirements.txt
-
-# 2. 配置数据库连接（编辑 .env，或使用 Docker 启动 MySQL/Redis）
-#    docker-compose up -d mysql redis
-
-# 3. 启动后端
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
 
-访问 API 文档：http://localhost:8000/docs
-
-```bash
-# 4. 启动前端
-cd frontend
+# 3. 启动前端
+cd ../frontend
 npm install
 npm run dev
 ```
 
-访问前端：http://localhost:3000
+访问：
 
-### Docker Compose 部署
+- 前端界面：http://localhost:3000
+- API 文档：http://localhost:8000/docs
+- 默认账号：`admin / admin123`
+
+> 也可以直接使用 `./start-dev.sh` 一键启动前后端。
+
+### Docker Compose
 
 ```bash
 docker-compose up -d
-docker-compose ps
-docker-compose logs -f
 ```
 
-Compose 仅包含 v1 必需服务：`api-server`、`frontend`、`mysql`、`redis`。
+Compose 包含 v1 必需服务：`api-server`、`frontend`、`mysql`、`redis`。
 
-## 爬虫部署流程（v1）
+## 🏗️ 架构
+
+```mermaid
+flowchart TB
+    UI[Web UI (Vue3)] --> API[FastAPI 控制面]
+    API --> DB[(MySQL)]
+    API --> RD[(Redis)]
+    API --> FS[uploads/ 代码与日志]
+
+    subgraph 执行面
+        LOCAL[LocalExecutor<br/>本机子进程]
+        SSH[SSH 节点<br/>SshExecutor]
+        DOCKER[Docker 节点<br/>DockerExecutor]
+        AGENT[Agent 节点<br/>crawlo_agent.py]
+    end
+
+    API -- deploy_mode 分发 --> LOCAL
+    API -- deploy_mode 分发 --> SSH
+    API -- deploy_mode 分发 --> DOCKER
+    API -- 任务领取/回报 --> AGENT
+```
+
+平台（控制面）负责编排、状态、日志与权限；节点（执行面）负责真正运行爬虫。
+四种执行方式实现同一套执行器契约（启动 / 状态 / 日志 / 停止），按 `deploy_mode` 分发。
+
+## 📁 项目结构
 
 ```text
-登录 → 创建项目 → 创建爬虫 → 上传/复制爬虫代码
-  → 触发运行（本地进程模式）→ 查看任务状态/实时日志 → 停止/重试
-```
-
-无 Docker 环境下默认使用本地进程模式执行，不依赖 Celery Worker，一次运行即可打通
-「项目 → 爬虫 → 代码 → 执行 → 状态 → 日志」全链路。
-
-分布式节点三种接入方式：
-
-- **SSH 直连**：控制端通过 SSH 上传代码并远程执行
-- **Docker 直连**：直连节点 Docker API，基础镜像复用 + 任务镜像秒级构建
-- **Agent 代理**：节点上运行轻量 agent 程序反向注册（见 `agent/` 目录）
-
-## 服务端口
-
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| 后端 API | 8000 | FastAPI 服务 |
-| 前端 | 3000/8080 | Vue3 开发/生产 |
-| MySQL | 3306 | 数据库 |
-| Redis | 6379 | 缓存/队列 |
-
-## 项目结构
-
-```
 CrawloPilot/
-├── backend/                 # FastAPI 后端
-│   ├── app/
-│   │   ├── api/v1/         # API 路由
-│   │   ├── core/           # 核心配置
-│   │   ├── models/         # SQLAlchemy 模型
-│   │   ├── schemas/        # Pydantic schemas
-│   │   ├── services/       # 业务逻辑（部署/执行/节点/日志）
-│   │   └── main.py         # 应用入口
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/                # Vue3 前端
-│   ├── src/
-│   │   ├── api/            # API 调用
-│   │   ├── components/     # 组件
-│   │   ├── views/          # 页面
-│   │   └── router/         # 路由
-│   ├── Dockerfile
-│   └── package.json
-├── docker/                  # Docker 配置（mysql/redis/spider-runner）
-├── docker-compose.yml
-├── examples/                # 示例爬虫（ofweek_standalone）
-├── tests/                   # 测试（test_deployment_flow.py 为部署流程验收测试）
-└── docs/                    # 文档
+├── backend/            # FastAPI 后端（API / 服务 / 模型 / 执行器）
+│   └── app/
+│       ├── api/v1/     # 路由：认证/项目/爬虫/执行/节点/服务器/Agent
+│       ├── services/   # 业务与执行器（local/ssh/docker/agent）
+│       └── models/     # SQLAlchemy 模型
+├── frontend/           # Vue3 前端
+├── agent/              # 节点 Agent 程序（纯标准库）
+├── docker/             # Docker 配置
+├── docs/               # 设计哲学 / 产品设计 / 模块文档
+├── examples/           # 示例爬虫（ofweek_standalone）
+├── tests/              # 测试
+└── docker-compose.yml
 ```
 
-## API 文档
-
-启动后端服务后访问：
-
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-## 项目文档
-
-完整文档见 [docs/README.md](docs/README.md)，重点先读：
-
-- [设计哲学](docs/DESIGN_PHILOSOPHY.md) —— 项目为什么这样设计
-- [部署执行](docs/modules/04-execution.md) —— 本地/SSH/Docker/Agent 四种执行方式
-- [节点管理](docs/modules/05-nodes.md) —— 分布式节点接入
-- [任务与实时日志](docs/modules/06-tasks.md) —— 可观测性设计
-
-## 数据库
-
-主要表：`user`、`role`、`team`、`project`、`project_version`、`spider`、
-`task_instance`、`node`、`container`、`deploy`、`schedule`、`environment_config`。
-
-## 测试
+## ✅ 测试
 
 ```bash
 # 部署流程验收测试（需先启动后端）
-cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000
 python tests/test_deployment_flow.py
 ```
 
-## 许可证
+完整测试说明见 [docs/modules/08-testing.md](docs/modules/08-testing.md)。
 
-MIT License
+## 🗺️ 路线图
+
+**V1（已完成）**：项目 / 爬虫 / 四种执行模式 / 任务与日志 / Server 实体
+
+**V2（规划）**：调度系统、监控告警、Git 管理、数据质量、代理池 / API 管理、操作审计
+
+详见 [docs/REMAINING_WORK.md](docs/REMAINING_WORK.md)。
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request。开发前请先阅读 [docs/](docs/README.md) 下的设计哲学与模块文档。
+
+## 📄 License
+
+[MIT](LICENSE)
