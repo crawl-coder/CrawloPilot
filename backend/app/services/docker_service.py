@@ -342,6 +342,11 @@ class DockerService:
         try:
             container = self.client.containers.get(container_id)
             state = container.attrs.get("State", {})
+            try:
+                image = container.image.tags[0] if container.image.tags else None
+            except Exception:
+                # 镜像可能已被删除（如任务清理竞态），不影响容器状态查询
+                image = None
             return {
                 "id": container.id,
                 "short_id": container.short_id,
@@ -349,7 +354,7 @@ class DockerService:
                 "status": container.status,
                 "state": state.get("Status"),
                 "exit_code": state.get("ExitCode"),
-                "image": container.image.tags[0] if container.image.tags else None,
+                "image": image,
                 "created": container.attrs.get("Created"),
                 "ports": container.attrs.get("NetworkSettings", {}).get("Ports", {}),
                 "network_settings": container.attrs.get("NetworkSettings", {})
@@ -369,18 +374,23 @@ class DockerService:
         """
         try:
             containers = self.client.containers.list(all=all)
-            return [
-                {
+            result = []
+            for c in containers:
+                try:
+                    image = c.image.tags[0] if c.image.tags else None
+                except Exception:
+                    # 镜像可能已被删除，不影响容器列表展示
+                    image = None
+                result.append({
                     "id": c.id,
                     "short_id": c.short_id,
                     "name": c.name,
                     "status": c.status,
-                    "image": c.image.tags[0] if c.image.tags else None,
+                    "image": image,
                     "created": c.attrs.get("Created"),
                     "ports": c.attrs.get("NetworkSettings", {}).get("Ports", {})
-                }
-                for c in containers
-            ]
+                })
+            return result
         except Exception as e:
             logger.error(f"Failed to list containers: {e}")
             raise

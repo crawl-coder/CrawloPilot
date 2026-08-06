@@ -22,7 +22,7 @@ router = APIRouter(prefix="/task-instances", tags=["任务实例"])
 # Pydantic Schemas
 class TaskInstanceResponse(BaseModel):
     id: int
-    schedule_id: int
+    schedule_id: Optional[int] = None
     spider_name: str
     status: str
     stats: Optional[dict]

@@ -3,14 +3,18 @@ Docker 远程执行器（直连节点 Docker API，不依赖 Celery）
 
 执行流程：
 1. 连接节点 Docker API（tcp://host:port）
-2. 流式构建任务镜像：python:3.10-slim + crawlo + 爬虫代码
-3. 创建并启动容器执行入口文件
+2. 流式构建任务镜像，构建策略：
+   - 代码目录存在 Dockerfile → 项目 Dockerfile 优先（镜像内容由项目决定）
+   - 缺失 → 内置模板回退（FROM crawlopilot/base + COPY 代码 + 装 requirements）
+   - 镜像 tag 按代码内容摘要缓存复用（crawlo-project-{project_id}-{digest}）
+3. 创建并启动容器：显式入口文件优先，否则尊重镜像 ENTRYPOINT/CMD
 4. 监控容器状态直到退出，解析日志指标
 5. 回写任务状态 / 指标 / 爬虫统计，容器清理
 """
 
 import io
 import asyncio
+import hashlib
 import os
 import re
 import time
@@ -54,6 +58,7 @@ class DockerTaskConfig:
     spider_id: str
     spider_name: str
     code_dir: str
+    project_id: Optional[int] = None  # 用于镜像 tag 缓存复用
     entry_file: Optional[str] = None
     spider_name_to_run: Optional[str] = None
     node_host: str = ""
@@ -64,15 +69,89 @@ class DockerTaskConfig:
     cpu_limit: float = 1.0
 
 
-def _build_context_tar(code_dir: str, base_tag: str) -> bytes:
-    """生成任务镜像构建上下文（基于已缓存的基础镜像 + 爬虫代码）"""
-    dockerfile = (
-        f"FROM {base_tag}\n"
-        f"WORKDIR /app\n"
-        f"COPY . /app\n"
-        f"RUN if [ -f /app/requirements.txt ]; then "
-        f"pip install --no-cache-dir -r /app/requirements.txt -i {PIP_INDEX_URL}; fi\n"
-    )
+def _iter_code_files(code_dir: str):
+    """遍历代码目录（跳过缓存/日志），返回 [(相对路径, 字节内容)]（按路径排序）"""
+    files = []
+    for root, dirs, names in os.walk(code_dir):
+        dirs[:] = [d for d in dirs if d not in ("__pycache__", ".git", "logs")]
+        for fname in names:
+            if fname.endswith(".pyc"):
+                continue
+            full = os.path.join(root, fname)
+            rel = os.path.relpath(full, code_dir)
+            try:
+                with open(full, "rb") as f:
+                    data = f.read()
+            except OSError:
+                continue
+            files.append((rel, data))
+    files.sort(key=lambda x: x[0])
+    return files
+
+
+def _find_project_dockerfile(code_dir: str) -> Optional[str]:
+    """读取项目自带的 Dockerfile（优先 Dockerfile，其次 dockerfile），不存在返回 None"""
+    for name in ("Dockerfile", "dockerfile"):
+        p = Path(code_dir) / name
+        if p.is_file():
+            try:
+                return p.read_text(encoding="utf-8")
+            except OSError as e:
+                logger.warning(f"读取项目 Dockerfile 失败: {e}")
+                return None
+    return None
+
+
+def _code_digest(code_dir: str, base_tag: str = None, dockerfile: str = None) -> str:
+    """代码内容摘要，作为镜像 tag 的一部分（代码/Dockerfile/基础镜像不变则镜像复用）"""
+    h = hashlib.md5()
+    if base_tag:
+        h.update(b"base:" + base_tag.encode("utf-8"))
+    if dockerfile:
+        h.update(b"dockerfile:" + dockerfile.encode("utf-8"))
+    for rel, data in _iter_code_files(code_dir):
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        h.update(data)
+    return h.hexdigest()
+
+
+def _image_exists(docker: DockerService, tag: str) -> bool:
+    """检查节点上是否已存在指定 tag 的镜像"""
+    # docker-py 构建时不带 tag 后缀会规范化为 <name>:latest，需要兼容
+    candidates = {tag, f"{tag}:latest"} if ":" not in tag else {tag}
+    try:
+        for img in docker.list_images():
+            if any(t in candidates for t in (img.get("tags") or [])):
+                return True
+    except Exception as e:
+        logger.warning(f"检查镜像是否存在失败: {e}")
+    return False
+
+
+def _build_context_tar(
+    code_dir: str,
+    base_tag: str = None,
+    project_dockerfile: str = None,
+) -> bytes:
+    """
+    生成任务镜像构建上下文
+
+    - project_dockerfile 存在：以项目 Dockerfile 为构建定义（FROM/COPY/CMD 由项目决定）
+    - 否则：内置模板（FROM crawlopilot/base + COPY 代码 + 安装 requirements）
+    """
+    if project_dockerfile:
+        dockerfile = project_dockerfile
+    elif base_tag:
+        dockerfile = (
+            f"FROM {base_tag}\n"
+            f"WORKDIR /app\n"
+            f"COPY . /app\n"
+            f"RUN if [ -f /app/requirements.txt ]; then "
+            f"pip install --no-cache-dir -r /app/requirements.txt -i {PIP_INDEX_URL}; fi\n"
+        )
+    else:
+        raise ValueError("base_tag 与 project_dockerfile 至少提供一个")
 
     buf = io.BytesIO()
     now = int(time.time())
@@ -81,25 +160,18 @@ def _build_context_tar(code_dir: str, base_tag: str) -> bytes:
         info = tarfile.TarInfo("Dockerfile")
         info.size = len(df_bytes)
         info.mtime = now
+        info.mode = 0o644
         tar.addfile(info, io.BytesIO(df_bytes))
 
-        for root, dirs, files in os.walk(code_dir):
-            dirs[:] = [d for d in dirs if d not in ("__pycache__", ".git", "logs")]
-            for fname in files:
-                if fname.endswith(".pyc"):
-                    continue
-                full = os.path.join(root, fname)
-                rel = os.path.relpath(full, code_dir)
-                try:
-                    with open(full, "rb") as f:
-                        data = f.read()
-                except OSError:
-                    continue
-                ti = tarfile.TarInfo(rel)
-                ti.size = len(data)
-                ti.mtime = now
-                ti.mode = 0o644
-                tar.addfile(ti, io.BytesIO(data))
+        for rel, data in _iter_code_files(code_dir):
+            # Dockerfile 已在上下文根目录显式写入，避免重复
+            if rel in ("Dockerfile", "dockerfile"):
+                continue
+            ti = tarfile.TarInfo(rel)
+            ti.size = len(data)
+            ti.mtime = now
+            ti.mode = 0o644
+            tar.addfile(ti, io.BytesIO(data))
 
     return buf.getvalue()
 
@@ -242,33 +314,72 @@ class DockerExecutor:
                     f"无法连接节点 Docker API: {config.node_host}:{config.node_port}"
                 )
 
-            # 1. 确保基础镜像（crawlo 运行环境）已存在
-            base_tag = _ensure_base_image(docker)
+            # 2. 构建任务镜像：项目 Dockerfile 优先，缺失时回退内置模板
+            project_dockerfile = _find_project_dockerfile(config.code_dir)
+            base_tag = None
+            tag = None
 
-            # 2. 流式构建任务镜像（基础镜像 + 爬虫代码）
-            tag = f"crawlopilot-task-{config.task_id}"
-            tar_bytes = _build_context_tar(config.code_dir, base_tag)
-            docker.build_image_from_tar(tar_bytes, tag)
+            if project_dockerfile:
+                logger.info(
+                    f"[{config.task_id}] 检测到项目 Dockerfile，使用项目自定义构建"
+                )
+                tag = (
+                    f"crawlo-project-{config.project_id or 'task'}-"
+                    f"{_code_digest(config.code_dir, dockerfile=project_dockerfile)[:16]}"
+                )
+                if not _image_exists(docker, tag):
+                    try:
+                        tar_bytes = _build_context_tar(
+                            config.code_dir, project_dockerfile=project_dockerfile
+                        )
+                        docker.build_image_from_tar(tar_bytes, tag)
+                    except Exception as e:
+                        logger.warning(
+                            f"[{config.task_id}] 项目 Dockerfile 构建失败({e})，"
+                            f"回退内置模板"
+                        )
+                        project_dockerfile = None
+
+            if not project_dockerfile:
+                # 确保基础镜像（crawlo 运行环境）已存在
+                base_tag = _ensure_base_image(docker)
+                tag = (
+                    f"crawlo-project-{config.project_id or 'task'}-"
+                    f"{_code_digest(config.code_dir, base_tag=base_tag)[:16]}"
+                )
+                if not _image_exists(docker, tag):
+                    tar_bytes = _build_context_tar(config.code_dir, base_tag=base_tag)
+                    docker.build_image_from_tar(tar_bytes, tag)
 
             # 3. 创建并启动容器
-            cmd = ["python", config.entry_file or "run.py"]
             env = {
                 "TASK_ID": config.task_id,
                 "SPIDER_NAME": config.spider_name_to_run or config.spider_name,
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONIOENCODING": "utf-8",
             }
+            run_kwargs = {}
+            if config.entry_file:
+                # 显式入口文件优先：精确执行 python <entry_file>
+                run_kwargs["entrypoint"] = ["python", config.entry_file]
+                run_kwargs["command"] = []
+            elif project_dockerfile:
+                # 项目 Dockerfile 自带启动逻辑（ENTRYPOINT/CMD），不覆盖
+                logger.info(f"[{config.task_id}] 使用项目 Dockerfile 的启动命令")
+            else:
+                # 内置模板默认入口 run.py
+                run_kwargs["command"] = ["python", "run.py"]
+
             container = docker.create_container(
                 image=tag,
                 name=f"task-{str(config.task_id)[:8]}",
-                entrypoint=["python", config.entry_file or "run.py"],
-                command=cmd,
                 environment=env,
                 resource_limits={
                     "mem_limit": config.memory_limit,
                     "cpu_limit": str(config.cpu_limit),
                 },
                 restart_policy="no",
+                **run_kwargs,
             )
             container_id = container["id"]
             self.active_tasks[config.task_id] = {

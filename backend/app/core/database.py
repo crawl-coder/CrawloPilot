@@ -1,4 +1,5 @@
 import logging
+import os
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -27,7 +28,8 @@ else:
             "read_timeout": 30,
             "write_timeout": 30,
         },
-        echo=settings.DEBUG,
+        # SQL 日志默认关闭（DEBUG 模式下会很吵），需要时设 SQL_ECHO=true 打开
+        echo=settings.DEBUG and os.environ.get("SQL_ECHO", "").lower() in ("1", "true", "yes"),
     )
 
 

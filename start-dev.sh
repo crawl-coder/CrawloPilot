@@ -212,11 +212,14 @@ echo -e "${GREEN}  ✓ 端口已释放${NC}"
 echo -e "${BLUE}[6/7]${NC} 启动后端服务..."
 # 使用 nohup 启动，确保 conda 环境继承
 PYTHON_BIN=$(which python)
+# watchfiles 返回绝对路径，reload-exclude 必须用绝对路径才能匹配（uvicorn 0.27）
+RELOAD_EXCLUDE_UPLOADS="$(pwd)/uploads"
 nohup "$PYTHON_BIN" -m uvicorn app.main:app \
     --host 0.0.0.0 \
     --port 8000 \
     --reload \
     --reload-dir app \
+    --reload-exclude "$RELOAD_EXCLUDE_UPLOADS" \
     > ../logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > ../logs/backend.pid

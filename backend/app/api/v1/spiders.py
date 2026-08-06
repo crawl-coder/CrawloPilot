@@ -351,6 +351,7 @@ def _run_via_remote_docker(spider, task, node, code_dir, background_tasks):
         task_id=str(task.id),
         spider_id=str(spider.id),
         spider_name=spider.spider_name or spider.name,
+        project_id=spider.project_id,
         code_dir=code_dir,
         entry_file=spider.entry_file,
         spider_name_to_run=spider.spider_name or spider.name,

@@ -8,6 +8,14 @@ from prometheus_client import make_asgi_app
 
 from app.core.config import settings
 
+# 应用日志基础配置（uvicorn 默认不配置 root logger，业务模块的 INFO 日志会丢失）
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+# SQLAlchemy echo 很吵，业务日志需要可读性
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 

@@ -50,9 +50,50 @@ error_message / log_url`。
 ### Docker（DockerExecutor）
 
 1. 连接节点 Docker API（`tcp://host:port` 或 `docker_host` 覆盖）
-2. 确保基础镜像 `crawlopilot/base:1.7.2`（本地 wheel 构建，缺失时自动构建）
-3. 流式构建任务镜像（`FROM base + COPY 代码`，秒级）
-4. 创建容器执行入口文件，监控到 exited → 解析日志指标 → 回写 → 清理容器
+2. 构建任务镜像，**项目 Dockerfile 优先，缺失时回退内置模板**（见下文"构建策略"）
+3. 创建容器（入口文件优先，否则尊重镜像 ENTRYPOINT/CMD）
+4. 监控到 exited → 解析日志指标 → 回写 → 清理容器（镜像保留复用）
+
+#### Docker 节点 vs 项目 Dockerfile
+
+两者职责完全不同，可以理解为：
+
+- **Docker 节点 = "在哪里跑"**：一个 Docker daemon 的连接端点（`tcp://host:2375`
+  或本地 `unix:///var/run/docker.sock`），只提供运行环境，不关心跑什么。
+- **项目 Dockerfile = "跑什么"**：定义任务镜像的内容（基础镜像、依赖、启动命令），
+  由爬虫代码目录里的 `Dockerfile` 提供。
+
+一个 Docker 节点可以被任意多个项目复用；同一个项目也可以部署到多个 Docker 节点。
+节点不感知项目内容，项目不依赖节点配置。
+
+#### 镜像构建策略（项目 Dockerfile 优先）
+
+执行时按以下顺序解析：
+
+1. **项目 Dockerfile 存在**（代码目录下 `Dockerfile` 或 `dockerfile`）：
+   - 以项目 Dockerfile 作为构建定义（`FROM / COPY / RUN / ENTRYPOINT / CMD` 全部由项目决定）
+   - 代码目录作为构建上下文整体传入
+   - 构建失败时回退到内置模板，避免项目 Dockerfile 写错导致任务不可运行
+2. **无项目 Dockerfile**（回退内置模板）：
+   - 确保基础镜像 `crawlopilot/base:{CRAWLO_VERSION}` 存在（本地 wheel 构建，缺失时自动构建）
+   - 生成 `FROM base + WORKDIR /app + COPY . /app + 安装 requirements.txt` 的模板
+
+#### 镜像缓存
+
+任务镜像 tag 为 `crawlo-project-{project_id}-{内容摘要前16位}`：
+
+- 内容摘要是代码 + Dockerfile（或基础镜像 tag）的 md5，代码不变则 tag 不变
+- 节点上已存在该 tag 时跳过构建，秒级复用（同一项目连续运行不需要重复 `pip install`）
+- 代码或 requirements 变化 → 摘要变化 → 自动构建新镜像，旧镜像保留用于回滚
+
+#### 启动命令
+
+1. 爬虫配置了 `entry_file` → 精确执行 `python <entry_file>`（覆盖镜像默认启动）
+2. 未配置 `entry_file` 且使用项目 Dockerfile → 不覆盖，尊重镜像 ENTRYPOINT/CMD
+3. 未配置 `entry_file` 且使用内置模板 → 默认 `python run.py`
+
+> 注意：使用项目 Dockerfile 时，镜像必须自带运行所需依赖与启动逻辑；
+> 内置模板保证"零 Dockerfile 项目"开箱即用（自动装 requirements.txt）。
 
 ### Agent（AgentTaskService + 节点程序）
 
