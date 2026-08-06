@@ -52,20 +52,21 @@
         </div>
       </div>
 
-      <!-- 节点列表（按类型分组展示） -->
-      <template v-for="group in nodeGroups" :key="group.type">
-        <div class="node-group-header">
-          <el-icon><component :is="group.icon" /></el-icon>
-          <span class="node-group-title">{{ group.label }}</span>
-          <el-tag size="small" effect="plain">{{ group.nodes.length }}</el-tag>
-        </div>
-        <el-row :gutter="20" class="node-group-row">
-          <el-col
-            v-for="node in group.nodes"
-            :key="node.id"
-            :xs="24" :sm="12" :md="8" :lg="6"
-            style="margin-bottom: 20px"
-          >
+      <!-- 节点列表（按类型 Tab 切换） -->
+      <el-tabs v-model="activeType" class="node-tabs" @tab-change="resetPage">
+        <el-tab-pane :label="`全部节点 (${nodes.length})`" name="all" />
+        <el-tab-pane :label="`SSH 节点 (${typeCount('ssh')})`" name="ssh" />
+        <el-tab-pane :label="`Docker 节点 (${typeCount('docker')})`" name="docker" />
+        <el-tab-pane :label="`Agent 节点 (${typeCount('agent')})`" name="agent" />
+      </el-tabs>
+
+      <el-row :gutter="20" class="node-group-row">
+        <el-col
+          v-for="node in pagedNodes"
+          :key="node.id"
+          :xs="24" :sm="12" :md="8" :lg="6"
+          style="margin-bottom: 20px"
+        >
           <el-card class="node-card" shadow="hover">
             <template #header>
               <div class="node-header">
@@ -150,9 +151,8 @@
               </el-dropdown>
             </div>
           </el-card>
-          </el-col>
-        </el-row>
-      </template>
+        </el-col>
+      </el-row>
 
       <el-empty v-if="nodes.length === 0" description="暂无节点" />
       <el-empty v-else-if="total === 0" description="无匹配的节点" />
@@ -296,7 +296,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, ArrowDown, Monitor, Box, Cpu, Search } from '@element-plus/icons-vue'
+import { Plus, Refresh, ArrowDown, Search } from '@element-plus/icons-vue'
 import {
   createNode, 
   getNodes, 
@@ -324,6 +324,7 @@ const currentNode = ref(null)
 
 const keyword = ref('')
 const statusFilter = ref('')
+const activeType = ref('all')
 const page = ref(1)
 const pageSize = ref(12)
 
@@ -332,6 +333,8 @@ const offlineCount = computed(() => nodes.value.filter((n) => n.status === 'offl
 const maintenanceCount = computed(
   () => nodes.value.filter((n) => ['maintenance', 'draining'].includes(n.status)).length
 )
+
+const typeCount = (type) => nodes.value.filter((n) => n.connect_type === type).length
 
 const filteredNodes = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -344,22 +347,16 @@ const filteredNodes = computed(() => {
   })
 })
 
-const total = computed(() => filteredNodes.value.length)
-const pagedNodes = computed(() =>
-  filteredNodes.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
-)
-
-// 按连接方式分组的节点列表（当前页）
-const nodeGroups = computed(() => {
-  const defs = [
-    { type: 'ssh', label: 'SSH 节点', icon: Monitor },
-    { type: 'docker', label: 'Docker 节点', icon: Box },
-    { type: 'agent', label: 'Agent 节点', icon: Cpu },
-  ]
-  return defs
-    .map((d) => ({ ...d, nodes: pagedNodes.value.filter((n) => n.connect_type === d.type) }))
-    .filter((g) => g.nodes.length > 0)
+// 当前 Tab 下的节点（全部或指定类型）
+const displayNodes = computed(() => {
+  if (activeType.value === 'all') return filteredNodes.value
+  return filteredNodes.value.filter((n) => n.connect_type === activeType.value)
 })
+
+const total = computed(() => displayNodes.value.length)
+const pagedNodes = computed(() =>
+  displayNodes.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+)
 
 const resetPage = () => {
   page.value = 1
@@ -664,22 +661,8 @@ onMounted(() => {
   flex-direction: column;
 }
 
-.node-group-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 20px 0 14px;
-  padding-left: 4px;
-  font-size: 14px;
-  color: #606266;
-}
-
-.node-group-header:first-of-type {
-  margin-top: 4px;
-}
-
-.node-group-title {
-  font-weight: 600;
+.node-tabs {
+  margin-bottom: 4px;
 }
 
 .node-group-row {
