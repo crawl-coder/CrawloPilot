@@ -66,7 +66,7 @@ async def list_task_instances(
     return tasks
 
 
-@router.get("/{task_id}", response_model=TaskInstanceResponse)
+@router.get("/{task_id:int}", response_model=TaskInstanceResponse)
 async def get_task_instance(
     task_id: int,
     db: Session = Depends(get_db),

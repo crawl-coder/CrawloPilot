@@ -22,19 +22,24 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
+def _run_node_health_check():
+    """节点健康检查（在后台线程执行，避免同步探测阻塞事件循环）"""
+    from app.core.database import SessionLocal
+    from app.services.node_service import NodeService
+    from app.services.server_service import ServerService
+    db = SessionLocal()
+    try:
+        NodeService(db).check_all_nodes_health_light()
+        ServerService(db).aggregate_all_servers()
+    finally:
+        db.close()
+
+
 async def _node_health_monitor_loop():
     """后台节点健康检查：每 60 秒轻量探活一次"""
     while True:
         try:
-            from app.core.database import SessionLocal
-            from app.services.node_service import NodeService
-            from app.services.server_service import ServerService
-            db = SessionLocal()
-            try:
-                NodeService(db).check_all_nodes_health_light()
-                ServerService(db).aggregate_all_servers()
-            finally:
-                db.close()
+            await asyncio.to_thread(_run_node_health_check)
         except Exception as e:
             logger.warning(f"节点健康检查失败: {e}")
         await asyncio.sleep(60)

@@ -449,7 +449,7 @@ class NodeService:
             ).all()
             
             # 停止所有容器
-            docker_url = f"tcp://{node.host}:{node.port}"
+            docker_url = node.docker_host or f"tcp://{node.host}:{node.port}"
             docker = DockerService(docker_host=docker_url)
             
             for container in containers:
@@ -475,10 +475,12 @@ class NodeService:
         """激活节点（必须先通过连接测试，避免"假在线"）"""
         node = self.db.query(Node).get(node_id)
         if not node:
-            return False
+            raise ValueError("节点不存在")
 
         result = self.test_connection(node_id)
-        connected = result.get("status") == "connected"
+        if result.get("status") != "connected":
+            msg = result.get("message") or result.get("error") or "节点连接测试失败"
+            raise ConnectionError(f"节点连接测试失败: {msg}")
 
         # 关联服务器的，激活后立即聚合服务器状态
         if node.server_id:
@@ -488,7 +490,7 @@ class NodeService:
             except Exception as e:
                 logger.warning(f"激活后聚合服务器状态失败: {e}")
 
-        return connected
+        return True
     
     def get_node(self, node_id: int) -> Optional[Node]:
         """获取节点详情"""

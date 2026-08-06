@@ -3,6 +3,7 @@ Docker Engine 服务层
 封装 Docker API 操作，提供容器生命周期管理
 """
 import os
+import socket
 import docker
 from docker.errors import DockerException, NotFound, APIError
 from typing import Dict, List, Optional, Any
@@ -84,22 +85,37 @@ _patch_docker_client()
 class DockerService:
     """Docker Engine 封装服务"""
 
-    def __init__(self, docker_host: Optional[str] = None):
+    def __init__(self, docker_host: Optional[str] = None, timeout: int = 5):
         """
         初始化 Docker 客户端
 
         Args:
             docker_host: Docker 守护进程地址，默认使用配置
+            timeout: 请求超时秒数（连接+读取），防止不可达节点长时间挂起
         """
         self.docker_host = docker_host or settings.DOCKER_HOST
+        self.timeout = timeout
         try:
             if self.docker_host.startswith('tcp://'):
                 # 远程 Docker 节点：直连 TCP（Docker API）
                 base_url = self.docker_host
+                # TCP 预检：不可达主机快速失败，避免 docker-py 重试把超时放大到 10s+
+                from urllib.parse import urlparse
+                parsed = urlparse(self.docker_host)
+                host, port = parsed.hostname, parsed.port or 2375
+                if host:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    # 预检只判断可达性，3s 足够；慢速但可达的 daemon 由后续请求超时兜底
+                    sock.settimeout(min(timeout, 3))
+                    try:
+                        if sock.connect_ex((host, port)) != 0:
+                            raise ConnectionError(f"Docker 节点不可达: {host}:{port}")
+                    finally:
+                        sock.close()
             else:
                 sock_path = _resolve_docker_socket(self.docker_host)
                 base_url = f'http+unix://{sock_path}'
-            self.client = docker.DockerClient(base_url=base_url)
+            self.client = docker.DockerClient(base_url=base_url, timeout=timeout)
             self.ping()
             logger.info(f"Connected to Docker via: {base_url}")
         except DockerException as e:

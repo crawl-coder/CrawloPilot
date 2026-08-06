@@ -11,6 +11,9 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import User, Node, NodeStatus
 from app.services.node_service import NodeService
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/nodes", tags=["节点管理"])
 
@@ -296,13 +299,16 @@ async def activate_node(
     """
     try:
         node_service = NodeService(db)
-        success = node_service.activate_node(node_id)
-        
-        if success:
-            return {"message": "节点激活成功"}
-        else:
-            raise HTTPException(status_code=404, detail="节点不存在")
+        node_service.activate_node(node_id)
+        return {"message": "节点激活成功"}
+    except ValueError as e:
+        # 节点不存在
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConnectionError as e:
+        # 节点存在但连接测试失败，返回真实原因
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"激活节点失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"激活节点失败: {str(e)}")
 
 
