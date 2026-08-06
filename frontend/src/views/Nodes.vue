@@ -17,6 +17,41 @@
         </div>
       </template>
 
+      <!-- 工具栏：搜索 / 状态筛选 / 统计 -->
+      <div class="node-toolbar">
+        <div class="node-filters">
+          <el-input
+            v-model="keyword"
+            placeholder="搜索名称/地址"
+            clearable
+            style="width: 220px"
+            @input="resetPage"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
+          <el-select
+            v-model="statusFilter"
+            placeholder="全部状态"
+            clearable
+            style="width: 140px"
+            @change="resetPage"
+          >
+            <el-option label="在线" value="online" />
+            <el-option label="离线" value="offline" />
+            <el-option label="维护中" value="maintenance" />
+            <el-option label="排空中" value="draining" />
+          </el-select>
+        </div>
+        <div class="node-summary">
+          <el-tag type="info" effect="plain">总数 {{ nodes.length }}</el-tag>
+          <el-tag type="success" effect="plain">在线 {{ onlineCount }}</el-tag>
+          <el-tag type="danger" effect="plain">离线 {{ offlineCount }}</el-tag>
+          <el-tag v-if="maintenanceCount > 0" type="warning" effect="plain">维护 {{ maintenanceCount }}</el-tag>
+        </div>
+      </div>
+
       <!-- 节点列表（按类型分组展示） -->
       <template v-for="group in nodeGroups" :key="group.type">
         <div class="node-group-header">
@@ -120,6 +155,20 @@
       </template>
 
       <el-empty v-if="nodes.length === 0" description="暂无节点" />
+      <el-empty v-else-if="total === 0" description="无匹配的节点" />
+
+      <!-- 分页（节点多时） -->
+      <el-pagination
+        v-if="total > pageSize"
+        v-model:current-page="page"
+        :page-size="pageSize"
+        :page-sizes="[12, 24, 48]"
+        :total="total"
+        layout="total, sizes, prev, pager, next"
+        style="margin-top: 12px; justify-content: flex-end"
+        @size-change="resetPage"
+        @current-change="scrollTop"
+      />
     </el-card>
 
     <!-- 添加节点对话框 -->
@@ -247,7 +296,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, ArrowDown, Monitor, Box, Cpu } from '@element-plus/icons-vue'
+import { Plus, Refresh, ArrowDown, Monitor, Box, Cpu, Search } from '@element-plus/icons-vue'
 import {
   createNode, 
   getNodes, 
@@ -271,7 +320,36 @@ const showEditDialog = ref(false)
 const showContainersDialog = ref(false)
 const currentNode = ref(null)
 
-// 按连接方式分组的节点列表
+// ============ 列表：搜索 / 筛选 / 分页 / 分组 ============
+
+const keyword = ref('')
+const statusFilter = ref('')
+const page = ref(1)
+const pageSize = ref(12)
+
+const onlineCount = computed(() => nodes.value.filter((n) => n.status === 'online').length)
+const offlineCount = computed(() => nodes.value.filter((n) => n.status === 'offline').length)
+const maintenanceCount = computed(
+  () => nodes.value.filter((n) => ['maintenance', 'draining'].includes(n.status)).length
+)
+
+const filteredNodes = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  return nodes.value.filter((n) => {
+    if (statusFilter.value && n.status !== statusFilter.value) return false
+    if (kw && !`${n.name} ${n.host} ${n.public_ip || ''} ${n.private_ip || ''}`.toLowerCase().includes(kw)) {
+      return false
+    }
+    return true
+  })
+})
+
+const total = computed(() => filteredNodes.value.length)
+const pagedNodes = computed(() =>
+  filteredNodes.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+)
+
+// 按连接方式分组的节点列表（当前页）
 const nodeGroups = computed(() => {
   const defs = [
     { type: 'ssh', label: 'SSH 节点', icon: Monitor },
@@ -279,9 +357,17 @@ const nodeGroups = computed(() => {
     { type: 'agent', label: 'Agent 节点', icon: Cpu },
   ]
   return defs
-    .map((d) => ({ ...d, nodes: nodes.value.filter((n) => n.connect_type === d.type) }))
+    .map((d) => ({ ...d, nodes: pagedNodes.value.filter((n) => n.connect_type === d.type) }))
     .filter((g) => g.nodes.length > 0)
 })
+
+const resetPage = () => {
+  page.value = 1
+}
+
+const scrollTop = () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
 
 const portLabel = computed(() => {
   if (nodeForm.connect_type === 'docker') return 'Docker 端口'
@@ -598,6 +684,29 @@ onMounted(() => {
 
 .node-group-row {
   margin-bottom: 4px;
+}
+
+.node-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.node-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.node-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .node-header {
