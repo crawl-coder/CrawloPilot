@@ -11,7 +11,7 @@
    - [项目管理](modules/02-projects.md)
    - [爬虫管理](modules/03-spiders.md)
    - [部署执行](modules/04-execution.md)
-   - [节点管理](modules/05-nodes.md)
+   - [节点管理（服务器 × 执行通道设计）](modules/05-nodes.md)
    - [任务管理与实时日志](modules/06-tasks.md)
    - [前端页面](modules/07-frontend.md)
    - [测试](modules/08-testing.md)

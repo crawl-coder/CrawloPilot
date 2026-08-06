@@ -1,81 +1,173 @@
-# 节点管理
+# 节点管理：真实服务器 × 执行通道
 
-## 职责
+> 本文是节点体系的设计文档，区分「现状」与「设计目标」。
+> 现状：平台只有"节点"一个实体，一个节点 = 一种连接方式。
+> 设计目标（本页描述）：引入「真实服务器」实体，一台服务器下管理 SSH / Docker / Agent 三种执行通道。
 
-节点是**执行目标**。运行爬虫时可指定节点，平台把代码送到节点上执行。
-支持三种接入方式（`connect_type`）：SSH 直连、Docker 直连、Agent 代理。
+## 1. 核心模型：服务器与通道的关系
 
-## 节点形态
+首先澄清一个常见误解：**Docker 节点、Agent 节点不是"来自 SSH 节点"**。
+SSH / Docker / Agent 是同一台真实服务器上**三种并列的执行通道**，
+物理上它们都跑在服务器上，但在平台模型里互相独立、不互相派生：
 
 ```text
-真实服务器 ── SSH 直连（控制端主动连接，需 SSH 凭据）
-          └─ Agent 代理（节点主动反向注册，无需凭据）
-
-Docker daemon（可能部署在真实服务器上）
-          └─ Docker 直连（tcp://host:port 或 docker_host 覆盖）
+真实服务器（很多台，物理/虚拟主机）
+├── 通道① SSH 直连    = 控制端主动 SSH 连接（需要 SSH 凭据）
+├── 通道② Docker 直连 = 该服务器 Docker daemon 的 API（tcp://host:port 或 socket）
+└── 通道③ Agent       = 该服务器上运行 agent 程序，反向注册（需要 token）
 ```
 
-一台真实服务器可以同时注册 SSH 节点和多个 Docker 节点（指向不同 daemon）。
+选择依据：
 
-## 数据模型（`node`）
+| 场景 | 推荐通道 |
+|------|----------|
+| 控制端能直连服务器、接受保存 SSH 凭据 | SSH |
+| 服务器上有 Docker，控制端能访问 daemon 端口 | Docker |
+| 服务器在内网/NAT 后、不想给控制端 SSH 凭据、要横向扩展 | Agent |
 
-关键字段：`name / host / port / connect_type / status / labels / resources /
-os_type / os_version / cpu_cores / memory_total / cpu_usage / memory_usage /
-agent_version / agent_status / agent_token / last_heartbeat`。
+一台服务器可以同时开通 1~3 种通道；只开 Docker 不需要 SSH 凭据，
+只开 Agent 连 SSH 都不需要——**每种通道是独立的接入方式**。
 
-状态机：`online / offline / draining / maintenance`。
+## 2. 数据模型（设计目标）
 
-## 生命周期
+```text
+server（真实服务器） 1 ──── N  node（执行通道）
+```
+
+### server 表（新增）
+
+| 字段 | 说明 |
+|------|------|
+| id / name / host | 名称 / IP 地址 |
+| os_type / os_version | 系统信息（探测获得） |
+| cpu_cores / memory_total / disk_total | 资源规格 |
+| region / labels / description | 机房/标签/备注（多服务器分类管理） |
+| status | 总状态：online = 至少一个通道在线 |
+| last_probed_at | 最近探测时间 |
+
+server **不存连接凭据**——凭据挂在通道上，权限边界清晰。
+
+### node 表（改造）
+
+| 字段 | 说明 |
+|------|------|
+| server_id（新增，可空） | 所属服务器；空 = 兼容存量独立节点 |
+| connect_type | 执行通道类型：ssh / docker / agent |
+| ssh_pwd / ssh_key | SSH 通道凭据 |
+| docker_host | Docker 通道地址（默认 `tcp://{server.host}:2375`，可覆盖为 socket） |
+| agent_token | Agent 通道注册令牌 |
+| status | 通道状态：online / offline |
+
+## 3. 生命周期与可用性保障
+
+### 服务器生命周期
+
+```text
+添加服务器（名称+IP） → 探测（SSH/Docker 端口可达性，等待 agent 注册）
+→ 总状态聚合 = 至少一个通道在线 → 维护/删除
+```
+
+### 通道生命周期
 
 ```text
 创建（offline）→ 测试连接（真实握手）→ 激活（必须先通过测试）
-→ 自动健康检查（每 60s 轻量探活，失败自动 offline）
-→ 排空/删除
+→ 自动健康检查（每 60s 轻量探活）→ 排空/删除
 ```
 
-## 后端实现
+### 测试连接（真实握手，非 TCP ping）
 
-### API（`backend/app/api/v1/nodes.py` + `backend/app/api/v1/agent.py`）
+| 通道 | 测试方式 |
+|------|----------|
+| SSH | paramiko 登录 + `python3 --version` 探测 + 采集系统信息 |
+| Docker | 连接 daemon 调 `get_info`（版本/CPU/内存/容器数） |
+| Agent | 心跳时间 < 90s |
 
-| 接口 | 说明 |
-|------|------|
-| `POST/GET/PUT/DELETE /nodes` | 节点 CRUD |
-| `POST /nodes/{id}/test` | 测试连接（按类型分发） |
-| `POST /nodes/health-check` | 手动全量健康检查 |
-| `POST /nodes/{id}/activate` | 激活（先测试，通过才置 online） |
-| `POST /nodes/{id}/drain` | 排空（停止容器） |
-| `GET /nodes/{id}/containers` | 容器列表（Docker 节点） |
-| `POST /nodes/agent/register` | Agent 注册（token → node_id） |
-| `POST /nodes/agent/heartbeat` | Agent 心跳 |
-| `GET /nodes/agent/tasks` | Agent 领取任务 |
-| `GET /nodes/agent/tasks/{id}/code` | 下载爬虫代码包 |
-| `POST /nodes/agent/tasks/{id}/logs` | Agent 实时上报日志 |
-| `POST /nodes/agent/tasks/{id}/report` | Agent 回报终态 |
-| `GET /nodes/agent/tasks/{id}/status` | 查询状态/停止标记 |
+### 如何保证"可以使用"
 
-### 连接测试（`services/node_service.py`）
+1. **通道级闭环**：创建 → 测试 → 激活，激活必须通过真实握手，杜绝"假在线"
+2. **自动健康检查**：后端后台循环每 60 秒轻量探活（SSH/Docker TCP ping，Agent 看心跳），
+   失败自动置 offline
+3. **服务器级聚合**：服务器总状态 = 任一通道在线，前端一眼看清集群健康度
+4. **执行前校验**：`run_spider` 指定节点时校验 `status == online`，离线直接拒绝并提示
 
-- SSH：paramiko 真实握手（登录 + `python3 --version` 探测 + 采集系统信息）
-- Docker：DockerService 连接 daemon 获取 info
-- Agent：看心跳时间（< 90s 视为在线）
+## 4. 用户操作流程
 
-### 自动健康检查
+### 步骤一：添加真实服务器
 
-后端启动后在 `main.py` lifespan 中运行后台循环，每 60 秒轻量探活：
-SSH/Docker 节点做 TCP ping，Agent 节点看心跳时间；失败自动置 offline。
+```text
+节点管理 → 服务器列表 → 「添加服务器」
+填：名称、IP（可选：机房/标签/备注）
+→ 平台立即探测可达性 → 服务器进入「待开通通道」状态
+```
 
-### Agent 令牌
+### 步骤二：在服务器下创建三种通道
 
-创建 `connect_type=agent` 节点时自动生成 `agent_token`（创建响应中仅显示一次，
-列表/详情不返回），节点上的 agent 程序用它注册。
+服务器详情页 → 「创建通道」→ 选择类型：
 
-## 前端实现
+**SSH 通道**
 
-- `frontend/src/views/Nodes.vue`：节点卡片网格（类型/状态/资源进度条/心跳）、
-  测试/编辑/激活/排空/删除/容器列表；创建 Agent 节点后弹窗展示注册令牌
-- 爬虫详情运行对话框可选择节点（SSH/Docker/Agent）
+```text
+填 SSH 用户 + 密码/私钥 → 测试握手（登录 + python3 探测）
+→ 通过后激活 → 可执行
+```
 
-## 安全说明
+**Docker 通道**
 
-- SSH 凭据（`ssh_pwd/ssh_key`）当前明文存储在数据库，V2 建议 Fernet 加密
-- Agent 接口用 `node_id + token` 认证，不依赖用户 JWT
+```text
+填 daemon 地址（默认 tcp://IP:2375，本机可填 socket 路径）
+→ 测试 Docker API → 激活 → 可执行
+```
+
+**Agent 通道**
+
+```text
+平台生成 token → 在服务器上执行一条命令部署 agent：
+    python crawlo_agent.py --server http://<控制端>:8000 --token <token>
+→ agent 注册 → 自动上线 → 可执行
+```
+
+### 步骤三：使用
+
+```text
+爬虫详情 → 运行对话框 → 选择服务器上的某个在线通道 → 运行
+```
+
+## 5. 前端页面设计
+
+```text
+节点管理
+├── Tab: 服务器（默认）│ SSH 通道 │ Docker 通道 │ Agent 通道
+└── 服务器列表（卡片/表格 + 搜索 + 状态筛选 + 分页）
+    └── 服务器详情页
+        ├── 服务器信息（系统/资源/总状态）
+        ├── 通道列表（按 SSH/Docker/Agent 分组，各自状态/操作）
+        └── 「创建通道」按钮 → 类型选择对话框
+```
+
+通道 Tab 直接展示"所有服务器上的某类通道"，便于按类型巡检；
+服务器详情页按服务器维度管理。
+
+## 6. 迁移与兼容
+
+- `node.server_id` 可空：存量节点不强制关联服务器
+- 可选迁移：为存量节点自动创建对应 server 并回填 server_id
+- 接口兼容：`/nodes` 保留；新增 `/servers`、`/servers/{id}/nodes`、
+  `/servers/{id}/probe`
+
+## 7. 待确认决策
+
+- 服务器总状态聚合规则：任一通道在线即在线（推荐） vs 全部在线
+- 一台服务器多个 Docker daemon：用端口区分多个 Docker 通道（已支持）
+- SSH 凭据加密存储（V2）
+- 服务器批量导入（IP 段/配置文件）
+
+## 8. 现状对照
+
+| 能力 | 现状 | 设计目标 |
+|------|------|----------|
+| 服务器实体 | 无，只有 node | server 表 + 服务器详情页 |
+| 三种通道 | 已实现（ssh/docker/agent 分发） | 保持 |
+| 通道测试/激活 | 已实现（真实握手 + 激活校验） | 保持 |
+| 自动健康检查 | 已实现（60s 轻量探活） | 保持 |
+| 按服务器管理 | 无 | 新增 |
+| Agent 通道 | 已实现（token 注册/心跳/任务领取） | 保持 |
