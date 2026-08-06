@@ -2,7 +2,10 @@
   <div class="login-container">
     <el-card class="login-card">
       <template #header>
-        <h2>CrawloPilot 登录</h2>
+        <div class="login-header">
+          <img src="@/assets/crawlopilot-logo.png" class="login-logo" alt="CrawloPilot" />
+          <h2>CrawloPilot 登录</h2>
+        </div>
       </template>
       
       <el-form :model="loginForm" :rules="rules" ref="loginFormRef" @submit.prevent="handleLogin">
@@ -171,6 +174,19 @@ const handleRegister = async () => {
 
 .login-card {
   width: 400px;
+}
+
+.login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.login-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
 }
 
 .login-card :deep(.el-card__header) {

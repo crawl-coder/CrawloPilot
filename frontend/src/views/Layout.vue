@@ -1,7 +1,10 @@
 <template>
   <el-container class="layout-container">
     <el-aside width="200px">
-      <div class="logo">CrawloPilot</div>
+      <div class="logo">
+        <img src="@/assets/crawlopilot-logo.png" class="logo-img" alt="CrawloPilot" />
+        <span class="logo-text">CrawloPilot</span>
+      </div>
       <el-menu
         :default-active="$route.path"
         router
@@ -118,13 +121,26 @@ const handleCommand = (command) => {
 }
 
 .logo {
-  height: 60px;
-  line-height: 60px;
-  text-align: center;
-  font-size: 20px;
-  font-weight: bold;
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   color: #fff;
   background-color: #2b3a4a;
+}
+
+.logo-img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.logo-text {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
 .el-header {
