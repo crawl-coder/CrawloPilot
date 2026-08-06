@@ -121,26 +121,30 @@ const handleCommand = (command) => {
 }
 
 .logo {
-  height: 72px;
+  height: 60px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 8px;
   color: #fff;
   background-color: #2b3a4a;
 }
 
 .logo-img {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+  padding: 2px;
   object-fit: contain;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .logo-text {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .el-header {
