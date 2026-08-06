@@ -58,6 +58,11 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 
 - crawlo 已升级至 1.7.2（本地环境 + Docker 基础镜像均使用，基础镜像构建优先用本地 wheel）
 - Agent 程序：`agent/crawlo_agent.py`，纯标准库，反向连接控制端
+- 本地 MySQL 已启用（Homebrew mysql@8.0）：root 密码 `root123`；
+  应用库 `crawlo_pilot`，用户 `crawlopilot / crawlopilot123`，`127.0.0.1:3306`
+- 迁移链注意：早期裁剪移除的表（api_call_log/proxy_* 等）仍被旧迁移引用，
+  **全新库不要直接 `alembic upgrade head`**，用 `Base.metadata.create_all` +
+  `alembic stamp head` 建库（本地库已按此处理）
 - 远程 MySQL/Redis（117.72.16.51）网络延迟约 0.5~1s/请求；本地部署建议使用 Docker 版 MySQL/Redis
 - Docker 守护进程未运行，容器模式暂未在本机验证
 - `tests/run_all_tests.py` 中残留数据库明文凭据，生产环境需移除或改用环境变量
