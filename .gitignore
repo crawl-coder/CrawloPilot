@@ -56,5 +56,7 @@ redis-data/
 prometheus-data/
 grafana-data/
 backend/uploads/*
+# 运行时数据（代码/日志），生产建议配置 UPLOAD_DIR 到独立目录
+uploads/
 tests/reports/*
 backend/note.txt
