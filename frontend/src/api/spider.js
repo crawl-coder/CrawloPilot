@@ -44,6 +44,13 @@ export function cloneSpiderGit(spiderId) {
   return request.post(`/spiders/${spiderId}/git/clone`)
 }
 
+// 上传爬虫代码包（ZIP/TAR）
+export function uploadSpiderCode(spiderId, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post(`/spiders/${spiderId}/upload`, formData)
+}
+
 // 获取爬虫文件树
 export function getSpiderFileTree(spiderId, path = '') {
   return request.get(`/spiders/${spiderId}/files/tree`, {

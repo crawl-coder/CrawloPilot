@@ -546,7 +546,7 @@ import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, UploadFilled, Grid, List, VideoPlay, Document, More, CircleCheck, CircleClose, Loading } from '@element-plus/icons-vue'
-import { getSpiders, createSpider, updateSpider, deleteSpider, runSpider, cloneSpiderGit } from '@/api/spider'
+import { getSpiders, createSpider, updateSpider, deleteSpider, runSpider, cloneSpiderGit, uploadSpiderCode } from '@/api/spider'
 import { getProjects } from '@/api/project'
 import { getNodes } from '@/api/node'
 import { getSpiderStatusType as getStatusType, getSpiderStatusText as getStatusText, getSpiderTypeColor, formatDateTime as formatDate, formatRelativeTime, formatDuration as formatTime } from '@/utils/common'
@@ -862,7 +862,12 @@ const handleSubmit = async () => {
         }
       } else if (spiderForm.code_source === 'upload' && uploadFile.value) {
         ElMessage.success('爬虫创建成功，开始上传代码...')
-        // TODO: 调用文件上传 API
+        try {
+          await uploadSpiderCode(newSpider.id, uploadFile.value)
+          ElMessage.success('代码上传成功')
+        } catch (error) {
+          ElMessage.error(error.response?.data?.detail || '代码上传失败')
+        }
       } else {
         ElMessage.success('爬虫创建成功')
       }

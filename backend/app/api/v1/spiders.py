@@ -1,7 +1,7 @@
 """
 爬虫管理 API 路由
 """
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
@@ -772,3 +772,110 @@ async def clone_spider_git_repo(
                 os.unlink(key_path)
             except OSError:
                 pass
+
+
+@router.post("/{spider_id}/upload")
+async def upload_spider_code(
+    spider_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    上传爬虫代码包（ZIP/TAR），解压到 uploads/project_{id}/spider_{id}/
+
+    - 兼容 ZIP / TAR / TAR.GZ / TAR.BZ2
+    - 解压后若根目录只有一个文件夹（常见 ZIP 外层目录），自动拍平一层
+    """
+    import tempfile, shutil, zipfile, tarfile
+    from app.services.file_service import FileService
+
+    spider = db.query(Spider).filter(Spider.id == spider_id).first()
+    if not spider:
+        raise HTTPException(status_code=404, detail="爬虫不存在")
+
+    filename = file.filename or ""
+    ext = os.path.splitext(filename)[1].lower()
+    allowed_ext = {".zip", ".tar", ".gz", ".bz2"}
+    if ext not in allowed_ext:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型: {ext}，支持: {sorted(allowed_ext)}",
+        )
+
+    upload_service = UploadService()
+    spider_code_dir = os.path.join(
+        upload_service.upload_base_dir,
+        f"project_{spider.project_id}",
+        f"spider_{spider.id}",
+    )
+    # 目录非空时不覆盖，避免误删已有代码
+    if os.path.isdir(spider_code_dir) and any(os.scandir(spider_code_dir)):
+        raise HTTPException(status_code=400, detail="爬虫代码目录非空，请先清空代码目录或删除爬虫后重试")
+
+    tmp_dir = tempfile.mkdtemp(prefix="crawlo_upload_")
+    try:
+        content = await file.read()
+        if len(content) > 100 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="文件大小不能超过 100MB")
+        if not content:
+            raise HTTPException(status_code=400, detail="上传文件为空")
+
+        archive_path = os.path.join(tmp_dir, "code" + ext)
+        with open(archive_path, "wb") as f:
+            f.write(content)
+
+        extract_dir = os.path.join(tmp_dir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+        if ext == ".zip":
+            with zipfile.ZipFile(archive_path) as zf:
+                for member in zf.infolist():
+                    # 防 zip-slip：拒绝解压到目标目录之外的路径
+                    target = os.path.normpath(os.path.join(extract_dir, member.filename))
+                    if not target.startswith(os.path.normpath(extract_dir) + os.sep):
+                        raise ValueError(f"非法的压缩包路径: {member.filename}")
+                zf.extractall(extract_dir)
+        else:
+            with tarfile.open(archive_path, "r:*") as tf:
+                for member in tf.getmembers():
+                    target = os.path.normpath(os.path.join(extract_dir, member.name))
+                    if not target.startswith(os.path.normpath(extract_dir) + os.sep):
+                        raise ValueError(f"非法的压缩包路径: {member.name}")
+                tf.extractall(extract_dir)
+
+        # 去掉 macOS 元数据
+        macosx_dir = os.path.join(extract_dir, "__MACOSX")
+        if os.path.isdir(macosx_dir):
+            shutil.rmtree(macosx_dir, ignore_errors=True)
+
+        # 解压后只有一个顶层文件夹时拍平一层（ZIP 常见结构）
+        entries = [e for e in os.listdir(extract_dir) if e != ".DS_Store"]
+        if len(entries) == 1 and os.path.isdir(os.path.join(extract_dir, entries[0])):
+            inner = os.path.join(extract_dir, entries[0])
+            extract_dir = inner
+
+        os.makedirs(spider_code_dir, exist_ok=True)
+        for item in os.listdir(extract_dir):
+            src = os.path.join(extract_dir, item)
+            dst = os.path.join(spider_code_dir, item)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dst)
+
+        file_service = FileService(spider_code_dir)
+        tree = file_service.get_file_tree("", max_depth=3)
+        return {
+            "message": "代码上传成功",
+            "code_dir": spider_code_dir,
+            "files": tree,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        # 压缩包内容非法（如 zip-slip 路径穿越）
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"代码上传失败: {e}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
