@@ -35,7 +35,8 @@ docs/
 │   ├── 07-frontend.md
 │   └── 08-testing.md
 ├── designs/                # 专项设计文档
-│   └── server-management.md  # Server 实体管理设计（含 API/前端/迁移）
+│   ├── server-management.md  # Server 实体管理设计（含 API/前端/迁移）
+│   └── scheduling.md         # 定时任务配置功能设计
 └── legacy/                 # 早期阶段历史文档（部分功能已裁剪）
 ```
 
