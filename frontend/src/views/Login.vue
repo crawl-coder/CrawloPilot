@@ -174,10 +174,54 @@ const handleRegister = async () => {
   align-items: center;
   min-height: 100vh;
   background: var(--cp-login-gradient);
+  position: relative;
+  overflow: hidden;
+}
+
+/* 背景装饰光斑 */
+.login-container::before,
+.login-container::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+}
+.login-container::before {
+  width: 420px;
+  height: 420px;
+  background: #6ea8ff;
+  top: -120px;
+  right: -80px;
+}
+.login-container::after {
+  width: 360px;
+  height: 360px;
+  background: #3b7cff;
+  bottom: -100px;
+  left: -60px;
 }
 
 .login-card {
   width: 400px;
+  position: relative;
+  z-index: 1;
+  border: none;
+  border-radius: var(--cp-radius-lg);
+  box-shadow: var(--cp-shadow-3);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  animation: cp-fade-up 0.5s var(--cp-ease-out) both;
+}
+
+.login-card :deep(.el-card__header) {
+  text-align: center;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.login-card :deep(.el-card__body) {
+  padding-top: 8px;
 }
 
 .login-header {
@@ -187,13 +231,16 @@ const handleRegister = async () => {
   gap: 10px;
 }
 
+.login-header h2 {
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--cp-text-primary);
+}
+
 .login-logo {
   width: 72px;
   height: 72px;
   object-fit: contain;
-}
-
-.login-card :deep(.el-card__header) {
-  text-align: center;
+  filter: drop-shadow(0 4px 12px rgba(47, 102, 224, 0.25));
 }
 </style>

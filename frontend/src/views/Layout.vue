@@ -1,6 +1,6 @@
 <template>
   <el-container class="layout-container">
-    <el-aside width="200px">
+    <el-aside :width="'var(--cp-sidebar-width)'">
       <div class="logo">
         <img src="@/assets/crawlopilot-logo.png" class="logo-img" alt="CrawloPilot" />
         <span class="logo-text">CrawloPilot</span>
@@ -58,6 +58,12 @@
             <el-breadcrumb-item>{{ $route.name }}</el-breadcrumb-item>
           </el-breadcrumb>
           <div class="user-info">
+            <el-tooltip :content="themeStore.isDark ? '切换到浅色模式' : '切换到暗色模式'" placement="bottom">
+              <el-icon class="theme-toggle" @click="themeStore.toggle()">
+                <Sunny v-if="themeStore.isDark" />
+                <Moon v-else />
+              </el-icon>
+            </el-tooltip>
             <el-dropdown @command="handleCommand">
               <span class="user-name">
                 {{ username }}
@@ -75,7 +81,11 @@
       </el-header>
       
       <el-main>
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <transition name="cp-page" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
       </el-main>
     </el-container>
   </el-container>
@@ -85,11 +95,13 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Odometer, Files, User, ArrowDown, Monitor, List, Aim, Setting } from '@element-plus/icons-vue'
+import { Odometer, Files, User, ArrowDown, Monitor, List, Aim, Setting, Moon, Sunny } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { useThemeStore } from '@/stores/theme'
 
 const router = useRouter()
 const userStore = useUserStore()
+const themeStore = useThemeStore()
 
 const currentUser = computed(() => userStore.user)
 const username = computed(() => userStore.username || '用户')
@@ -168,6 +180,20 @@ const handleCommand = (command) => {
 .user-info {
   display: flex;
   align-items: center;
+  gap: var(--cp-space-md);
+}
+
+.theme-toggle {
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--cp-text-regular);
+  transition: color var(--cp-motion-fast) var(--cp-ease-out),
+              transform var(--cp-motion-base) var(--cp-ease-out);
+}
+
+.theme-toggle:hover {
+  color: var(--cp-primary);
+  transform: rotate(15deg);
 }
 
 .user-name {
@@ -175,8 +201,13 @@ const handleCommand = (command) => {
   color: var(--cp-text-regular);
 }
 
+.el-header {
+  transition: background-color var(--cp-motion-base) var(--cp-ease-out);
+}
+
 .el-main {
   background-color: var(--cp-page-bg);
-  padding: 20px;
+  padding: var(--cp-space-lg);
+  transition: background-color var(--cp-motion-base) var(--cp-ease-out);
 }
 </style>

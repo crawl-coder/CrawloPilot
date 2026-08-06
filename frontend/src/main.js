@@ -2,11 +2,13 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import 'element-plus/theme-chalk/dark/css-vars.css'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { ElMessage } from 'element-plus'
 import App from './App.vue'
 import router from './router'
 import './styles/tokens.css'
+import './styles/global.css'
 
 const app = createApp(App)
 

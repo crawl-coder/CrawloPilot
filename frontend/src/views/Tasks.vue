@@ -449,14 +449,14 @@ onUnmounted(() => {
 .log-container {
   max-height: 500px;
   overflow-y: auto;
-  background: #1e1e1e;
-  padding: 15px;
-  border-radius: 4px;
+  background: var(--cp-terminal-bg);
+  padding: var(--cp-space-md);
+  border-radius: var(--cp-radius-sm);
 }
 
 .log-content {
-  color: #d4d4d4;
-  font-family: 'Courier New', monospace;
+  color: var(--cp-terminal-text);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
   margin: 0;

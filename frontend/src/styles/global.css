@@ -1,0 +1,161 @@
+/**
+ * CrawloPilot 全局样式基座
+ * 字体、滚动条、Element Plus 主题覆写、页面过渡、通用动效
+ */
+
+/* ==================== 基础 ==================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+#app {
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Helvetica, "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--cp-text-primary);
+  min-height: 100vh;
+  background: var(--cp-page-bg);
+  transition: background var(--cp-motion-base) var(--cp-ease-out);
+}
+
+/* 统计数字等宽，避免抖动 */
+.el-statistic__content,
+.stat-value,
+.el-descriptions__label {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: rgba(59, 124, 255, 0.25);
+}
+
+/* ==================== Element Plus 主题覆写 ==================== */
+:root {
+  --el-color-primary: var(--cp-primary);
+  --el-color-primary-light-3: var(--cp-primary-light);
+  --el-color-primary-light-5: #9dbfff;
+  --el-color-primary-light-7: #c3d6ff;
+  --el-color-primary-light-8: #d9e5ff;
+  --el-color-primary-light-9: #eef4ff;
+  --el-color-primary-dark-2: var(--cp-primary-dark);
+  --el-border-radius-base: var(--cp-radius-sm);
+  --el-border-radius-small: 4px;
+  --el-card-border-radius: var(--cp-radius-md);
+}
+
+/* 卡片统一质感 */
+.el-card {
+  border: 1px solid var(--cp-border-light);
+  box-shadow: var(--cp-shadow-1);
+  transition: box-shadow var(--cp-motion-base) var(--cp-ease-out),
+              transform var(--cp-motion-base) var(--cp-ease-out);
+}
+.el-card.is-hover-shadow:hover {
+  box-shadow: var(--cp-shadow-2);
+}
+
+/* 按钮微动效 */
+.el-button {
+  transition: all var(--cp-motion-fast) var(--cp-ease-out);
+}
+.el-button:active {
+  transform: scale(0.97);
+}
+
+/* 表格行悬浮 */
+.el-table .el-table__row {
+  transition: background var(--cp-motion-fast) ease;
+}
+
+/* 弹窗入场更顺滑 */
+.el-dialog {
+  border-radius: var(--cp-radius-lg);
+}
+
+/* 标签更精致 */
+.el-tag {
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+/* 暗色模式下保持品牌主色（覆盖 element-plus dark 默认蓝） */
+html.dark {
+  --el-color-primary: var(--cp-primary);
+  --el-color-primary-light-3: #2a5bc0;
+  --el-color-primary-light-5: #1f448f;
+  --el-color-primary-light-7: #163059;
+  --el-color-primary-light-8: #122743;
+  --el-color-primary-light-9: #101d2c;
+  --el-color-primary-dark-2: #6ea8ff;
+}
+
+/* ==================== 滚动条 ==================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.55);
+}
+
+/* 深色终端滚动条 */
+.log-container::-webkit-scrollbar-thumb {
+  background: rgba(201, 209, 217, 0.25);
+}
+.log-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 209, 217, 0.45);
+}
+
+/* ==================== 页面切换过渡 ==================== */
+.cp-page-enter-active {
+  transition: opacity var(--cp-motion-base) var(--cp-ease-out),
+              transform var(--cp-motion-base) var(--cp-ease-out);
+}
+.cp-page-leave-active {
+  transition: opacity var(--cp-motion-fast) ease;
+}
+.cp-page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.cp-page-leave-to {
+  opacity: 0;
+}
+
+/* ==================== 入场动画工具类 ==================== */
+@keyframes cp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.cp-animate-in {
+  animation: cp-fade-up var(--cp-motion-slow) var(--cp-ease-out) both;
+}
+/* 错峰入场 */
+.cp-animate-in:nth-child(2) { animation-delay: 0.05s; }
+.cp-animate-in:nth-child(3) { animation-delay: 0.1s; }
+.cp-animate-in:nth-child(4) { animation-delay: 0.15s; }
+
+/* ==================== 通用工具类 ==================== */
+.cp-card-hover {
+  transition: transform var(--cp-motion-base) var(--cp-ease-out),
+              box-shadow var(--cp-motion-base) var(--cp-ease-out);
+}
+.cp-card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--cp-shadow-2);
+}

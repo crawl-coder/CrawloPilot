@@ -1,82 +1,43 @@
 <template>
   <div class="dashboard-container">
-    <h2>仪表盘</h2>
-    <el-row :gutter="20" style="margin-top: 20px">
+    <div class="page-header">
+      <h2>仪表盘</h2>
+      <span class="page-subtitle">系统运行总览</span>
+    </div>
+
+    <el-row :gutter="16" class="stats-row">
       <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="项目总数" :value="stats.projects">
-            <template #suffix>
-              <el-icon><Files /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
+        <StatCard label="项目总数" :value="stats.projects" :icon="Files" color="var(--cp-chart-1)" />
       </el-col>
-      
       <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="爬虫总数" :value="stats.spiders">
-            <template #suffix>
-              <el-icon><Aim /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
+        <StatCard label="爬虫总数" :value="stats.spiders" :icon="Aim" color="#7c5cff" />
       </el-col>
-      
       <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="运行中任务" :value="stats.runningTasks">
-            <template #suffix>
-              <el-icon><VideoPlay /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
+        <StatCard label="运行中任务" :value="stats.runningTasks" :icon="VideoPlay" color="var(--cp-warning)" />
       </el-col>
-      
       <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="今日任务" :value="stats.todayTasks">
-            <template #suffix>
-              <el-icon><Document /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
+        <StatCard label="今日任务" :value="stats.todayTasks" :icon="Document" color="var(--cp-chart-5)" />
       </el-col>
     </el-row>
-    
-    <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="成功率" :value="stats.successRate" suffix="%">
-            <template #prefix>
-              <el-icon><SuccessFilled /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
-      </el-col>
 
+    <el-row :gutter="16" class="stats-row">
       <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="在线节点" :value="stats.onlineNodes">
-            <template #suffix>
-              <el-icon><Monitor /></el-icon>
-            </template>
-          </el-statistic>
-        </el-card>
+        <StatCard label="成功率" :value="stats.successRate" suffix="%" :icon="SuccessFilled" color="var(--cp-success)" />
       </el-col>
-
       <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <el-statistic title="节点总数" :value="stats.totalNodes" />
-        </el-card>
+        <StatCard label="在线节点" :value="stats.onlineNodes" :icon="Monitor" color="var(--cp-chart-2)" />
+      </el-col>
+      <el-col :span="6">
+        <StatCard label="节点总数" :value="stats.totalNodes" :icon="Connection" color="var(--cp-info)" />
       </el-col>
     </el-row>
-    
-    <el-card style="margin-top: 20px">
+
+    <el-card class="welcome-card cp-animate-in" shadow="never">
       <template #header>
         <h3>欢迎使用 CrawloPilot</h3>
       </template>
       <p>CrawloPilot 是 Crawlo 爬虫框架的配套管理部署平台。</p>
-      <p>当前版本：v1.0.0</p>
+      <p class="version-text">当前版本：v1.0.0</p>
       <el-divider />
       <h4>快速开始</h4>
       <el-steps :space="200" direction="vertical">
@@ -91,10 +52,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Files, Aim, VideoPlay, Document, SuccessFilled, Monitor } from '@element-plus/icons-vue'
+import { Files, Aim, VideoPlay, Document, SuccessFilled, Monitor, Connection } from '@element-plus/icons-vue'
 import { getDashboardData } from '@/api/monitoring'
 import { getSpiders } from '@/api/spider'
 import { getNodes } from '@/api/node'
+import StatCard from '@/components/StatCard.vue'
 
 const stats = ref({
   projects: 0,
@@ -140,10 +102,41 @@ onMounted(async () => {
 
 <style scoped>
 .dashboard-container {
-  padding: 20px;
+  padding: 0;
 }
 
-.stat-card {
-  text-align: center;
+.page-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cp-space-sm);
+  margin-bottom: var(--cp-space-lg);
+}
+
+.page-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--cp-text-primary);
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--cp-text-secondary);
+}
+
+.stats-row {
+  margin-bottom: var(--cp-space-md);
+}
+
+.welcome-card {
+  margin-top: var(--cp-space-md);
+}
+
+.welcome-card h3 {
+  font-weight: 600;
+}
+
+.version-text {
+  color: var(--cp-text-secondary);
+  font-size: 13px;
 }
 </style>

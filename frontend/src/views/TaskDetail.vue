@@ -326,14 +326,14 @@ onUnmounted(() => {
 .log-container {
   height: 420px;
   overflow-y: auto;
-  background: #0d1117;
-  border-radius: 6px;
-  padding: 12px;
+  background: var(--cp-terminal-bg);
+  border-radius: var(--cp-radius-sm);
+  padding: var(--cp-space-sm);
 }
 
 .log-content {
   margin: 0;
-  color: #c9d1d9;
+  color: var(--cp-terminal-text);
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.6;
