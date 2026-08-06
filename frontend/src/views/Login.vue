@@ -55,7 +55,8 @@
     
     <!-- 注册对话框 -->
     <el-dialog v-model="showRegister" title="注册" width="500px">
-      <el-form :model="registerForm" :rules="registerRules" ref="registerFormRef">
+      <el-form :model="registerForm" :rules="registerRules" ref="registerFormRef"
+               label-position="left" label-width="80px">
         <el-form-item prop="username" label="用户名">
           <el-input v-model="registerForm.username" />
         </el-form-item>
