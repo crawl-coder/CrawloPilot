@@ -122,7 +122,7 @@ class SshConnection:
             logger.info(f"SSH 连接已建立: {self.user}@{self.host}:{self.port}")
             return self._client
 
-    def exec_command(self, command: str, timeout: int = 30) -> tuple:
+    def exec_command(self, command: str, timeout: int = 30, get_pty: bool = True) -> tuple:
         """
         执行远程命令
         
@@ -130,7 +130,7 @@ class SshConnection:
             (stdout, stderr, exit_code)
         """
         client = self.connect()
-        stdin, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=True)
+        stdin, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=get_pty)
         exit_code = stdout.channel.recv_exit_status()
         out = stdout.read().decode('utf-8', errors='replace').strip()
         err = stderr.read().decode('utf-8', errors='replace').strip()
@@ -318,6 +318,7 @@ class SshSpiderProcess:
 
             # 4. 安装依赖
             self._install_dependencies()
+            self._ensure_crawlo()
 
             # 5. 构建启动命令
             start_cmd = self._build_start_command(config)
@@ -326,9 +327,10 @@ class SshSpiderProcess:
             # 使用 setsid 确保进程独立于 SSH 会话
             run_cmd = (
                 f"cd {self.workspace} && "
-                f"nohup {start_cmd} > task.log 2>&1 & echo $!"
+                f"setsid nohup bash -c '{start_cmd} > task.log 2>&1; echo $? > exit.code' "
+                f"</dev/null >/dev/null 2>&1 & echo $!"
             )
-            out, err, code = self.ssh.exec_command(run_cmd, timeout=10)
+            out, err, code = self.ssh.exec_command(run_cmd, timeout=10, get_pty=False)
             # 检查输出是否为有效的 PID
             out = out.strip()
             if out and out.isdigit():
@@ -379,6 +381,43 @@ class SshSpiderProcess:
 
         # 最后尝试 crawlo (可能已通过 pip 安装但不在 PATH)
         return f"cd {self.workspace} && {self._python_path} -m crawlo.crawler run {spider_name_to_run or config.spider_name}"
+
+    def _ensure_crawlo(self):
+        """确保远程环境可导入 crawlo（缺失则自动 pip 安装）"""
+        out, _, code = self.ssh.exec_command(
+            f"{self._python_path} -c 'import crawlo' 2>/dev/null && echo ok || echo no"
+        )
+        if code == 0 and out.strip() == 'ok':
+            return
+
+        logger.info(f"[{self.task_id}] 远程缺少 crawlo，自动安装中...")
+        # 部分最小化系统没有 pip，先用 ensurepip 补
+        pip_out, pip_err, pip_code = self.ssh.exec_command(
+            f"{self._python_path} -m pip --version"
+        )
+        if pip_code != 0:
+            logger.info(f"[{self.task_id}] 远程缺少 pip，执行 ensurepip...")
+            self.ssh.exec_command(f"{self._python_path} -m ensurepip --upgrade", timeout=120)
+            pip_out, _, pip_code2 = self.ssh.exec_command(
+                f"{self._python_path} -m pip --version"
+            )
+            if pip_code2 != 0:
+                # 精简系统（无 ensurepip）用系统包管理器补 pip
+                logger.info(f"[{self.task_id}] ensurepip 不可用，尝试 apt 安装 python3-pip...")
+                self.ssh.exec_command(
+                    "apt-get update -qq && apt-get install -y -qq python3-pip",
+                    timeout=600,
+                )
+
+        out, err, code = self.ssh.exec_command(
+            f"{self._python_path} -m pip install --quiet crawlo aiomysql "
+            f"-i {os.environ.get('PIP_INDEX_URL', 'https://pypi.tuna.tsinghua.edu.cn/simple')}",
+            timeout=600,
+        )
+        if code != 0:
+            logger.warning(f"[{self.task_id}] crawlo 自动安装失败: {(err or out)[:200]}")
+        else:
+            logger.info(f"[{self.task_id}] crawlo 安装完成")
 
     def stop(self, timeout: int = 10) -> bool:
         """停止远程爬虫进程"""
@@ -482,6 +521,11 @@ class SshSpiderProcess:
                 re.IGNORECASE
             )
             alt_pattern = re.compile(r'(\d+)\s+pages?.*?(\d+)\s+items?', re.IGNORECASE)
+            # crawlo 1.7.x 统计 key 带 crawlo: 前缀（兼容旧格式）
+            crawlo_items_pattern = re.compile(r"['\"]crawlo:item_successful_count['\"]\s*:\s*(\d+)")
+            crawlo_items_legacy = re.compile(r"['\"]item_successful_count['\"]\s*:\s*(\d+)")
+            crawlo_pages_pattern = re.compile(r"['\"]crawlo:response_received_count['\"]\s*:\s*(\d+)")
+            crawlo_pages_legacy = re.compile(r"['\"]response_received_count['\"]\s*:\s*(\d+)")
             error_pattern = re.compile(r'\[(?:ERROR|WARNING)\]', re.IGNORECASE)
 
             matches = list(crawled_pattern.finditer(log_content))
@@ -495,6 +539,19 @@ class SshSpiderProcess:
                     last_match = alt_matches[-1]
                     self.pages_crawled = int(last_match.group(1))
                     self.items_scraped = int(last_match.group(2))
+
+            if not self.items_scraped:
+                m = crawlo_items_pattern.search(log_content)
+                if not m:
+                    m = crawlo_items_legacy.search(log_content)
+                if m:
+                    self.items_scraped = int(m.group(1))
+            if not self.pages_crawled:
+                m = crawlo_pages_pattern.search(log_content)
+                if not m:
+                    m = crawlo_pages_legacy.search(log_content)
+                if m:
+                    self.pages_crawled = int(m.group(1))
 
             self.errors_count = len(error_pattern.findall(log_content))
 
@@ -622,14 +679,25 @@ class SshExecutor:
             # 进程结束后的处理
             if process.status not in [TaskStatus.TIMEOUT, TaskStatus.CANCELLED]:
                 process.finished_at = datetime.utcnow()
-                # 检查日志判断成功/失败
-                log_tail, _, _ = process.ssh.exec_command(
-                    f"tail -10 {process.workspace}/task.log 2>/dev/null || echo ''"
+                # 优先读取退出码判断成功/失败
+                exit_code_out, _, _ = process.ssh.exec_command(
+                    f"cat {process.workspace}/exit.code 2>/dev/null || echo ''"
                 )
-                if 'Traceback' in log_tail or 'Error' in log_tail:
-                    process.status = TaskStatus.FAILED
+                exit_code = exit_code_out.strip()
+                if exit_code.isdigit():
+                    process.status = (
+                        TaskStatus.SUCCESS if int(exit_code) == 0 else TaskStatus.FAILED
+                    )
                 else:
-                    process.status = TaskStatus.SUCCESS
+                    # 兜底：按日志关键字判断
+                    log_tail, _, _ = process.ssh.exec_command(
+                        f"tail -10 {process.workspace}/task.log 2>/dev/null || echo ''"
+                    )
+                    process.status = (
+                        TaskStatus.FAILED
+                        if ('Traceback' in log_tail or 'Error' in log_tail)
+                        else TaskStatus.SUCCESS
+                    )
 
             # 解析指标
             process.parse_metrics_from_logs()

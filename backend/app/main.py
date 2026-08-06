@@ -17,9 +17,11 @@ async def _node_health_monitor_loop():
         try:
             from app.core.database import SessionLocal
             from app.services.node_service import NodeService
+            from app.services.server_service import ServerService
             db = SessionLocal()
             try:
                 NodeService(db).check_all_nodes_health_light()
+                ServerService(db).aggregate_all_servers()
             finally:
                 db.close()
         except Exception as e:
@@ -129,10 +131,11 @@ from app.api.v1 import spiders
 app.include_router(spiders.router, prefix=settings.API_PREFIX)
 
 # 部署与节点
-from app.api.v1 import deploy, nodes, agent
+from app.api.v1 import deploy, nodes, agent, servers
 app.include_router(deploy.router, prefix=settings.API_PREFIX)
 app.include_router(nodes.router, prefix=settings.API_PREFIX)
 app.include_router(agent.router, prefix=settings.API_PREFIX)
+app.include_router(servers.router, prefix=settings.API_PREFIX)
 
 # 任务
 from app.api.v1 import tasks, execution

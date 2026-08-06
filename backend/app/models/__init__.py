@@ -327,6 +327,38 @@ class NodeStatus(str, enum.Enum):
     MAINTENANCE = "maintenance"
 
 
+class ServerStatus(str, enum.Enum):
+    UNKNOWN = "unknown"
+    ONLINE = "online"
+    OFFLINE = "offline"
+    MAINTENANCE = "maintenance"
+
+
+class Server(Base):
+    """真实服务器（宿主机）"""
+
+    __tablename__ = "server"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), unique=True, nullable=False, index=True)
+    host = Column(String(256), nullable=False)
+    os_type = Column(String(64))
+    os_version = Column(String(128))
+    cpu_cores = Column(Integer, default=0)
+    memory_total = Column(BigInteger, default=0)
+    disk_total = Column(BigInteger, default=0)
+    region = Column(String(64))
+    labels = Column(JSON)
+    description = Column(String(512))
+    status = Column(Enum(ServerStatus), default=ServerStatus.UNKNOWN)
+    last_probed_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    nodes = relationship("Node", back_populates="server")
+
+
 class Node(Base):
     __tablename__ = "node"
     
@@ -355,6 +387,7 @@ class Node(Base):
     agent_version = Column(String(32))  # Agent 版本号
     agent_status = Column(String(16), default="offline")  # agent 状态
     agent_token = Column(String(64), nullable=True, index=True)  # Agent 注册令牌
+    server_id = Column(BigInteger, ForeignKey("server.id"), nullable=True, index=True)
     public_ip = Column(String(64))      # 公网 IP
     private_ip = Column(String(64))     # 内网 IP
     container_count = Column(Integer, default=0)
@@ -363,6 +396,7 @@ class Node(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
+    server = relationship("Server", back_populates="nodes")
     containers = relationship("Container", back_populates="node")
     deploys = relationship("Deploy", back_populates="node")
     task_instances = relationship("TaskInstance", back_populates="node")

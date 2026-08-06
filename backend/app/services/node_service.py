@@ -478,7 +478,17 @@ class NodeService:
             return False
 
         result = self.test_connection(node_id)
-        return result.get("status") == "connected"
+        connected = result.get("status") == "connected"
+
+        # 关联服务器的，激活后立即聚合服务器状态
+        if node.server_id:
+            from app.services.server_service import ServerService
+            try:
+                ServerService(self.db).aggregate_all_servers()
+            except Exception as e:
+                logger.warning(f"激活后聚合服务器状态失败: {e}")
+
+        return connected
     
     def get_node(self, node_id: int) -> Optional[Node]:
         """获取节点详情"""
