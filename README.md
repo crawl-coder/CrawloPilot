@@ -338,6 +338,7 @@ README 覆盖部署与使用主线；设计、实现与运维细节在 `docs/` �
 | 文档 | 说明 |
 |------|------|
 | [文档索引](docs/README.md) | 全部文档入口与推荐阅读顺序 |
+| [变更记录](CHANGELOG.md) | 版本变更记录（Keep a Changelog） |
 | [设计哲学](docs/DESIGN_PHILOSOPHY.md) | 为什么这样设计、核心决策 |
 | [产品设计](docs/PRODUCT_DESIGN.md) | 产品定位、功能模块、技术方案 |
 | [部署执行](docs/modules/04-execution.md) | 四种执行器流程、Docker 构建策略、指标解析 |
