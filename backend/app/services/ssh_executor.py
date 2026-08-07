@@ -137,8 +137,19 @@ class SshConnection:
         client = self.connect()
         stdin, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=get_pty)
         exit_code = stdout.channel.recv_exit_status()
-        out = stdout.read().decode('utf-8', errors='replace').strip()
-        err = stderr.read().decode('utf-8', errors='replace').strip()
+        # 注意：不能用 stdout.read()——它阻塞到通道关闭；远程命令若含后台驻留进程
+        # （setsid nohup ... &），部分 sshd 会保持通道不关闭导致 read() 超时。
+        # SSH 协议保证 exit-status 之前所有 stdout/stderr 数据已按序到达，
+        # 因此 recv_exit_status 返回后直接排空缓冲即可。
+        chan = stdout.channel
+        out_chunks = []
+        while chan.recv_ready():
+            out_chunks.append(chan.recv(65536))
+        err_chunks = []
+        while chan.recv_stderr_ready():
+            err_chunks.append(chan.recv_stderr(65536))
+        out = b"".join(out_chunks).decode('utf-8', errors='replace').strip()
+        err = b"".join(err_chunks).decode('utf-8', errors='replace').strip()
         return out, err, exit_code
 
     def upload_dir(self, local_dir: str, remote_dir: str) -> bool:
@@ -656,7 +667,7 @@ class SshExecutor:
             return config.task_id
 
         except Exception as e:
-            logger.error(f"SSH 远程任务启动失败: {e}")
+            logger.exception(f"SSH 远程任务启动失败: {e!r}")
             self._update_task_status(
                 config.task_id,
                 TaskStatus.FAILED,

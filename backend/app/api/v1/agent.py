@@ -149,7 +149,11 @@ async def agent_register(
     node.last_heartbeat = datetime.utcnow()
     node.agent_version = data.agent_version or node.agent_version
     if data.hostname:
-        node.name = data.hostname
+        # 节点名以创建时用户指定为准；hostname 仅记录到 labels，
+        # 避免多个 agent 同主机名时撞 node.name 唯一索引（500 IntegrityError）
+        labels = dict(node.labels or {})
+        labels["hostname"] = data.hostname
+        node.labels = labels
     if data.os_type:
         node.os_type = data.os_type
     if data.os_version:
