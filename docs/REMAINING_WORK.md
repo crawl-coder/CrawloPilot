@@ -45,8 +45,12 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 
 ## V2 建议顺序
 
-1. 定时任务独立页面（/schedules 列表 + 爬虫详情入口 + 任务页调度跳转；
-   后端接口已全部就绪，纯前端增量）+ 调度终态统计回写（success_count/fail_count）
+1. **调度管理增强**（2026-08-07 重评估：不做完整的独立 CRUD 页面，降级为轻量全局视图）：
+   - 全局调度列表（只读视图 + 快捷操作：启停 / run-now / 运行历史），
+     创建与编辑仍走爬虫表单入口（方案 A′ 一对一约束保持不变）；
+   - 调度终态统计回写（success_count/fail_count、last_run_status 终态更新）；
+   - 后端 9 个接口已全部就绪，纯前端增量。
+   待出现"一个爬虫多条调度"的真实需求时，再放开 upsert 一对一约束并补齐独立表单。
 2. 监控告警（基于任务状态与节点指标）
 3. 数据质量与统计
 4. 代理池 / API 管理
@@ -55,18 +59,21 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 ## 待定问题（已记录）
 
 - ~~定时任务入口放在哪个页面~~（2026-08-07 已落定方案 A′：
-  V1 走爬虫表单入口写 `schedule` 表，V2 拆独立页面，详见 `docs/designs/scheduling.md`）
-- 迁移机制双轨：`migrate_schedule.py` 幂等脚本与 alembic 并存，建议后续统一回 alembic
+  V1 走爬虫表单入口写 `schedule` 表，全局视图见 V2 第 1 条，详见 `docs/designs/scheduling.md`）
+- ~~迁移机制双轨~~（2026-08-07 已统一：`migrate_schedule.py` 删除，
+  职责由 alembic 迁移 `s2c3h4e5d6u7` 吸收，DDL 带存在性检查可安全空跑）
+- ~~`/users` 管理接口缺少后端 admin 鉴权~~（2026-08-07 已修复：
+  全部端点接入 `require_admin`，`require_admin` 已上移至 `core/dependencies.py`）
 
 ## 已知事项
 
 - crawlo 已升级至 1.7.2（本地环境 + Docker 基础镜像均使用，基础镜像构建优先用本地 wheel）
 - Agent 程序：`agent/crawlo_agent.py`，纯标准库，反向连接控制端
-- 本地 MySQL 已启用（Homebrew mysql@8.0）：root 密码 `root123`；
-  应用库 `crawlo_pilot`，用户 `crawlopilot / crawlopilot123`，`127.0.0.1:3306`
+- 本地开发数据库：Homebrew mysql@8.0 或 Docker MySQL，库名 `crawlo_pilot`，
+  账号见 `.env.example`（凭据以本地 `.env` 为准，不入库）
 - 迁移链注意：早期裁剪移除的表（api_call_log/proxy_* 等）仍被旧迁移引用，
   **全新库不要直接 `alembic upgrade head`**，用 `Base.metadata.create_all` +
   `alembic stamp head` 建库（本地库已按此处理）
-- 远程 MySQL/Redis（117.72.16.51）网络延迟约 0.5~1s/请求；本地部署建议使用 Docker 版 MySQL/Redis
+- 远程 MySQL/Redis 网络延迟约 0.5~1s/请求；本地部署建议使用 Docker 版 MySQL/Redis
 - Docker 守护进程未运行，容器模式暂未在本机验证
 - `tests/run_all_tests.py` 中残留数据库明文凭据，生产环境需移除或改用环境变量

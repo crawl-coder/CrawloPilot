@@ -1,6 +1,6 @@
 # 🕷️ CrawloPilot
 
-> Crawlo 爬虫框架的配套管理部署平台 —— 项目、爬虫、部署、任务一站式管理。
+> Crawlo 爬虫框架的配套管理平台 —— 项目、爬虫、代码、执行、调度一站式管理。
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
@@ -8,35 +8,95 @@
 ![Vue 3](https://img.shields.io/badge/Frontend-Vue3-4FC08D.svg)
 ![Crawlo](https://img.shields.io/badge/Crawlo-1.7.2-purple.svg)
 
-CrawloPilot 是围绕 [Crawlo](https://github.com/crawl-coder/Crawlo) 爬虫框架构建的管理平台：
-创建项目、上传/在线编辑代码、创建爬虫、选择执行节点（本机 / SSH 服务器 / Docker 节点 / Agent），
-运行任务并实时查看状态与日志、统计运行指标。
+CrawloPilot 是围绕 [Crawlo](https://github.com/crawl-coder/Crawlo) 爬虫框架构建的管理平台。
+在 Web 界面上完成项目与爬虫管理、代码克隆/上传/在线编辑、定时调度、多节点执行，
+并实时查看任务状态、日志与运行指标。
 
-本文档先讲**如何部署 CrawloPilot 本身**，再讲**系统是如何部署爬虫的**；
-更深入的设计与实现细节在 [`docs/`](docs/README.md) 中按模块展开。
+## 目录
 
----
+- [特性](#-特性)
+- [架构](#-架构)
+- [快速开始](#-快速开始)
+- [详细部署](#-详细部署)
+- [爬虫部署流程](#-爬虫部署流程)
+- [测试](#-测试)
+- [文档导航](#-文档导航)
+- [项目结构](#-项目结构)
+- [路线图](#-路线图)
 
-## 🚀 部署 CrawloPilot（部署方式与详细过程）
+## ✨ 特性
+
+- **认证与权限**：JWT + RBAC，用户 / 角色 / 团队
+- **项目管理**：项目 CRUD、版本、代码文件上传与在线编辑
+- **爬虫管理**：爬虫 CRUD、代码文件树/编辑、运行与停止
+- **代码来源**：Git 仓库克隆（保留完整仓库）/ ZIP·TAR 上传 / 空模板
+- **Git 工作流**：提交 / 推送 / 拉取 / 切换分支，凭据单次注入不落盘
+- **Git 凭据体系**：个人凭据（Fernet 加密存储、创建爬虫自动填充）+ 团队机器人凭据池
+- **定时调度**：cron / 间隔 / 一次性触发，并发守卫与触发幂等，启停 / 立即执行 / 运行预览
+- **四种执行模式**：本地进程 / SSH 远程 / Docker 直连 / Agent 节点，执行器可插拔
+- **任务全生命周期**：状态机、实时日志（WebSocket）、暂停 / 恢复 / 停止 / 重试 / 删除
+- **Server 实体**：真实服务器 × SSH/Docker/Agent 三种执行通道统一管理
+- **运行统计**：自动解析爬虫指标（pages / items / errors），回写爬虫运行记录
+- **仪表盘**：项目 / 爬虫 / 任务 / 节点概览
+
+## 🏗️ 架构
+
+```mermaid
+flowchart TB
+    UI["Web UI (Vue3)"] --> API[FastAPI 控制面]
+    API --> DB[(MySQL)]
+    API --> RD[(Redis)]
+    API --> FS[uploads/ 代码与日志]
+    SCH[APScheduler 调度器<br/>进程内] --> API
+
+    subgraph 执行面
+        LOCAL[LocalExecutor<br/>本机子进程]
+        SSH[SSH 节点<br/>SshExecutor]
+        DOCKER[Docker 节点<br/>DockerExecutor]
+        AGENT[Agent 节点<br/>crawlo_agent.py]
+    end
+
+    API -- deploy_mode 分发 --> LOCAL
+    API -- deploy_mode 分发 --> SSH
+    API -- deploy_mode 分发 --> DOCKER
+    API -- 任务领取/回报 --> AGENT
+```
+
+核心思想：**控制面只做编排，执行面负责真正运行**。四种执行方式实现同一套执行器契约
+（`execute_task / get_task_status / get_task_logs / stop_task`），业务层按任务
+`deploy_mode` 分发，新增执行方式无需改编排逻辑。定时调度器与手动运行共用同一条
+任务创建/分发链路（`task_service.create_and_run_task`）。
+
+## 🚀 快速开始
+
+前置：Python 3.10+、Node.js 18+、本机或 Docker 版 MySQL 8.0+ 与 Redis。
+
+```bash
+git clone git@github.com:crawl-coder/CrawloPilot.git
+cd CrawloPilot
+cp .env.example .env        # 按需修改数据库/Redis 地址
+./start-dev.sh              # 初始化依赖与数据库，启动前后端
+```
+
+启动后访问：
+
+- 前端界面：http://localhost:3000（默认账号 `admin / admin123`）
+- API 文档：http://localhost:8000/docs
+- 健康检查：http://localhost:8000/health
+
+## 📦 详细部署
 
 ### 1. 环境要求
 
 | 组件 | 要求 | 说明 |
 |------|------|------|
-| Python | 3.10+（推荐 conda 环境 `crawlo_pilot`） | 后端运行环境 |
+| Python | 3.10+ | 后端运行环境 |
 | Node.js | 18+ | 前端构建与开发 |
 | MySQL | 8.0+ | 业务数据库（本机或 Docker 均可） |
-| Redis | 7.x | 登录限流 / 会话（本机或 Docker 均可） |
-| Docker | 可选 | 仅「Docker 直连」执行模式需要；Compose 部署也依赖 |
+| Redis | 7.x | Celery 异步任务 broker / 健康检查；缺失时服务降级可用 |
+| Docker | 可选 | 仅「Docker 直连」执行模式与 Compose 部署需要 |
 
-### 2. 获取代码
-
-```bash
-git clone git@github.com:crawl-coder/CrawloPilot.git
-cd CrawloPilot
-```
-
-### 3. 准备数据库与 Redis
+### 2. 准备数据库与 Redis
 
 **方式 A：本机 MySQL + Redis（推荐本地开发）**
 
@@ -44,22 +104,20 @@ cd CrawloPilot
 
 ```sql
 CREATE DATABASE IF NOT EXISTS crawlo_pilot DEFAULT CHARACTER SET utf8mb4;
-CREATE USER IF NOT EXISTS 'crawlopilot'@'localhost' IDENTIFIED BY 'crawlopilot123';
-GRANT ALL PRIVILEGES ON crawlo_pilot.* TO 'crawlopilot'@'localhost';
+CREATE USER IF NOT EXISTS 'crawlopilot'@'%' IDENTIFIED BY 'crawlopilot123';
+GRANT ALL PRIVILEGES ON crawlo_pilot.* TO 'crawlopilot'@'%';
 FLUSH PRIVILEGES;
 ```
 
 启动本机 Redis（默认无密码，端口 6379）。
 
-**方式 B：Docker Compose 一键起依赖**
+**方式 B：Docker Compose 启动依赖**
 
 ```bash
 docker-compose up -d mysql redis
 ```
 
-### 4. 配置环境变量
-
-复制示例配置并编辑：
+### 3. 配置环境变量
 
 ```bash
 cp .env.example .env
@@ -74,14 +132,16 @@ cp .env.example .env
 | `MYSQL_DATABASE` | `crawlo_pilot` | 业务库名 |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `127.0.0.1` / `6379` / `0` | Redis 地址 |
 | `REDIS_PASSWORD` | 空 | Redis 密码（本机默认无） |
-| `SECRET_KEY` | 示例值 | JWT 密钥，**生产必须更换**（`openssl rand -hex 32`） |
+| `SECRET_KEY` | 示例值 | JWT 与凭据加密密钥，**生产必须更换**（`openssl rand -hex 32`） |
 | `DEBUG` | `true` | 开发模式；生产改为 `false` |
 | `API_PREFIX` | `/api/v1` | API 前缀 |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | 控制面默认 Docker 连接 |
 | `UPLOAD_DIR` | `uploads`（相对 backend 工作目录） | 代码/上传/任务日志根目录，**生产必须改为绝对路径** |
 | `TASK_LOG_RETENTION_DAYS` | `30` | 任务日志保留天数，`0` 表示不清理 |
 
-### 5. 一键启动（推荐）
+> 注意：`SECRET_KEY` 同时用于派生 Git 凭据的对称加密密钥，更换后历史密文将无法解密。
+
+### 4. 一键启动（推荐）
 
 ```bash
 ./start-dev.sh            # 启动前后端（默认读取 .env）
@@ -89,19 +149,13 @@ cp .env.example .env
 ./start-dev.sh --stop     # 停止
 ```
 
-脚本会自动完成：创建 `.env`（如缺失）→ 安装后端依赖 → 初始化数据库表与默认账号
-（`alembic` + `init_db.py`）→ 清理 8000 / 3000 端口旧进程 → 启动后端（uvicorn 热重载）→ 启动前端。
-
-启动后访问：
-
-- 前端界面：http://localhost:3000
-- API 文档：http://localhost:8000/docs
-- 健康检查：http://localhost:8000/health
-- 默认账号：`admin / admin123`
+脚本自动完成：创建 `.env`（如缺失）→ 安装后端依赖 → 数据库迁移与初始化
+（`alembic upgrade head` + `init_db.py`）→ 清理 8000 / 3000 端口旧进程 →
+启动后端（uvicorn 热重载）→ 启动前端。
 
 日志位置：`logs/backend.log`、`logs/frontend.log`。
 
-### 6. 手动启动（不依赖脚本）
+### 5. 手动启动（不依赖脚本）
 
 ```bash
 # 后端
@@ -121,7 +175,7 @@ npm run dev
 > 重载监控之外（`--reload-exclude <绝对路径>/uploads`），避免编辑爬虫代码导致后端重启、
 > 杀掉运行中任务的监控线程。
 
-### 7. Docker Compose 全栈部署
+### 6. Docker Compose 全栈部署
 
 ```bash
 docker-compose up -d
@@ -130,13 +184,13 @@ docker-compose up -d
 Compose 包含 V1 必需服务：`api-server`（FastAPI）、`frontend`（Nginx 端口 8080）、
 `mysql:8.0`、`redis:7`，服务间通过内部网络互连，带健康检查与自动重启。
 
-### 8. 验证部署
+### 7. 验证部署
 
 1. `curl http://localhost:8000/health` 返回正常；
 2. 浏览器打开 http://localhost:3000，用 `admin / admin123` 登录；
 3. 左侧「项目管理」创建一个项目 →「爬虫管理」创建爬虫 → 上传代码 → 运行，确认有任务记录与日志。
 
-### 8.1 生产环境的存储规划
+### 8. 生产环境的存储规划
 
 默认所有运行时数据（爬虫代码、上传包、任务日志）都存放在 `UPLOAD_DIR`（默认
 `backend/uploads/`）下，目录结构为：
@@ -144,7 +198,7 @@ Compose 包含 V1 必需服务：`api-server`（FastAPI）、`frontend`（Nginx 
 ```text
 {UPLOAD_DIR}/
 ├── project_{id}/            # 每个项目一个目录
-│   └── spider_{id}/         # 每个爬虫的代码
+│   └── spider_{id}/         # 每个爬虫的代码（Git 来源含完整 .git）
 └── _task_logs/              # 所有任务的日志 task_{id}.log
 ```
 
@@ -165,22 +219,22 @@ Compose 包含 V1 必需服务：`api-server`（FastAPI）、`frontend`（Nginx 
 - **端口被占**：8000 / 3000 被旧进程占用时，先 `./start-dev.sh --stop` 或
   `lsof -ti:8000 -ti:3000 | xargs kill -9` 再启动。
 - **数据库连接失败**：确认 MySQL 用户对 `crawlo_pilot` 库有权限，且 `.env` 指向的地址可达。
-- **环境变量干扰**：若 shell 里导出了 `MYSQL_HOST` 等旧变量，请 `unset MYSQL_HOST MYSQL_PORT ...`
-  或在项目根目录执行（平台只读根目录 `.env`，但避免歧义）。
-- **SQL 日志刷屏**：`.env` 中 `DEBUG=true` 时默认关闭 SQL echo；需要时设 `SQL_ECHO=true`。
+- **环境变量干扰**：若 shell 中导出了 `MYSQL_HOST` 等旧变量，请先 `unset`
+  （平台只读取项目根目录 `.env`，但避免歧义）。
+- **SQL 日志过多**：`DEBUG=true` 时默认关闭 SQL echo；排查需要时设 `SQL_ECHO=true`。
 
----
-
-## 🔁 系统是如何部署爬虫的
+## 🔁 爬虫部署流程
 
 ### 1. 总体流程
 
 ```mermaid
 flowchart LR
     A[创建项目] --> B[创建爬虫<br/>crawlo 框架]
-    B --> C["上传/编辑代码<br/>uploads/project_{id}/spider_{id}/"]
-    C --> D[选择执行节点并运行]
-    D --> E{节点类型}
+    B --> C["代码来源：Git 克隆 / 上传 / 空模板<br/>uploads/project_{id}/spider_{id}/"]
+    C --> D{触发方式}
+    D -->|手动运行| R[创建任务]
+    D -->|定时调度<br/>cron/interval/once| R
+    R --> E{节点类型}
     E -->|无节点| L[本地进程<br/>LocalExecutor]
     E -->|ssh 节点| S[SSH 上传 + 远程运行<br/>SshExecutor]
     E -->|docker 节点| K[构建镜像 + 容器运行<br/>DockerExecutor]
@@ -191,19 +245,22 @@ flowchart LR
     G --> F
 ```
 
-核心思想：**控制面只做编排，执行面负责真正运行**。四种执行方式实现同一套执行器契约
-（`execute_task / get_task_status / get_task_logs / stop_task`），
-业务层按任务 `deploy_mode` 分发，新增执行方式不需要改编排逻辑。
-
 ### 2. 代码从哪来（代码即配置）
 
-- 爬虫代码通过前端「文件管理 / 在线编辑器」写入
-  `backend/uploads/project_{id}/spider_{id}/`，平台不强制使用 Git。
-- 项目遵循固定目录规范：`crawlo.cfg`（指定 settings 模块）+ `run.py`（入口）+
-  `spiders/`（爬虫包）。
+- 三种来源：**Git 仓库克隆**（完整仓库，支持后续提交/推送）、**ZIP/TAR 上传**、**空模板**；
+  创建后均可通过「文件管理 / 在线编辑器」继续修改。
+- 代码统一存放在 `backend/uploads/project_{id}/spider_{id}/`。
+- 项目遵循固定目录规范：`crawlo.cfg`（指定 settings 模块）+ 入口文件 + `spiders/`（爬虫包）。
 - 运行、SSH 上传、Docker 镜像构建、Agent 代码包下载都从该目录取代码。
 
-### 3. 四种执行模式对比
+### 3. Git 工作流与凭据
+
+- Git 来源的爬虫保留完整 `.git`，详情页可直接提交、推送、拉取、切换分支；
+- 认证凭据仅在单次命令执行时注入（密码拼 URL / SSH 私钥临时文件），**不写回 `.git/config`**；
+- 凭据两级管理：**个人凭据**（个人中心配置，Fernet 加密，创建爬虫自动填充）与
+  **团队机器人凭据池**（管理员维护，爬虫按 ID 引用，轮换一处生效）。
+
+### 4. 四种执行模式对比
 
 | 模式 | 执行器 | 适用场景 | 特点 |
 |------|--------|----------|------|
@@ -212,9 +269,18 @@ flowchart LR
 | Docker | `DockerExecutor` | 有 Docker 的服务器 | 直连节点 Docker API，构建任务镜像后运行容器 |
 | Agent | `AgentTaskService` | NAT 之后 / 横向扩展 | 节点 agent 反向连接控制面领取任务，无需入站端口 |
 
-### 4. 节点与真实服务器的关系
+### 5. 定时调度
 
-- **Server（真实服务器）**：物理/云主机，如 `117.72.16.51:22`，先添加并登记。
+- 在爬虫创建/编辑表单中配置，支持 **cron / 固定间隔 / 一次性**三种触发；
+- 进程内 APScheduler 驱动，`schedule` 表持久化，重启自动恢复并做错跑检测；
+- 并发守卫（同调度最大并发数）+ 触发幂等（唯一索引兜底），一次触发最多一个任务；
+- 支持启停（保留配置）、立即执行、下次运行预览与运行历史。
+
+详细设计见 [docs/designs/scheduling.md](docs/designs/scheduling.md)。
+
+### 6. 节点与真实服务器的关系
+
+- **Server（真实服务器）**：物理/云主机，如 `192.0.2.10:22`，先添加并登记。
 - **节点（Node）**：服务器上的一种**执行通道**，一台服务器可以挂多个节点：
   - `ssh` 节点：控制面持有 SSH 凭据，直接远程执行；
   - `docker` 节点：暴露 Docker API（`tcp://host:2375`）后直连；
@@ -224,7 +290,7 @@ flowchart LR
 详细设计见 [docs/modules/05-nodes.md](docs/modules/05-nodes.md) 与
 [docs/designs/server-management.md](docs/designs/server-management.md)。
 
-### 5. 依赖与 Dockerfile 处理
+### 7. 依赖与 Dockerfile 处理
 
 - **requirements.txt**：四种模式运行前都会检测代码目录下的 `requirements.txt`，
   存在则自动安装，避免运行到一半缺库。
@@ -236,7 +302,7 @@ flowchart LR
 - **启动命令**：配置了 `entry_file` 就精确执行 `python <entry_file>`；
   否则尊重镜像 `ENTRYPOINT/CMD`；内置模板默认 `python run.py`。
 
-### 6. 任务执行与可观测性
+### 8. 任务执行与可观测性
 
 - 状态机：`pending → running → success / failed / timeout / cancelled`（本地模式含 `paused`）。
 - 日志：执行器统一落盘 `uploads/_task_logs/task_{id}.log`，容器/Agent 清理后仍可查询；
@@ -247,47 +313,27 @@ flowchart LR
 
 执行细节见 [docs/modules/04-execution.md](docs/modules/04-execution.md)。
 
----
+## ✅ 测试
 
-## 🏗️ 架构
+```bash
+# 部署流程验收（18 项）
+python tests/test_deployment_flow.py
 
-```mermaid
-flowchart TB
-    UI["Web UI (Vue3)"] --> API[FastAPI 控制面]
-    API --> DB[(MySQL)]
-    API --> RD[(Redis)]
-    API --> FS[uploads/ 代码与日志]
+# 前后端全流程联调（41 项，覆盖 13 个页面接口）
+python tests/full_flow_test.py
 
-    subgraph 执行面
-        LOCAL[LocalExecutor<br/>本机子进程]
-        SSH[SSH 节点<br/>SshExecutor]
-        DOCKER[Docker 节点<br/>DockerExecutor]
-        AGENT[Agent 节点<br/>crawlo_agent.py]
-    end
+# 定时调度端到端（35 项，含真实触发，约 4 分钟）
+python tests/schedule_test.py
 
-    API -- deploy_mode 分发 --> LOCAL
-    API -- deploy_mode 分发 --> SSH
-    API -- deploy_mode 分发 --> DOCKER
-    API -- 任务领取/回报 --> AGENT
+# Git 凭据体系端到端（34 项）
+python tests/git_credentials_test.py
 ```
 
-## ✨ 特性
+完整测试说明见 [docs/modules/08-testing.md](docs/modules/08-testing.md)。
 
-- **认证与权限**：JWT + RBAC，用户 / 角色 / 团队
-- **项目管理**：项目 CRUD、版本、代码文件上传与在线编辑
-- **爬虫管理**：爬虫 CRUD、代码文件树/编辑、运行与停止
-- **四种执行模式**：本地进程 / SSH 远程 / Docker 直连 / Agent 节点，执行器可插拔
-- **任务全生命周期**：状态机、实时日志（WebSocket）、暂停 / 恢复 / 停止 / 重试 / 删除
-- **定时调度**：cron / 间隔 / 一次性触发，并发守卫与触发幂等，启停 / 立即执行 / 运行预览
-- **Git 工作流**：仓库克隆、提交 / 推送 / 拉取 / 切分支，凭据单次注入不落盘
-- **Git 凭据体系**：个人凭据（加密存储、创建爬虫自动填充）+ 团队机器人凭据池
-- **Server 实体**：真实服务器 × SSH/Docker/Agent 三种执行通道统一管理
-- **运行统计**：自动解析爬虫指标（pages / items / errors），回写爬虫运行记录
-- **仪表盘**：项目 / 爬虫 / 任务 / 节点概览
+## 📚 文档导航
 
-## 📚 文档导航（README + docs 组合）
-
-README 覆盖**部署方法与爬虫部署流程**两条主线；设计、实现与运维细节在 `docs/` 中：
+README 覆盖部署与使用主线；设计、实现与运维细节在 `docs/` 中按模块展开：
 
 | 文档 | 说明 |
 |------|------|
@@ -297,7 +343,8 @@ README 覆盖**部署方法与爬虫部署流程**两条主线；设计、实现
 | [部署执行](docs/modules/04-execution.md) | 四种执行器流程、Docker 构建策略、指标解析 |
 | [节点管理](docs/modules/05-nodes.md) | 真实服务器 × SSH/Docker/Agent 通道设计 |
 | [Server 管理设计](docs/designs/server-management.md) | 真实服务器实体管理方案 |
-| [任务管理](docs/modules/06-tasks.md) | 任务状态机、实时日志、控制操作 |
+| [任务管理](docs/modules/06-tasks.md) | 任务状态机、实时日志、定时调度 |
+| [定时调度设计](docs/designs/scheduling.md) | 方案 A′：模型 / 引擎 / 幂等 / 生命周期同步 |
 | [爬虫管理](docs/modules/03-spiders.md) | 代码目录规范、文件管理、运行控制 |
 | [测试](docs/modules/08-testing.md) | 部署流程验收与自动化测试 |
 | [Agent 使用说明](agent/README.md) | 节点 Agent 部署手册 |
@@ -308,33 +355,25 @@ README 覆盖**部署方法与爬虫部署流程**两条主线；设计、实现
 CrawloPilot/
 ├── backend/            # FastAPI 后端（API / 服务 / 模型 / 执行器）
 │   ├── app/
-│   │   ├── api/v1/     # 路由：认证/项目/爬虫/执行/节点/服务器/Agent
-│   │   ├── services/   # 业务与执行器（local/ssh/docker/agent）
+│   │   ├── api/v1/     # 路由：认证/项目/爬虫/调度/执行/节点/服务器/凭据/Agent
+│   │   ├── services/   # 业务与执行器（local/ssh/docker/agent/scheduler/git）
 │   │   └── models/     # SQLAlchemy 模型
 │   └── uploads/        # 爬虫代码与任务日志（运行时数据，不入库）
 ├── frontend/           # Vue3 前端
 ├── agent/              # 节点 Agent 程序（纯标准库）
+├── spider-runner/      # 爬虫运行器
 ├── docker/             # Docker 配置（mysql 初始化等）
 ├── docs/               # 设计哲学 / 产品设计 / 模块文档
 ├── examples/           # 示例爬虫（ofweek_standalone）
-├── tests/              # 测试
+├── tests/              # 端到端与单元测试
 └── docker-compose.yml
 ```
-
-## ✅ 测试
-
-```bash
-# 部署流程验收测试（需先启动后端）
-python tests/test_deployment_flow.py
-```
-
-完整测试说明见 [docs/modules/08-testing.md](docs/modules/08-testing.md)。
 
 ## 🗺️ 路线图
 
 **V1（已完成）**：项目 / 爬虫 / 四种执行模式 / 任务与日志 / Server 实体 / 定时调度 / Git 工作流与凭据体系
 
-**V2（规划）**：调度独立页面、监控告警、数据质量、代理池 / API 管理、操作审计
+**V2（规划）**：调度管理增强、监控告警、数据质量、代理池 / API 管理、操作审计
 
 详见 [docs/REMAINING_WORK.md](docs/REMAINING_WORK.md)。
 
