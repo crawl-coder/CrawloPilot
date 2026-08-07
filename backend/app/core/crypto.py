@@ -23,7 +23,9 @@ _fernet: Optional[Fernet] = None
 def _get_fernet() -> Fernet:
     global _fernet
     if _fernet is None:
-        key = base64.urlsafe_b64encode(hashlib.sha256(settings.SECRET_KEY.encode()).digest())
+        key = base64.urlsafe_b64encode(
+            hashlib.sha256(settings.credential_secret.encode()).digest()
+        )
         _fernet = Fernet(key)
     return _fernet
 

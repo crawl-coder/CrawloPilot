@@ -53,11 +53,14 @@ class AgentClient:
     def _request(self, method: str, path: str, body: dict = None, timeout: int = 30):
         url = f"{self.server}{path}"
         data = json.dumps(body).encode("utf-8") if body is not None else None
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
         req = urllib.request.Request(
             url,
             data=data,
             method=method,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -72,7 +75,10 @@ class AgentClient:
 
     def _download(self, path: str, dest: Path):
         url = f"{self.server}{path}"
-        req = urllib.request.Request(url)
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=120) as resp:
             with open(dest, "wb") as f:
                 shutil.copyfileobj(resp, f)
@@ -122,8 +128,8 @@ class AgentClient:
         try:
             res = self._request(
                 "GET",
-                f"/api/v1/nodes/agent/tasks?node_id={self.node_id}&token={self.token}",
-                timeout=30,
+                f"/api/v1/nodes/agent/tasks?node_id={self.node_id}&long_poll=1",
+                timeout=35,
             )
             return res.get("task")
         except Exception as e:
@@ -135,7 +141,7 @@ class AgentClient:
             res = self._request(
                 "GET",
                 f"/api/v1/nodes/agent/tasks/{task_id}/status"
-                f"?node_id={self.node_id}&token={self.token}",
+                f"?node_id={self.node_id}",
                 timeout=15,
             )
             return res.get("stop_requested", False)
@@ -149,7 +155,7 @@ class AgentClient:
             self._request(
                 "POST",
                 f"/api/v1/nodes/agent/tasks/{task_id}/logs",
-                {"node_id": self.node_id, "token": self.token, "logs": text},
+                {"node_id": self.node_id, "logs": text},
                 timeout=15,
             )
         except Exception as e:
@@ -162,7 +168,6 @@ class AgentClient:
                 f"/api/v1/nodes/agent/tasks/{task_id}/report",
                 {
                     "node_id": self.node_id,
-                    "token": self.token,
                     "status": status,
                     "pages_crawled": pages,
                     "items_scraped": items,
@@ -189,14 +194,22 @@ class AgentClient:
             # 1. 下载代码
             self._download(
                 f"/api/v1/nodes/agent/tasks/{task_id}/code"
-                f"?node_id={self.node_id}&token={self.token}",
+                f"?node_id={self.node_id}",
                 code_archive,
             )
             with tarfile.open(code_archive, "r:gz") as tar:
+                # 安全校验：拒绝路径穿越（.. / 绝对路径 / 符号链接逃逸），
+                # 所有 Python 版本统一手工校验，避免 3.10/3.11 fallback 漏洞
+                for member in tar.getmembers():
+                    name = member.name.replace("\\", "/")
+                    if name.startswith("/") or ".." in name.split("/"):
+                        raise ValueError(f"代码包包含非法路径: {member.name}")
+                    if member.issym() or member.islnk():
+                        raise ValueError(f"代码包包含链接文件: {member.name}")
                 try:
                     tar.extractall(workspace, filter="data")
                 except TypeError:
-                    # Python < 3.12 无 filter 参数
+                    # Python < 3.12 无 filter 参数：已手工校验成员，安全调用
                     tar.extractall(workspace)
             code_dir = workspace / "code"
             log(f"代码已下载: {code_dir}")
@@ -336,8 +349,7 @@ class AgentClient:
             task = self.poll_task()
             if task:
                 self.execute_task(task)
-            else:
-                time.sleep(self.poll_interval)
+            # 长轮询：空载由服务端挂起最多 25s，无需本地 sleep 兜底
 
 
 def parse_metrics(log_text: str):

@@ -72,12 +72,6 @@ async def _task_log_cleanup_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动和关闭时的生命周期管理"""
-    # 初始化任务执行器
-    from app.services.task_executor import get_executor
-    executor = get_executor()
-    await executor.initialize()
-    logger.info("TaskExecutor initialized successfully")
-
     # 启动节点健康检查后台任务
     health_task = asyncio.create_task(_node_health_monitor_loop())
     logger.info("Node health monitor started")
@@ -97,9 +91,6 @@ async def lifespan(app: FastAPI):
         health_task.cancel()
         log_cleanup_task.cancel()
         scheduler_service.shutdown()
-        logger.info("Cleaning up TaskExecutor...")
-        await executor.cleanup()
-        logger.info("TaskExecutor cleanup complete")
     except Exception as e:
         logger.warning(f"TaskExecutor cleanup was interrupted: {e}")
 

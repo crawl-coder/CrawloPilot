@@ -648,56 +648,33 @@ class DockerExecutor:
         logs: str = None,
         error_message: str = None,
     ):
-        db = SessionLocal()
-        try:
-            task = db.query(TaskInstance).filter(TaskInstance.id == int(task_id)).first()
-            if task:
-                # 终态保护：任务一旦进入终态（含被用户显式取消 CANCELLED），
-                # 监控线程/stop_task 并发写入时不得覆盖，避免竞态导致
-                # CANCELLED 被改写为 FAILED（如容器被移除后日志获取失败）。
-                terminal = {
-                    TaskStatus.SUCCESS, TaskStatus.FAILED,
-                    TaskStatus.CANCELLED, TaskStatus.TIMEOUT,
-                }
-                if task.status in terminal:
-                    logger.info(
-                        f"[{task_id}] 任务已是终态 {task.status.value}，忽略本次覆盖为 {status.value}"
-                    )
-                    return
-
-                task.status = status
-                task.finished_at = finished_at
-                task.pages_crawled = pages_crawled
-                task.items_scraped = items_scraped
-                task.errors_count = errors_count
-                task.deploy_mode = "docker"
-                if container_id:
-                    task.container_id = container_id
-                if error_message:
-                    task.error_message = error_message
-                if task.started_at:
-                    task.duration = (finished_at - task.started_at).total_seconds()
-                db.commit()
-
-                # 落盘日志，容器清理后仍可查询
-                if logs:
-                    try:
-                        LOGS_DIR.mkdir(parents=True, exist_ok=True)
-                        (LOGS_DIR / f"task_{task_id}.log").write_text(logs, encoding="utf-8")
-                    except Exception as e:
-                        logger.warning(f"写 Docker 日志失败: {e}")
-
-                self._update_spider_stats(db, task, status)
-                logger.info(
-                    f"任务 {task_id} 完成: status={status.value}, "
-                    f"pages={pages_crawled}, items={items_scraped}, "
-                    f"errors={errors_count}, duration={task.duration}s"
-                )
-        except Exception as e:
-            logger.error(f"更新 Docker 任务完成信息失败: {e}")
-            db.rollback()
-        finally:
-            db.close()
+        """更新任务完成信息（原子终态保护，复用公共实现）"""
+        from app.services.task_updater import update_task_completion
+        updated = update_task_completion(
+            task_id,
+            status,
+            finished_at,
+            pages_crawled=pages_crawled,
+            items_scraped=items_scraped,
+            errors_count=errors_count,
+            error_message=error_message,
+            deploy_mode="docker",
+            container_id=container_id,
+            logs=logs,
+            log_dir=LOGS_DIR,
+        )
+        if updated:
+            from app.core.database import SessionLocal as _SL
+            db = _SL()
+            try:
+                task = db.query(TaskInstance).filter(
+                    TaskInstance.id == int(task_id)
+                ).first()
+                if task:
+                    self._update_spider_stats(db, task, status)
+            finally:
+                db.close()
+        return updated
 
     def _update_spider_stats(self, db, task: TaskInstance, status: TaskStatus):
         """同步爬虫运行统计"""

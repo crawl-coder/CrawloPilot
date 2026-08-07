@@ -798,33 +798,17 @@ class LocalExecutor:
         errors_count: int = 0,
         error_message: str = None
     ):
-        """更新任务完成信息（包含指标统计）"""
-        db = SessionLocal()
-        try:
-            task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
-
-            if task:
-                task.status = status
-                task.finished_at = finished_at
-                task.pages_crawled = pages_crawled
-                task.items_scraped = items_scraped
-                task.errors_count = errors_count
-                if error_message:
-                    task.error_message = error_message
-                if task.started_at:
-                    task.duration = (finished_at - task.started_at).total_seconds()
-
-                db.commit()
-                logger.info(
-                    f"任务 {task_id} 完成: status={status.value}, "
-                    f"pages={pages_crawled}, items={items_scraped}, "
-                    f"errors={errors_count}, duration={task.duration}s"
-                )
-        except Exception as e:
-            logger.error(f"更新任务完成信息失败: {e}")
-            db.rollback()
-        finally:
-            db.close()
+        """更新任务完成信息（原子终态保护，复用公共实现）"""
+        from app.services.task_updater import update_task_completion
+        return update_task_completion(
+            task_id,
+            status,
+            finished_at,
+            pages_crawled=pages_crawled,
+            items_scraped=items_scraped,
+            errors_count=errors_count,
+            error_message=error_message,
+        )
 
     async def cleanup(self):
         """清理所有活动任务"""

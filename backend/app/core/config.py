@@ -54,10 +54,36 @@ class Settings(BaseSettings):
             return f"sqlite:///{os.path.abspath(db_path)}"
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
     
-    # JWT
+    # 安全密钥
+    # 兼容旧配置：仅设置 SECRET_KEY 时，JWT 与凭据加密共用（回退）。
+    # 生产建议显式设置 JWT_SECRET_KEY / CREDENTIAL_ENCRYPTION_KEY 实现密钥分离。
     SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_SECRET_KEY: Optional[str] = None   # 未设置时回退 SECRET_KEY
+    CREDENTIAL_ENCRYPTION_KEY: Optional[str] = None  # 未设置时回退 SECRET_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+
+    @property
+    def jwt_secret(self) -> str:
+        """JWT 签名密钥：优先 JWT_SECRET_KEY，回退 SECRET_KEY"""
+        return self.JWT_SECRET_KEY or self.SECRET_KEY
+
+    @property
+    def credential_secret(self) -> str:
+        """凭据加密密钥：优先 CREDENTIAL_ENCRYPTION_KEY，回退 SECRET_KEY"""
+        return self.CREDENTIAL_ENCRYPTION_KEY or self.SECRET_KEY
+
+    def validate_secrets(self) -> None:
+        """启动时校验安全密钥：生产环境不得使用源码默认值"""
+        default = "your-secret-key-change-in-production"
+        if self.DEBUG:
+            return
+        if self.jwt_secret == default or self.credential_secret == default:
+            raise RuntimeError(
+                "检测到安全密钥仍为默认值，拒绝启动。生产环境必须设置 "
+                "JWT_SECRET_KEY（JWT 签名）与 CREDENTIAL_ENCRYPTION_KEY（凭据加密），"
+                "生成方式：openssl rand -hex 32"
+            )
 
     # 开放注册：False 时 /auth/register 仅 admin 可用（内部平台建议关闭）
     ALLOW_OPEN_REGISTER: bool = False
@@ -96,3 +122,6 @@ if _ENV_FILE:
     load_dotenv(_ENV_FILE, override=True)
 
 settings = Settings()
+
+# 生产环境安全校验（DEBUG=False 时拒绝默认密钥）
+settings.validate_secrets()

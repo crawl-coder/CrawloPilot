@@ -21,7 +21,7 @@ from app.core.config import settings
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -84,6 +84,18 @@ def _get_node_by_token(db: Session, token: str) -> Optional[Node]:
     return db.query(Node).filter(Node.agent_token == token).first()
 
 
+def _extract_token(
+    request: Request,
+    body_token: Optional[str] = None,
+    query_token: Optional[str] = None,
+) -> Optional[str]:
+    """优先从 Authorization: Bearer header 取 token，回退 body / query（兼容旧版 agent）"""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return body_token or query_token
+
+
 def _validate_agent(db: Session, node_id: int, token: str) -> Node:
     node = db.query(Node).filter(Node.id == node_id).first()
     if not node or node.connect_type != "agent" or node.agent_token != token:
@@ -137,10 +149,12 @@ def _update_spider_stats(db, task: TaskInstance, status: TaskStatus):
 @router.post("/register")
 async def agent_register(
     data: AgentRegister,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Agent 注册：用令牌换取 node_id"""
-    node = _get_node_by_token(db, data.token)
+    token = _extract_token(request, body_token=data.token)
+    node = _get_node_by_token(db, token or "")
     if not node:
         raise HTTPException(status_code=401, detail="无效的 Agent 令牌")
 
@@ -180,10 +194,12 @@ async def agent_register(
 @router.post("/heartbeat")
 async def agent_heartbeat(
     data: AgentHeartbeat,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Agent 心跳"""
-    node = _validate_agent(db, data.node_id, data.token)
+    token = _extract_token(request, body_token=data.token)
+    node = _validate_agent(db, data.node_id, token or "")
     node.last_heartbeat = datetime.utcnow()
     node.agent_status = "online"
     node.status = NodeStatus.ONLINE
@@ -202,46 +218,62 @@ async def agent_heartbeat(
 @router.get("/tasks")
 async def agent_get_tasks(
     node_id: int,
-    token: str,
+    request: Request,
+    token: Optional[str] = None,
+    long_poll: int = 0,
     db: Session = Depends(get_db),
 ):
-    """领取待执行任务（同一时间只给一个）"""
+    """领取待执行任务（同一时间只给一个）
+
+    long_poll=1 时长轮询：无任务时挂起最多 25 秒，减少节点空载轮询压力；
+    有任务立即返回。
+    """
+    import asyncio
+    import time as _time
+    token = _extract_token(request, query_token=token)
     node = _validate_agent(db, node_id, token)
-    task = (
-        db.query(TaskInstance)
-        .filter(
-            TaskInstance.deploy_mode == "agent",
-            TaskInstance.node_id == node.id,
-            TaskInstance.status == TaskStatus.PENDING,
+    wait_seconds = min(max(long_poll, 0), 25)
+    deadline = _time.time() + wait_seconds
+
+    while True:
+        task = (
+            db.query(TaskInstance)
+            .filter(
+                TaskInstance.deploy_mode == "agent",
+                TaskInstance.node_id == node.id,
+                TaskInstance.status == TaskStatus.PENDING,
+            )
+            .order_by(TaskInstance.id.asc())
+            .first()
         )
-        .order_by(TaskInstance.id.asc())
-        .first()
-    )
-    if not task:
-        return {"task": None}
+        if task:
+            task.status = TaskStatus.RUNNING
+            task.started_at = task.started_at or datetime.utcnow()
+            db.commit()
+            return {
+                "task": {
+                    "task_id": task.id,
+                    "spider_id": task.spider_id,
+                    "spider_name": task.spider_name,
+                    "entry_file": task.spider.entry_file if task.spider else None,
+                }
+            }
 
-    task.status = TaskStatus.RUNNING
-    task.started_at = task.started_at or datetime.utcnow()
-    db.commit()
-
-    return {
-        "task": {
-            "task_id": task.id,
-            "spider_id": task.spider_id,
-            "spider_name": task.spider_name,
-            "entry_file": task.spider.entry_file if task.spider else None,
-        }
-    }
+        if not wait_seconds or _time.time() >= deadline:
+            return {"task": None}
+        await asyncio.sleep(2)
 
 
 @router.get("/tasks/{task_id}/status")
 async def agent_get_task_status(
     task_id: int,
     node_id: int,
-    token: str,
+    request: Request,
+    token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """查询任务状态（Agent 运行中轮询，检测停止标记）"""
+    token = _extract_token(request, query_token=token)
     _validate_agent(db, node_id, token)
     task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
     if not task:
@@ -257,10 +289,12 @@ async def agent_get_task_status(
 async def agent_get_task_code(
     task_id: int,
     node_id: int,
-    token: str,
+    request: Request,
+    token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """下载爬虫代码包（tar.gz）"""
+    token = _extract_token(request, query_token=token)
     _validate_agent(db, node_id, token)
     task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
     if not task or not task.spider_id:
@@ -291,10 +325,12 @@ async def agent_get_task_code(
 async def agent_upload_logs(
     task_id: int,
     data: AgentLogs,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """实时上报日志（追加写入）"""
-    _validate_agent(db, data.node_id, data.token)
+    token = _extract_token(request, body_token=data.token)
+    _validate_agent(db, data.node_id, token or "")
     _append_task_logs(task_id, data.logs)
     return {"ok": True}
 
@@ -303,10 +339,12 @@ async def agent_upload_logs(
 async def agent_report_task(
     task_id: int,
     data: AgentTaskReport,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """回报任务终态"""
-    _validate_agent(db, data.node_id, data.token)
+    token = _extract_token(request, body_token=data.token)
+    _validate_agent(db, data.node_id, token or "")
     task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")

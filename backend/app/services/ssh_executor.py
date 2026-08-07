@@ -16,6 +16,7 @@ import logging
 import uuid
 import tarfile
 import tempfile
+import shlex
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, List
@@ -23,15 +24,27 @@ from dataclasses import dataclass, field
 from threading import Lock, Thread
 
 import paramiko
-from paramiko import SSHClient, AutoAddPolicy, RSAKey, Ed25519Key
+from paramiko import SSHClient, AutoAddPolicy, RejectPolicy, RSAKey, Ed25519Key
 
 from app.core.database import SessionLocal
 from app.models import TaskInstance, TaskStatus, Node, Spider
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # SSH 默认工作目录
 SSH_WORKSPACE_ROOT = "/opt/crawlopilot/workspace"
+
+# 控制面维护的 SSH known_hosts（TOFU：首次连接记录，后续变更即拒绝）
+SSH_KNOWN_HOSTS = Path(os.environ.get(
+    "SSH_KNOWN_HOSTS",
+    os.path.join(settings.UPLOAD_DIR, "ssh_known_hosts"),
+))
+
+
+def _q(s: str) -> str:
+    """shell 转义，防止命令注入"""
+    return shlex.quote(str(s))
 
 
 @dataclass
@@ -93,7 +106,13 @@ class SshConnection:
                 return self._client
 
             self._client = SSHClient()
-            self._client.set_missing_host_key_policy(AutoAddPolicy())
+            # TOFU host key 校验：已有记录则严格校验，首次连接才自动信任
+            if SSH_KNOWN_HOSTS.exists():
+                self._client.load_host_keys(str(SSH_KNOWN_HOSTS))
+            if self.host in self._client.get_host_keys():
+                self._client.set_missing_host_key_policy(RejectPolicy())
+            else:
+                self._client.set_missing_host_key_policy(AutoAddPolicy())
 
             connect_kwargs = {
                 'hostname': self.host,
@@ -122,6 +141,12 @@ class SshConnection:
                 connect_kwargs['look_for_keys'] = True
 
             self._client.connect(**connect_kwargs)
+            # 首次连接：持久化 host key，供后续严格校验
+            try:
+                SSH_KNOWN_HOSTS.parent.mkdir(parents=True, exist_ok=True)
+                self._client.get_host_keys().save(str(SSH_KNOWN_HOSTS))
+            except OSError as e:
+                logger.warning(f"保存 SSH host key 失败: {e}")
             logger.info(f"SSH 连接已建立: {self.user}@{self.host}:{self.port}")
             return self._client
         finally:
@@ -163,7 +188,7 @@ class SshConnection:
 
         try:
             # 确保远程目录存在
-            self.exec_command(f"mkdir -p {remote_dir}")
+            self.exec_command(f"mkdir -p {_q(remote_dir)}")
 
             # 创建临时 tar 文件
             with tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False) as tmp:
@@ -180,9 +205,9 @@ class SshConnection:
                 sftp.put(tar_path, remote_tar)
 
                 # 远程解压
-                self.exec_command(f"tar xzf {remote_tar} -C {remote_dir}")
+                self.exec_command(f"tar xzf {_q(remote_tar)} -C {_q(remote_dir)}")
                 # 清理远程 tar
-                self.exec_command(f"rm -f {remote_tar}")
+                self.exec_command(f"rm -f {_q(remote_tar)}")
 
                 logger.info(f"代码已上传: {local_dir} -> {remote_dir}")
                 return True
@@ -270,7 +295,7 @@ class SshSpiderProcess:
         """确保远程工作目录存在"""
         if not self.workspace:
             return False
-        out, err, code = self.ssh.exec_command(f"mkdir -p {self.workspace}")
+        out, err, code = self.ssh.exec_command(f"mkdir -p {_q(self.workspace)}")
         if code != 0:
             logger.error(f"[{self.task_id}] 创建工作目录失败: {err}")
             return False
@@ -285,7 +310,8 @@ class SshSpiderProcess:
         if self.ssh.file_exists(f"{self.workspace}/requirements.txt"):
             logger.info(f"[{self.task_id}] 安装 Python 依赖...")
             out, err, code = self.ssh.exec_command(
-                f"cd {self.workspace} && {self._python_path} -m pip install -r requirements.txt -q",
+                f"cd {_q(self.workspace)} && {_q(self._python_path)} "
+                f"-m pip install -r requirements.txt -q",
                 timeout=120
             )
             if code != 0:
@@ -297,7 +323,9 @@ class SshSpiderProcess:
         # 检查 package.json (Node.js 项目)
         if self.ssh.file_exists(f"{self.workspace}/package.json"):
             logger.info(f"[{self.task_id}] 安装 Node.js 依赖...")
-            self.ssh.exec_command(f"cd {self.workspace} && npm install --production", timeout=120)
+            self.ssh.exec_command(
+                f"cd {_q(self.workspace)} && npm install --production", timeout=120
+            )
 
         return True
 
@@ -344,8 +372,8 @@ class SshSpiderProcess:
             # 6. 通过 nohup 启动（获取 PID）
             # 使用 setsid 确保进程独立于 SSH 会话
             run_cmd = (
-                f"cd {self.workspace} && "
-                f"setsid nohup bash -c '{start_cmd} > task.log 2>&1; echo $? > exit.code' "
+                f"cd {_q(self.workspace)} && "
+                f"setsid nohup bash -c {_q(start_cmd + ' > task.log 2>&1; echo $? > exit.code')} "
                 f"</dev/null >/dev/null 2>&1 & echo $!"
             )
             out, err, code = self.ssh.exec_command(run_cmd, timeout=10, get_pty=False)
@@ -369,7 +397,9 @@ class SshSpiderProcess:
 
             # 写 PID 到文件以便管理
             if self.remote_pid:
-                self.ssh.exec_command(f"echo {self.remote_pid} > {self.workspace}/spider.pid")
+                self.ssh.exec_command(
+                    f"echo {_q(str(self.remote_pid))} > {_q(self.workspace)}/spider.pid"
+                )
 
             logger.info(
                 f"[{self.task_id}] 远程爬虫已启动: PID={self.remote_pid}, "
@@ -386,21 +416,24 @@ class SshSpiderProcess:
         # 优先使用指定的入口文件
         if entry_file:
             if self.ssh.file_exists(f"{self.workspace}/{entry_file}"):
-                return f"{self._python_path} {entry_file}"
+                return f"{_q(self._python_path)} {_q(entry_file)}"
 
         # 尝试使用 crawlo 命令
         if spider_name_to_run:
             has_crawlo, _, _ = self.ssh.exec_command("which crawlo")
             if has_crawlo.strip():
-                return f"crawlo run {spider_name_to_run}"
+                return f"crawlo run {_q(spider_name_to_run)}"
 
         # 尝试自动发现 run.py
         for candidate in ['run.py', 'main.py', 'crawl.py', 'start.py']:
             if self.ssh.file_exists(f"{self.workspace}/{candidate}"):
-                return f"{self._python_path} {candidate}"
+                return f"{_q(self._python_path)} {_q(candidate)}"
 
         # 最后尝试 crawlo (可能已通过 pip 安装但不在 PATH)
-        return f"cd {self.workspace} && {self._python_path} -m crawlo.crawler run {spider_name_to_run or config.spider_name}"
+        return (
+            f"cd {_q(self.workspace)} && {_q(self._python_path)} "
+            f"-m crawlo.crawler run {_q(spider_name_to_run or config.spider_name)}"
+        )
 
     def _ensure_crawlo(self):
         """确保远程环境可导入 crawlo（缺失则自动 pip 安装）"""
@@ -417,7 +450,9 @@ class SshSpiderProcess:
         )
         if pip_code != 0:
             logger.info(f"[{self.task_id}] 远程缺少 pip，执行 ensurepip...")
-            self.ssh.exec_command(f"{self._python_path} -m ensurepip --upgrade", timeout=120)
+            self.ssh.exec_command(
+                f"{_q(self._python_path)} -m ensurepip --upgrade", timeout=120
+            )
             pip_out, _, pip_code2 = self.ssh.exec_command(
                 f"{self._python_path} -m pip --version"
             )
@@ -448,13 +483,13 @@ class SshSpiderProcess:
             try:
                 # 先尝试优雅停止
                 logger.info(f"[{self.task_id}] 停止远程进程 PID={self.remote_pid}")
-                self.ssh.exec_command(f"kill {self.remote_pid}", timeout=5)
+                self.ssh.exec_command(f"kill {_q(str(self.remote_pid))}", timeout=5)
 
                 # 等待进程结束
                 import time
                 for _ in range(timeout):
                     alive, _, _ = self.ssh.exec_command(
-                        f"kill -0 {self.remote_pid} 2>/dev/null && echo alive || echo dead"
+                        f"kill -0 {_q(str(self.remote_pid))} 2>/dev/null && echo alive || echo dead"
                     )
                     if 'dead' in alive:
                         break
@@ -462,7 +497,9 @@ class SshSpiderProcess:
                 else:
                     # 超时强制杀死
                     logger.warning(f"[{self.task_id}] 进程未响应，强制终止")
-                    self.ssh.exec_command(f"kill -9 {self.remote_pid}", timeout=5)
+                    self.ssh.exec_command(
+                        f"kill -9 {_q(str(self.remote_pid))}", timeout=5
+                    )
 
                 self.status = TaskStatus.CANCELLED
                 self.finished_at = datetime.utcnow()
@@ -586,7 +623,7 @@ class SshSpiderProcess:
         """清理远程工作目录"""
         if self.workspace:
             logger.info(f"[{self.task_id}] 清理远程工作目录: {self.workspace}")
-            self.ssh.exec_command(f"rm -rf {self.workspace}")
+            self.ssh.exec_command(f"rm -rf {_q(self.workspace)}")
 
 
 class SshExecutor:
@@ -888,33 +925,30 @@ class SshExecutor:
         errors_count: int = 0,
         error_message: str = None
     ):
-        """更新任务完成信息"""
-        db = SessionLocal()
-        try:
-            task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
-            if task:
-                task.status = status
-                task.finished_at = finished_at
-                task.pages_crawled = pages_crawled
-                task.items_scraped = items_scraped
-                task.errors_count = errors_count
-                task.deploy_mode = "ssh"
-                if error_message:
-                    task.error_message = error_message
-                if task.started_at:
-                    task.duration = (finished_at - task.started_at).total_seconds()
-                db.commit()
-                logger.info(
-                    f"任务 {task_id} 完成: status={status.value}, "
-                    f"pages={pages_crawled}, items={items_scraped}, "
-                    f"errors={errors_count}, duration={task.duration}s"
-                )
-                self._update_spider_stats(db, task, status)
-        except Exception as e:
-            logger.error(f"更新任务完成信息失败: {e}")
-            db.rollback()
-        finally:
-            db.close()
+        """更新任务完成信息（原子终态保护，复用公共实现）"""
+        from app.services.task_updater import update_task_completion
+        updated = update_task_completion(
+            task_id,
+            status,
+            finished_at,
+            pages_crawled=pages_crawled,
+            items_scraped=items_scraped,
+            errors_count=errors_count,
+            error_message=error_message,
+            deploy_mode="ssh",
+        )
+        if updated:
+            from app.core.database import SessionLocal as _SL
+            db = _SL()
+            try:
+                task = db.query(TaskInstance).filter(
+                    TaskInstance.id == int(task_id)
+                ).first()
+                if task:
+                    self._update_spider_stats(db, task, status)
+            finally:
+                db.close()
+        return updated
 
     def _update_spider_stats(self, db, task: TaskInstance, status: TaskStatus):
         """同步爬虫运行统计（与本地执行器保持一致）"""

@@ -14,7 +14,6 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import TaskInstance, TaskStatus, Spider, User
 from app.schemas.task import TaskCreate, TaskResponse, TaskStatusResponse, TaskLogResponse
-from app.services.task_executor import get_executor
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -90,11 +89,11 @@ async def pause_task(
     if task.status != TaskStatus.RUNNING:
         raise HTTPException(status_code=400, detail=f"Cannot pause task in {task.status} status")
     
-    deploy_mode = getattr(task, 'deploy_mode', None)
-    if deploy_mode in ('ssh', 'docker', 'agent'):
-        raise HTTPException(status_code=400, detail=f"{deploy_mode} 模式暂不支持暂停/恢复")
-
     executor = _get_executor_for_task(task)
+    from app.services.executor_protocol import supports_pause
+    if not supports_pause(executor):
+        mode = getattr(task, 'deploy_mode', 'unknown')
+        raise HTTPException(status_code=400, detail=f"{mode} 模式暂不支持暂停/恢复")
     ok = await executor.pause_task(task_id)
     if not ok:
         raise HTTPException(status_code=500, detail="暂停任务失败（进程不存在或已结束）")
@@ -120,11 +119,11 @@ async def resume_task(
     if task.status != TaskStatus.PAUSED:
         raise HTTPException(status_code=400, detail=f"Cannot resume task in {task.status} status")
     
-    deploy_mode = getattr(task, 'deploy_mode', None)
-    if deploy_mode in ('ssh', 'docker', 'agent'):
-        raise HTTPException(status_code=400, detail=f"{deploy_mode} 模式暂不支持暂停/恢复")
-
     executor = _get_executor_for_task(task)
+    from app.services.executor_protocol import supports_pause
+    if not supports_pause(executor):
+        mode = getattr(task, 'deploy_mode', 'unknown')
+        raise HTTPException(status_code=400, detail=f"{mode} 模式暂不支持暂停/恢复")
     ok = await executor.resume_task(task_id)
     if not ok:
         raise HTTPException(status_code=500, detail="恢复任务失败（进程不存在或已结束）")
