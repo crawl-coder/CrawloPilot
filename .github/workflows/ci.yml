@@ -121,7 +121,8 @@ jobs:
   docker-build:
     needs: [backend-test, frontend-test]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # 未配置 Docker Hub secrets 时跳过，避免登录失败导致 CI 红
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != ''
     
     steps:
       - name: Checkout code
