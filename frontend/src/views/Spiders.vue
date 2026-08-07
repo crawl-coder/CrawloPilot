@@ -245,6 +245,32 @@
             </span>
           </el-option>
         </el-select>
+
+        <!-- 资源限制：Docker 节点生效，本地/SSH/Agent 节点忽略 -->
+        <template v-if="selectedNode">
+          <el-divider style="margin: 16px 0" />
+          <p style="margin-bottom: 10px; font-size: 13px; color: #909399">
+            资源限制（仅 Docker 节点生效）
+          </p>
+          <div style="display: flex; gap: 12px">
+            <el-form-item label="内存" label-width="52px" style="margin-bottom: 0">
+              <el-select v-model="memoryLimit" style="width: 130px" placeholder="512m">
+                <el-option v-for="m in memoryOptions" :key="m" :value="m" :label="m" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="CPU(核)" label-width="58px" style="margin-bottom: 0">
+              <el-input-number
+                v-model="cpuLimit"
+                :min="0.1"
+                :max="32"
+                :step="0.5"
+                :precision="1"
+                style="width: 130px"
+                placeholder="1"
+              />
+            </el-form-item>
+          </div>
+        </template>
       </div>
       <template #footer>
         <el-button @click="runDialogVisible = false">取消</el-button>
@@ -285,6 +311,14 @@ const runDialogVisible = ref(false)
 const runningSpider = ref(null)
 const selectedNodeId = ref(null)
 const runLoading = ref(false)
+
+// 运行资源限制（Docker 节点生效）
+const memoryOptions = ['256m', '512m', '1g', '2g', '4g']
+const memoryLimit = ref('')
+const cpuLimit = ref(1)
+const selectedNode = computed(() =>
+  nodes.value.find((n) => n.id === selectedNodeId.value) || null
+)
 
 const loadNodes = async () => {
   try {
@@ -437,6 +471,8 @@ const handleRun = async (row) => {
   }
   runningSpider.value = row
   selectedNodeId.value = null
+  memoryLimit.value = ''
+  cpuLimit.value = 1
   runDialogVisible.value = true
 }
 
@@ -445,7 +481,13 @@ const confirmRun = async () => {
   if (!spider) return
   runLoading.value = true
   try {
-    await runSpider(spider.id, { node_id: selectedNodeId.value })
+    const payload = { node_id: selectedNodeId.value }
+    // 仅 Docker 节点透传资源限制；本地/SSH/Agent 节点忽略
+    if (selectedNode.value?.connect_type === 'docker') {
+      if (memoryLimit.value) payload.memory_limit = memoryLimit.value
+      if (cpuLimit.value) payload.cpu_limit = cpuLimit.value
+    }
+    await runSpider(spider.id, payload)
     ElMessage.success('爬虫运行指令已发送')
     runDialogVisible.value = false
   } catch (error) {

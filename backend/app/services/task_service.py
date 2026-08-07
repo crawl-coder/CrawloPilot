@@ -44,6 +44,8 @@ def create_and_run_task(
     schedule_id: int = None,
     expected_run_at=None,
     background_tasks=None,
+    memory_limit=None,
+    cpu_limit=None,
 ):
     """
     创建任务并按节点分发
@@ -95,7 +97,10 @@ def create_and_run_task(
         if node.connect_type == "ssh":
             result = _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks)
         elif node.connect_type == "docker":
-            result = _dispatch_docker(spider, task, node, code_dir, spider_name, background_tasks)
+            result = _dispatch_docker(
+                spider, task, node, code_dir, spider_name, background_tasks,
+                memory_limit=memory_limit, cpu_limit=cpu_limit,
+            )
         elif node.connect_type == "agent":
             result = _dispatch_agent(spider, task, node, db)
         else:
@@ -169,7 +174,8 @@ def _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks):
     }
 
 
-def _dispatch_docker(spider, task, node, code_dir, spider_name, background_tasks):
+def _dispatch_docker(spider, task, node, code_dir, spider_name, background_tasks,
+                     memory_limit=None, cpu_limit=None):
     """Docker 模式：直连节点 Docker API"""
     from app.services.docker_executor import get_docker_executor, DockerTaskConfig
 
@@ -184,6 +190,8 @@ def _dispatch_docker(spider, task, node, code_dir, spider_name, background_tasks
         node_host=node.host,
         node_port=node.port or 2375,
         docker_host=node.docker_host,
+        memory_limit=memory_limit or "512m",
+        cpu_limit=cpu_limit or 1.0,
     )
     if background_tasks:
         background_tasks.add_task(get_docker_executor().execute_task, config)

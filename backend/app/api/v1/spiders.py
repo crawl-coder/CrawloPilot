@@ -28,6 +28,8 @@ from pydantic import BaseModel
 class RunSpiderRequest(BaseModel):
     """运行爬虫请求"""
     node_id: Optional[int] = None  # 指定目标节点，None=本地运行
+    memory_limit: Optional[str] = None  # Docker 内存限制，如 "512m" / "1g"
+    cpu_limit: Optional[float] = None   # Docker CPU 配额（核数）
 
 
 
@@ -288,6 +290,8 @@ async def run_spider(
             spider_id=spider_id,
             node_id=body.node_id,
             background_tasks=background_tasks,
+            memory_limit=body.memory_limit,
+            cpu_limit=body.cpu_limit,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
