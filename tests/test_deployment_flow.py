@@ -56,7 +56,7 @@ NC = '\033[0m'
 # ============================================================
 # 配置
 # ============================================================
-BASE_URL = os.environ.get('TEST_BASE_URL', 'http://localhost:8000')
+BASE_URL = os.environ.get('TEST_BASE_URL', 'http://localhost:18000')
 API_PREFIX = '/api/v1'
 TEST_PROJECT_NAME = f"test_deploy_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 TEST_SPIDER_NAME = f"test_spider_{datetime.now().strftime('%H%M%S')}"
@@ -849,7 +849,7 @@ def check_backend_health():
         pass
     
     fail(f"后端服务未运行: {BASE_URL}")
-    info("请先启动后端: cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000")
+    info("请先启动后端: cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 18000")
     return False
 
 

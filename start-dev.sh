@@ -147,7 +147,7 @@ case "$MODE" in
         echo -e "${CYAN}=========================================${NC}"
         echo -e "${CYAN}  CrawloPilot 停止服务${NC}"
         echo -e "${CYAN}=========================================${NC}"
-        stop_service backend 8000
+        stop_service backend 18000
         stop_service frontend 3000
         echo -e "${GREEN}  全部停止${NC}"
         exit 0
@@ -156,7 +156,7 @@ case "$MODE" in
         echo -e "${CYAN}=========================================${NC}"
         echo -e "${CYAN}  CrawloPilot 重启服务${NC}"
         echo -e "${CYAN}=========================================${NC}"
-        stop_service backend 8000
+        stop_service backend 18000
         stop_service frontend 3000
         echo ""
         # 继续启动流程
@@ -205,9 +205,9 @@ echo -e "${GREEN}  ✓ 数据库就绪${NC}"
 # 5. 清理旧进程
 echo -e "${BLUE}[5/7]${NC} 清理旧进程..."
 # 检查 8000 端口
-if check_port 8000; then
+if check_port 18000; then
     echo "  停止旧后端进程..."
-    lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+    lsof -ti:18000 | xargs kill -9 2>/dev/null || true
     sleep 1
 fi
 if check_port 3000; then
@@ -225,7 +225,7 @@ PYTHON_BIN=$(which python)
 RELOAD_EXCLUDE_UPLOADS="$(pwd)/uploads"
 nohup "$PYTHON_BIN" -m uvicorn app.main:app \
     --host 0.0.0.0 \
-    --port 8000 \
+    --port 18000 \
     --reload \
     --reload-dir app \
     --reload-exclude "$RELOAD_EXCLUDE_UPLOADS" \
@@ -234,7 +234,7 @@ BACKEND_PID=$!
 echo $BACKEND_PID > ../logs/backend.pid
 
 # 等待后端就绪
-if wait_for_service "http://localhost:8000/health" "后端" 20; then
+if wait_for_service "http://localhost:18000/health" "后端" 20; then
     echo -e "${GREEN}  ✓ 后端已启动 (PID: $BACKEND_PID)${NC}"
 else
     echo -e "${RED}  ✗ 后端启动失败，查看日志: tail -f logs/backend.log${NC}"
@@ -264,8 +264,8 @@ echo -e "${CYAN}=========================================${NC}"
 echo ""
 echo -e "${GREEN}访问地址:${NC}"
 echo -e "  ${CYAN}前端界面:${NC} http://localhost:3000"
-echo -e "  ${CYAN}API 文档:${NC} http://localhost:8000/docs"
-echo -e "  ${CYAN}健康检查:${NC} http://localhost:8000/health"
+echo -e "  ${CYAN}API 文档:${NC} http://localhost:18000/docs"
+    echo -e "  ${CYAN}健康检查:${NC} http://localhost:18000/health"
 echo ""
 echo -e "${GREEN}日志:${NC}"
 echo -e "  ${CYAN}tail -f logs/backend.log${NC}"

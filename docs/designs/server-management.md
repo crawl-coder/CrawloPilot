@@ -1,3 +1,6 @@
+> 📘 设计导读：[designs 目录](README.md) ｜ [docs 首页](../README.md)
+> 📖 读者：开发者 ｜ 关联模块：[节点管理模块](../modules/05-nodes.md)
+
 # Server（真实服务器）实体管理设计
 
 > 关联文档：[节点管理](../modules/05-nodes.md) 定义了「服务器 × 执行通道」的整体模型；

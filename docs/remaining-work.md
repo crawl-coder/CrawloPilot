@@ -1,3 +1,5 @@
+> 📖 [docs 首页](README.md) ｜ 📘 上一篇：[产品设计](product-design.md)
+
 # CrawloPilot V1 状态与后续规划
 
 > 更新时间：2026-08-07

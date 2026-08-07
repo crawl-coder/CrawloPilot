@@ -46,7 +46,7 @@ def _patch_docker_client():
 
     def patched_init(self, base_url=None, version=None, **kwargs):
         if version is None:
-            version = '1.39'
+            version = '1.44'  # 支持 Docker 24+ (1.40+)
         original_init(self, base_url=base_url, version=version, **kwargs)
         # 在 __init__ 完成前 mount 适配器，确保 _retrieve_server_version 也能通过
         adapter = _create_adapter(sock)

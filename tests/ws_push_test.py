@@ -16,8 +16,8 @@ import urllib.request
 
 import websocket
 
-BASE = "http://localhost:8000"
-WS = "ws://localhost:8000"
+BASE = "http://localhost:18000"
+WS = "ws://localhost:18000"
 PASS = 0
 FAIL = 0
 

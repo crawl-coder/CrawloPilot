@@ -1,3 +1,6 @@
+> 📖 模块导航：[导读](README.md) ｜ [docs 首页](../README.md)
+> 🔗 下一篇：[项目管理](02-projects.md)
+
 # 认证与权限
 
 ## 职责

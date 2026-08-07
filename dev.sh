@@ -251,13 +251,13 @@ start_backend() {
     cd backend
     
     print_info "启动 FastAPI 服务器..."
-    print_info "API 文档: http://localhost:8000/docs"
+    print_info "API 文档: http://localhost:18000/docs"
     print_info "日志文件: logs/backend.log"
     
     # 在后台启动 uvicorn
     nohup uvicorn app.main:app \
         --host 0.0.0.0 \
-        --port 8000 \
+        --port 18000 \
         --reload \
         > ../logs/backend.log 2>&1 &
     
@@ -447,7 +447,7 @@ start_local() {
     print_header "启动完成"
     echo -e "${GREEN}访问地址:${NC}"
     echo -e "  ${CYAN}前端界面:${NC} http://localhost:3000"
-    echo -e "  ${CYAN}API 文档:${NC} http://localhost:8000/docs"
+    echo -e "  ${CYAN}API 文档:${NC} http://localhost:18000/docs"
     echo -e "  ${CYAN}后端日志:${NC} tail -f logs/backend.log"
     echo -e "  ${CYAN}前端日志:${NC} tail -f logs/frontend.log"
     echo ""

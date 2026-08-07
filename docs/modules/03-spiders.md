@@ -1,3 +1,7 @@
+> 📖 模块导航：[导读](README.md) ｜ [docs 首页](../README.md)
+> 🔗 上一篇：[项目管理](02-projects.md)
+> 🔗 下一篇：[部署执行](04-execution.md)
+
 # 爬虫管理
 
 ## 职责

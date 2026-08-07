@@ -2,14 +2,14 @@
 """
 CrawloPilot Agent - 节点执行代理
 
-运行在目标服务器上，主动连接 CrawloPilot 控制端：
+运行在目标服务器上，主动连接 CrawloPilot 管理服务器：
 - 注册（token）→ 获得 node_id
 - 每 30 秒心跳
 - 每 5 秒轮询领取待执行任务
 - 下载爬虫代码 → 本地执行 → 实时回报日志 → 回报终态/指标
 
 用法:
-    python crawlo_agent.py --server http://控制端:8000 --token <注册令牌>
+    python crawlo_agent.py --server http://管理服务器:18000 --token <注册令牌>
 
 仅依赖 Python 标准库，可在任意 Linux/macOS/Windows 服务器直接运行。
 """
@@ -32,7 +32,7 @@ import urllib.request
 from pathlib import Path
 
 AGENT_VERSION = "0.1.0"
-DEFAULT_SERVER = "http://127.0.0.1:8000"
+DEFAULT_SERVER = "http://127.0.0.1:18000"
 PIP_INDEX = os.environ.get("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple")
 
 
@@ -381,7 +381,7 @@ def parse_metrics(log_text: str):
 
 def main():
     parser = argparse.ArgumentParser(description="CrawloPilot Agent")
-    parser.add_argument("--server", default=DEFAULT_SERVER, help="控制端地址，如 http://127.0.0.1:8000")
+    parser.add_argument("--server", default=DEFAULT_SERVER, help="管理服务器地址，如 http://127.0.0.1:18000")
     parser.add_argument("--token", required=True, help="节点注册令牌")
     parser.add_argument("--poll-interval", type=int, default=5, help="任务轮询间隔（秒）")
     args = parser.parse_args()

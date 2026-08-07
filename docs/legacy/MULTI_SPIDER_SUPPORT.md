@@ -5,15 +5,13 @@
 
 ---
 
-## 📋 问题解答
+## 问题解答
 
 ### 问题 1: run_spider.py 为什么需要自己启动爬虫?
 
-**你的观察非常正确!** 
-
 ofweek 项目本身有 `run.py` 入口文件,但 `spider-runner/run_spider.py` 不能直接调用它,原因如下:
 
-#### ❌ 错误方式: 直接调用 run.py
+#### 错误方式: 直接调用 run.py
 
 ```python
 # 这样不行!
@@ -26,7 +24,7 @@ os.system("cd /spider/code && python run.py")
 3. 无法统一日志格式
 4. 无法控制超时和错误处理
 
-#### ✅ 正确方式: 使用 Crawlo 框架 API
+#### 正确方式: 使用 Crawlo 框架 API
 
 ```python
 # spider-runner/run_spider.py
@@ -41,11 +39,11 @@ await process.crawl(spider_name)  # 可以指定任意爬虫!
 ```
 
 **优势**:
-- ✅ 动态指定爬虫名称
-- ✅ 统一的环境变量管理
-- ✅ 统一的日志格式
-- ✅ 完整的错误处理
-- ✅ 支持超时控制
+- 动态指定爬虫名称
+- 统一的环境变量管理
+- 统一的日志格式
+- 完整的错误处理
+- 支持超时控制
 
 ---
 
@@ -112,7 +110,7 @@ await CrawlerProcess().crawl(['of_week', 'of_week_adaptive'])
 
 ---
 
-## 🎯 CrawloPilot 多爬虫支持方案
+## CrawloPilot 多爬虫支持方案
 
 ### 方案 1: 每个任务运行一个爬虫 (当前方案)
 
@@ -131,13 +129,13 @@ await CrawlerProcess().crawl(['of_week', 'of_week_adaptive'])
 ```
 
 **优点**:
-- ✅ 容器隔离,互不影响
-- ✅ 独立资源限制 (CPU/内存)
-- ✅ 独立日志采集
-- ✅ 独立状态监控
+- 容器隔离,互不影响
+- 独立资源限制 (CPU/内存)
+- 独立日志采集
+- 独立状态监控
 
 **缺点**:
-- ❌ 资源开销较大 (每个容器 ~50MB)
+- 资源开销较大 (每个容器 ~50MB)
 
 ### 方案 2: 一个容器运行多个爬虫 (未来优化)
 
@@ -160,14 +158,14 @@ await process.crawl(spider_names)  # 传入列表
 
 ---
 
-## 📊 完整运行流程对比
+## 完整运行流程对比
 
 ### 直接使用项目的 run.py
 
 ```bash
 # ofweek_standalone/run.py
 python run.py  # 硬编码运行 of_week
-python run.py of_week_adaptive  # ❌ 不支持参数!
+python run.py of_week_adaptive  #  不支持参数!
 ```
 
 **run.py 的代码**:
@@ -201,7 +199,7 @@ await process.crawl(spider_name)
 
 ---
 
-## 🔧 run_spider.py 的核心职责
+## run_spider.py 的核心职责
 
 ### 1. 环境准备
 
@@ -273,7 +271,7 @@ logger.info(f"Task ID: {os.environ.get('TASK_ID', 'N/A')}")
 
 ---
 
-## 📈 多爬虫并发测试
+## 多爬虫并发测试
 
 ### 测试脚本
 
@@ -326,31 +324,31 @@ for container_id in containers:
 
 ---
 
-## 🎯 总结
+## 总结
 
 ### run_spider.py 的必要性
 
 | 对比项 | 项目 run.py | spider-runner/run_spider.py |
 |--------|------------|---------------------------|
-| 爬虫名称 | ❌ 硬编码 | ✅ 环境变量动态指定 |
-| 任务 ID | ❌ 不支持 | ✅ 支持 |
-| 日志格式 | ❌ 各自定义 | ✅ 统一格式 |
-| 错误处理 | ❌ 简单 | ✅ 完整 |
-| 超时控制 | ❌ 无 | ✅ 有 |
-| 平台集成 | ❌ 无 | ✅ 完整 |
+| 爬虫名称 |  硬编码 |  环境变量动态指定 |
+| 任务 ID |  不支持 |  支持 |
+| 日志格式 |  各自定义 |  统一格式 |
+| 错误处理 |  简单 |  完整 |
+| 超时控制 |  无 |  有 |
+| 平台集成 |  无 |  完整 |
 
 ### 多爬虫支持
 
 ```
 当前方案:
-✅ 每个任务运行一个爬虫
-✅ 容器隔离,独立管理
-✅ 支持任意爬虫名称
+ 每个任务运行一个爬虫
+ 容器隔离,独立管理
+ 支持任意爬虫名称
 
 未来优化:
-🔄 支持一个容器运行多个爬虫
-🔄 资源更高效
-🔄 减少容器开销
+ 支持一个容器运行多个爬虫
+ 资源更高效
+ 减少容器开销
 ```
 
 ### Crawlo 框架的灵活性
@@ -375,7 +373,7 @@ await CrawlerProcess().crawl(['of_week', 'of_week_adaptive'])
 
 ---
 
-## ✅ 回答你的疑问
+## 回答你的疑问
 
 ### 1. 为什么不用项目的 run.py?
 
@@ -398,4 +396,4 @@ await CrawlerProcess().crawl(['of_week', 'of_week_adaptive'])
 
 ---
 
-**run_spider.py 是 CrawloPilot 平台的标准启动器,不是替代项目的 run.py,而是提供更灵活、更标准化的运行方式!** 🎯
+**run_spider.py 是 CrawloPilot 平台的标准启动器,不是替代项目的 run.py,而是提供更灵活、更标准化的运行方式!** 

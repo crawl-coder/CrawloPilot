@@ -25,7 +25,7 @@ import urllib.parse
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-BASE = "http://localhost:8000/api/v1"
+BASE = "http://localhost:18000/api/v1"
 PASS = 0
 FAIL = 0
 FAILURES = []

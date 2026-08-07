@@ -1,3 +1,7 @@
+> 📖 模块导航：[导读](README.md) ｜ [docs 首页](../README.md)
+> 🔗 上一篇：[任务管理](06-tasks.md)
+> 🔗 下一篇：[测试](08-testing.md)
+
 # 前端页面
 
 ## 技术栈
@@ -51,4 +55,4 @@ frontend/src/
 
 ## 开发配置
 
-`frontend/vite.config.js`：开发端口 3000，`/api` 代理到 `http://127.0.0.1:8000`。
+`frontend/vite.config.js`：开发端口 3000，`/api` 代理到 `http://127.0.0.1:18000`。

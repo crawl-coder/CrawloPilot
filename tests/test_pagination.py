@@ -4,7 +4,7 @@
 """
 import requests
 
-BASE_URL = "http://localhost:8000/api/v1"
+BASE_URL = "http://localhost:18000/api/v1"
 
 def test_api(name, endpoint, token=None):
     """测试API分页"""

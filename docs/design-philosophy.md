@@ -1,3 +1,5 @@
+> 📖 [docs 首页](README.md) ｜ 📘 下一篇：[产品设计](product-design.md)
+
 # CrawloPilot 设计哲学
 
 > 一句话：**CrawloPilot 是爬虫的"编排面"，不是爬虫本身。它负责把代码送到执行面、跑起来、看得到，其余功能按需生长。**
@@ -14,7 +16,7 @@ V1 只承诺一件事：**从"创建项目"到"看到爬虫日志"的完整链�
 
 > 后续进展（2026-08-07）：Git 工作流与定时调度已以更轻的形态回归 V1
 > （完整仓库 + 凭据单次注入；进程内 APScheduler 替代 Celery 依赖），
-> 监控告警/代理池/API 管理/审计仍在 V2 规划中（见 REMAINING_WORK）。
+> 监控告警/代理池/API 管理/审计仍在 V2 规划中（见 [remaining-work.md](remaining-work.md)）。
 
 ### 1.2 执行器可插拔：控制面只做编排
 
@@ -58,13 +60,18 @@ stop_task(id)         停止
 
 ### 1.5 代码即配置：上传即部署
 
-爬虫项目遵循固定的目录规范，`crawlo.cfg` 是入口（指定 settings 模块），
-settings 定义 `SPIDER_MODULES`：
+爬虫项目遵循固定的目录规范。执行入口由 `entry_file` 决定（如 `run.py`），
+若未指定则尝试 `crawlo run <spider_name>`，否则自动发现
+`run.py`/`main.py`/`crawl.py`/`start.py`。
+
+**`crawlo.cfg` 仅在使用 Crawlo 框架（`crawlo run`）时才必需**——它指定
+`settings.py` 等配置模块。若爬虫用 `run.py` 等独立脚本入口（Scrapy、
+Selenium 等），则无需 `crawlo.cfg`：
 
 ```text
 project_1/spider_2/
-├── crawlo.cfg              # 指定 settings 模块（必须）
-├── run.py                  # 入口
+├── crawlo.cfg              # 仅使用 Crawlo 框架时必需（指定 settings）
+├── run.py                  # 入口（entry_file）
 └── <package>/              # 爬虫包（含 spiders/）
     └── settings.py         # SPIDER_MODULES 等配置
 ```

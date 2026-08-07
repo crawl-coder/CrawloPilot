@@ -5,7 +5,7 @@ import requests
 import sys
 import uuid
 
-BASE = "http://localhost:8000/api/v1"
+BASE = "http://localhost:18000/api/v1"
 RESULTS = {"pass": 0, "fail": 0, "skip": 0, "errors": []}
 
 # 唯一标识，避免重复创建冲突
@@ -330,17 +330,17 @@ print("\n" + "=" * 60)
 print("  12. 基础端点")
 print("=" * 60)
 
-r = requests.get("http://localhost:8000/health")
+r = requests.get("http://localhost:18000/health")
 ok = r.status_code == 200 and r.json()["status"] == "healthy"
 print(f"  {'✅' if ok else '❌'} GET    /health                                         -> {r.status_code}")
 RESULTS["pass" if ok else "fail"] += 1
 
-r = requests.get("http://localhost:8000/")
+r = requests.get("http://localhost:18000/")
 ok = r.status_code == 200
 print(f"  {'✅' if ok else '❌'} GET    /                                               -> {r.status_code}")
 RESULTS["pass" if ok else "fail"] += 1
 
-r = requests.get("http://localhost:8000/metrics")
+r = requests.get("http://localhost:18000/metrics")
 ok = r.status_code == 200
 print(f"  {'✅' if ok else '❌'} GET    /metrics                                        -> {r.status_code}")
 RESULTS["pass" if ok else "fail"] += 1

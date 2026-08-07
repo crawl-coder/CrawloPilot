@@ -1,8 +1,11 @@
+> 📘 设计导读：[designs 目录](README.md) ｜ [docs 首页](../README.md)
+> 📖 读者：开发者 ｜ 关联模块：[任务管理模块](../modules/06-tasks.md)
+
 # 定时任务配置功能设计
 
 > 状态：**V1（方案 A）已实现并验证**（2026-08-07，提交 `529f45e` + 修复增补）
 > 端到端测试：`tests/schedule_test.py`（35 项，含 cron 真实触发/幂等/启停/once 自动停用/级联删除）
-> 关联文档：[设计哲学](../DESIGN_PHILOSOPHY.md)、[任务管理](../modules/06-tasks.md)、[部署执行](../modules/04-execution.md)
+> 关联文档：[设计哲学](../design-philosophy.md)、[任务管理](../modules/06-tasks.md)、[部署执行](../modules/04-execution.md)
 
 ## 0. 实现状态与偏差说明（2026-08-07）
 
@@ -153,24 +156,22 @@ class Schedule(Base):
 - 同一实例因重试或双 fire 产生重复任务；
 - 多实例各自运行调度器时，同一 cron 被触发多次。
 
-实现（二选一，推荐 GET_LOCK）：
+**实现（已采用）**：`task_instance` 增加 `(schedule_id, expected_run_at)` 唯一索引
+（新增列 `expected_run_at`），重复创建被数据库拒绝。该方案天然满足
+"一次触发最多创建一个任务"，且无需额外锁管理。
 
-1. **MySQL `GET_LOCK`**：触发时以 `schedule-{id}-{期望触发时间戳}` 为锁名加锁，
-   拿到锁才创建任务，执行完释放；天然兼容多实例；
-2. **唯一约束**：`task_instance` 增加 `(schedule_id, expected_run_at)` 唯一索引
-   （新增列 `expected_run_at`），重复创建被数据库拒绝。
-
-任选其一即可满足"一次触发最多创建一个任务"。
+> 备选方案 MySQL `GET_LOCK`（触发时以 `schedule-{id}-{期望触发时间戳}` 加锁）可兼容
+> 多实例并发调度，但 V1 采用唯一索引，未使用 GET_LOCK。
 
 > 前端提示/运行记录层面，任务来源统一带 `triggered_by="schedule"` 与
 > `schedule_id`，便于排查重复。
 
 ### 多实例说明
 
-V1 假设**单实例控制面**（调度器只跑一个）。多实例部署时：
+V1 假设**单实例管理服务器**（调度器只跑一个）。多实例部署时：
 
 - 方案 A（简单）：调度器只在主实例启用（环境变量 `ENABLE_SCHEDULER=true`）；
-- 方案 B（推荐）：配合机制二的 `GET_LOCK`，允许每实例都跑调度器，
+- 方案 B（推荐）：配合 MySQL `GET_LOCK`，允许每实例都跑调度器，
   由锁保证一次触发只被一个实例消费（无需主从配置）。
 
 设计哲学一致：先保证单实例正确，再谈分布式。
@@ -180,7 +181,7 @@ V1 假设**单实例控制面**（调度器只跑一个）。多实例部署时�
 进程内 APScheduler 的**有效边界：单实例（或互斥后多实例）+ 容忍分钟级重启窗口**。
 
 - 边界内：V1/V2 完全覆盖，成本最低；
-- 出现"绝不能漏跑"或"双活控制面"硬需求时，升级为**独立调度器**：
+- 出现"绝不能漏跑"或"双活管理服务器"硬需求时，升级为**独立调度器**：
   把 APScheduler 放进独立进程/容器（仍不引入 Celery），触发逻辑不变
   （纯 DB 操作 + `task_service.create_and_run_task` 调用），迁移成本低；
 - 出现海量任务队列/背压/重试需求时，才评估 Celery（beat + worker），

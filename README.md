@@ -80,8 +80,8 @@ cp .env.example .env        # 按需修改数据库地址
 启动后访问：
 
 - 前端界面：http://localhost:3000（默认账号 `admin / admin123`）
-- API 文档：http://localhost:8000/docs
-- 健康检查：http://localhost:8000/health
+- API 文档：http://localhost:18000/docs
+- 健康检查：http://localhost:18000/health
 
 ## 📦 详细部署
 
@@ -146,7 +146,7 @@ cp .env.example .env
 ```
 
 脚本自动完成：创建 `.env`（如缺失）→ 安装后端依赖 → 数据库迁移与初始化
-（`alembic upgrade head` + `init_db.py`）→ 清理 8000 / 3000 端口旧进程 →
+（`alembic upgrade head` + `init_db.py`）→ 清理 18000 / 3000 端口旧进程 →
 启动后端（uvicorn 热重载）→ 启动前端。
 
 日志位置：`logs/backend.log`、`logs/frontend.log`。
@@ -159,7 +159,7 @@ conda activate crawlo_pilot
 cd backend
 pip install -r requirements.txt
 python init_db.py                         # 初始化表结构与默认账号（首次）
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 18000
 
 # 前端（另开终端）
 cd ../frontend
@@ -182,7 +182,7 @@ Compose 包含 V1 必需服务：`api-server`（FastAPI）、`frontend`（Nginx 
 
 ### 7. 验证部署
 
-1. `curl http://localhost:8000/health` 返回正常；
+1. `curl http://localhost:18000/health` 返回正常；
 2. 浏览器打开 http://localhost:3000，用 `admin / admin123` 登录；
 3. 左侧「项目管理」创建一个项目 →「爬虫管理」创建爬虫 → 上传代码 → 运行，确认有任务记录与日志。
 
@@ -212,8 +212,8 @@ Compose 包含 V1 必需服务：`api-server`（FastAPI）、`frontend`（Nginx 
 
 ### 9. 常见问题
 
-- **端口被占**：8000 / 3000 被旧进程占用时，先 `./start-dev.sh --stop` 或
-  `lsof -ti:8000 -ti:3000 | xargs kill -9` 再启动。
+- **端口被占**：18000 / 3000 被旧进程占用时，先 `./start-dev.sh --stop` 或
+  `lsof -ti:18000 -ti:3000 | xargs kill -9` 再启动。
 - **数据库连接失败**：确认 MySQL 用户对 `crawlo_pilot` 库有权限，且 `.env` 指向的地址可达。
 - **环境变量干扰**：若 shell 中导出了 `MYSQL_HOST` 等旧变量，请先 `unset`
   （平台只读取项目根目录 `.env`，但避免歧义）。
@@ -335,8 +335,8 @@ README 覆盖部署与使用主线；设计、实现与运维细节在 `docs/` �
 |------|------|
 | [文档索引](docs/README.md) | 全部文档入口与推荐阅读顺序 |
 | [变更记录](CHANGELOG.md) | 版本变更记录（Keep a Changelog） |
-| [设计哲学](docs/DESIGN_PHILOSOPHY.md) | 为什么这样设计、核心决策 |
-| [产品设计](docs/PRODUCT_DESIGN.md) | 产品定位、功能模块、技术方案 |
+| [设计哲学](docs/design-philosophy.md) | 为什么这样设计、核心决策 |
+| [产品设计](docs/product-design.md) | 产品定位、功能模块、技术方案 |
 | [部署执行](docs/modules/04-execution.md) | 四种执行器流程、Docker 构建策略、指标解析 |
 | [节点管理](docs/modules/05-nodes.md) | 真实服务器 × SSH/Docker/Agent 通道设计 |
 | [Server 管理设计](docs/designs/server-management.md) | 真实服务器实体管理方案 |
@@ -372,7 +372,7 @@ CrawloPilot/
 
 **V2（规划）**：调度管理增强、监控告警、代理池 / API 管理、操作审计
 
-详见 [docs/REMAINING_WORK.md](docs/REMAINING_WORK.md)。
+详见 [docs/remaining-work.md](docs/remaining-work.md)。
 
 ## 🤝 贡献
 

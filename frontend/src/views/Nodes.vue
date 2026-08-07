@@ -746,7 +746,7 @@ const handleAddNode = async () => {
     if (nodeForm.connect_type === 'agent') {
       // Agent 节点：展示注册令牌，由节点上的 agent 程序使用
       ElMessageBox.alert(
-        `请在节点服务器上运行：\n\npython crawlo_agent.py --server http://<控制端>:8000 --token ${created.agent_token}\n\nAgent 启动后会自动注册并上线。`,
+        `请在节点服务器上运行：\n\npython crawlo_agent.py --server http://<管理服务器>:18000 --token ${created.agent_token}\n\nAgent 启动后会自动注册并上线。`,
         'Agent 注册令牌（仅显示一次）',
         { confirmButtonText: '我已复制' }
       )

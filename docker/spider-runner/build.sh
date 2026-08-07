@@ -49,7 +49,7 @@ if docker image inspect "${IMAGE_NAME}:${IMAGE_TAG}" > /dev/null 2>&1; then
     echo "使用示例:"
     echo ""
     echo "docker run -it --rm \\"
-    echo "  -e API_URL=http://localhost:8000 \\"
+    echo "  -e API_URL=http://localhost:18000 \\"
     echo "  -e API_TOKEN=your_token \\"
     echo "  -e TASK_ID=task_123 \\"
     echo "  -e SPIDER_NAME=my_spider \\"

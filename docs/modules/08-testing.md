@@ -1,3 +1,6 @@
+> 📖 模块导航：[导读](README.md) ｜ [docs 首页](../README.md)
+> 🔗 上一篇：[前端页面](07-frontend.md)
+
 # 测试
 
 ## 验收测试（核心）
@@ -11,7 +14,7 @@
 运行方式（需先启动后端）：
 
 ```bash
-cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd backend && uvicorn app.main:app --host 0.0.0.0 --port 18000
 cd .. && python tests/test_deployment_flow.py
 ```
 
@@ -43,7 +46,7 @@ cd .. && python tests/test_deployment_flow.py
 - 本地模式：运行 → 状态 pending→running→success → 详情/日志
 - Docker 模式：建 docker 节点 → 运行 → 容器构建/执行/清理
 - Agent 模式：建 agent 节点 → 启动 `agent/crawlo_agent.py` → 派发任务 → 停止指令
-- WebSocket：`ws://127.0.0.1:8000/ws/tasks/{id}` 观察日志流与终态推送
+- WebSocket：`ws://127.0.0.1:18000/ws/tasks/{id}` 观察日志流与终态推送
 
 ## 已知问题
 

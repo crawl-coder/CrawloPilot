@@ -303,7 +303,7 @@ const handleCreateChannel = async () => {
     ElMessage.success('通道创建成功')
     if (res.connect_type === 'agent' && res.agent_token) {
       ElMessageBox.alert(
-        `在服务器上运行：\npython crawlo_agent.py --server http://<控制端>:8000 --token ${res.agent_token}`,
+        `在服务器上运行：\npython crawlo_agent.py --server http://<管理服务器>:18000 --token ${res.agent_token}`,
         'Agent 注册令牌（仅显示一次）',
         { confirmButtonText: '我已复制' }
       )

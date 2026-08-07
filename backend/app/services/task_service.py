@@ -46,6 +46,7 @@ def create_and_run_task(
     background_tasks=None,
     memory_limit=None,
     cpu_limit=None,
+    timeout=None,
 ):
     """
     创建任务并按节点分发
@@ -82,6 +83,15 @@ def create_and_run_task(
 
     # Docker 资源限制仅在节点为 docker 时生效；其余模式保留 None
     is_docker = bool(node and node.connect_type == "docker")
+    # 按节点类型确定部署模式，供 executor_registry 分发 stop/status/logs
+    if not node:
+        deploy_mode = "local"
+    elif node.connect_type == "docker":
+        deploy_mode = "docker"
+    elif node.connect_type == "agent":
+        deploy_mode = "agent"
+    else:
+        deploy_mode = "ssh"
     task = TaskInstance(
         spider_id=spider.id,
         spider_name=spider.spider_name or spider.name,
@@ -89,6 +99,7 @@ def create_and_run_task(
         expected_run_at=expected_run_at,
         status=TaskStatus.PENDING,
         node_id=node.id if node else None,
+        deploy_mode=deploy_mode,
         memory_limit=memory_limit if is_docker else None,
         cpu_limit=cpu_limit if is_docker else None,
     )
@@ -110,13 +121,14 @@ def create_and_run_task(
         else:
             result = _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks)
     else:
-        result = _dispatch_local(spider, task, code_dir, spider_name, background_tasks)
+        result = _dispatch_local(spider, task, code_dir, spider_name, background_tasks,
+                                 timeout=timeout)
 
     _update_spider_run_stats(db, spider)
     return result
 
 
-def _dispatch_local(spider, task, code_dir, spider_name, background_tasks):
+def _dispatch_local(spider, task, code_dir, spider_name, background_tasks, timeout=None):
     """本地模式：子进程运行"""
     from app.services.local_executor import get_local_executor, LocalTaskConfig
 
@@ -127,6 +139,7 @@ def _dispatch_local(spider, task, code_dir, spider_name, background_tasks):
         code_dir=code_dir,
         entry_file=spider.entry_file,
         spider_name_to_run=spider_name,
+        timeout=timeout or 3600,
     )
     if background_tasks:
         background_tasks.add_task(get_local_executor().execute_task, config)

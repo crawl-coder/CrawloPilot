@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 # 测试环境配置
 # 优先从环境变量读取，默认使用云服务器信息
 TEST_CONFIG = {
-    'base_url': os.getenv('TEST_BASE_URL', 'http://localhost:8000'),
+    'base_url': os.getenv('TEST_BASE_URL', 'http://localhost:18000'),
     'frontend_url': os.getenv('TEST_FRONTEND_URL', 'http://localhost:8080'),
     'nginx_url': os.getenv('TEST_NGINX_URL', 'http://localhost'),
     'mysql_host': os.getenv('MYSQL_HOST', '127.0.0.1'),

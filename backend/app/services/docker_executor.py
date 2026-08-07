@@ -183,8 +183,9 @@ def _build_base_context_tar() -> bytes:
     优先使用本地 wheel（无需编译，秒级安装），否则 pip 安装并走国内镜像。
     """
     if CRAWLO_WHEEL_PATH and os.path.exists(CRAWLO_WHEEL_PATH):
-        install_cmd = f"RUN pip install --no-cache-dir /tmp/crawlo.whl aiomysql -i {PIP_INDEX_URL}"
+        # 保留原始 wheel 文件名（pip 要求文件名格式正确）
         wheel_name = os.path.basename(CRAWLO_WHEEL_PATH)
+        install_cmd = f"RUN pip install --no-cache-dir /tmp/{wheel_name} aiomysql -i {PIP_INDEX_URL}"
     else:
         install_cmd = (
             f"RUN pip install --no-cache-dir crawlo=={CRAWLO_VERSION} aiomysql "
@@ -192,10 +193,20 @@ def _build_base_context_tar() -> bytes:
         )
         wheel_name = None
 
-    dockerfile = (
-        f"FROM python:3.10-slim\n"
-        f"{install_cmd}\n"
-    )
+    # 注意：COPY 必须是相对路径（Docker build context 限制）。
+    # 使用 COPY crawlo-*.whl /tmp/ 而不是直接 COPY /tmp/crawlo.whl。
+    if wheel_name:
+        dockerfile = (
+            f"FROM python:3.10-slim\n"
+            f"COPY {wheel_name} /tmp/{wheel_name}\n"
+            f"{install_cmd}\n"
+        )
+    else:
+        dockerfile = (
+            f"FROM python:3.10-slim\n"
+            f"{install_cmd}\n"
+        )
+
     buf = io.BytesIO()
     now = int(time.time())
     with tarfile.open(fileobj=buf, mode="w") as tar:
@@ -208,7 +219,8 @@ def _build_base_context_tar() -> bytes:
         if wheel_name:
             with open(CRAWLO_WHEEL_PATH, "rb") as f:
                 wheel_data = f.read()
-            wi = tarfile.TarInfo("/tmp/crawlo.whl")
+            # 使用相对路径（Docker build context 根目录），不能用 / 开头
+            wi = tarfile.TarInfo(wheel_name)
             wi.size = len(wheel_data)
             wi.mtime = now
             wi.mode = 0o644
@@ -432,7 +444,10 @@ class DockerExecutor:
                 except Exception:
                     info = None
                 if info is None:
-                    # 容器已不存在
+                    # 容器已不存在（可能是正常结束被清理，或被 stop_task 移除）
+                    # 若任务已被显式取消，则不覆盖为 FAILED（避免取消后状态被监控线程改写）
+                    if self._task_is_cancelled(config.task_id):
+                        return
                     status = TaskStatus.FAILED
                     break
                 if info.get("status") == "exited":
@@ -511,7 +526,9 @@ class DockerExecutor:
                 logs_text = docker.get_container_logs(cid, tail=10000)
             except Exception:
                 pass
-            docker.remove_container(cid, force=True)
+            # 先标记取消再移除容器：监控线程可能正并发 poll 容器状态，
+            # 若容器先消失而 DB 仍为 RUNNING，监控线程会把状态改写为 FAILED。
+            # 先写 CANCELLED，监控线程在容器消失时读到已取消则不会覆盖。
             self._update_task_completion(
                 task_id,
                 TaskStatus.CANCELLED,
@@ -520,10 +537,16 @@ class DockerExecutor:
                 container_id=cid,
                 logs=logs_text,
             )
+            # 移除容器；与监控线程存在竞态（双方都可能 remove）。
+            # 容器已不存在视为已清理，不应让 stop 失败；仅对其它异常告警但不阻断任务收敛。
+            try:
+                docker.remove_container(cid, force=True)
+            except Exception as e:
+                logger.warning(f"[{task_id}] 移除容器失败(忽略, 可能已被监控线程清理): {e}")
             Thread(target=self._delayed_cleanup, args=(task_id,), daemon=True).start()
             return True
         except Exception as e:
-            logger.error(f"停止 Docker 任务失败: {e}")
+            logger.exception(f"停止 Docker 任务失败: {e}")
             return False
 
     def get_task_status(self, task_id: str) -> Optional[Dict]:
@@ -601,6 +624,18 @@ class DockerExecutor:
         finally:
             db.close()
 
+    def _task_is_cancelled(self, task_id: str) -> bool:
+        """检查任务是否已被显式取消（供监控线程避免覆盖取消状态）"""
+        try:
+            db = SessionLocal()
+            try:
+                task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
+                return bool(task and task.status == TaskStatus.CANCELLED)
+            finally:
+                db.close()
+        except Exception:
+            return False
+
     def _update_task_completion(
         self,
         task_id: str,
@@ -617,6 +652,19 @@ class DockerExecutor:
         try:
             task = db.query(TaskInstance).filter(TaskInstance.id == int(task_id)).first()
             if task:
+                # 终态保护：任务一旦进入终态（含被用户显式取消 CANCELLED），
+                # 监控线程/stop_task 并发写入时不得覆盖，避免竞态导致
+                # CANCELLED 被改写为 FAILED（如容器被移除后日志获取失败）。
+                terminal = {
+                    TaskStatus.SUCCESS, TaskStatus.FAILED,
+                    TaskStatus.CANCELLED, TaskStatus.TIMEOUT,
+                }
+                if task.status in terminal:
+                    logger.info(
+                        f"[{task_id}] 任务已是终态 {task.status.value}，忽略本次覆盖为 {status.value}"
+                    )
+                    return
+
                 task.status = status
                 task.finished_at = finished_at
                 task.pages_crawled = pages_crawled

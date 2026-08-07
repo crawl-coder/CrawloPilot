@@ -1,9 +1,17 @@
+> 📖 [docs 首页](README.md) ｜ 📘 上一篇：[设计哲学](design-philosophy.md) ｜ 下一篇：[版本状态](remaining-work.md)
+
 # Crawlo 管理平台（CrawloPilot）- 产品设计与技术方案
 
 > **阅读提示**：本文是项目初期的完整愿景设计稿（历史文档）。当前实际交付范围以
-> [REMAINING_WORK.md](REMAINING_WORK.md) 为准；文中部分接口约定（统一响应格式、
+> [remaining-work.md](remaining-work.md) 为准；文中部分接口约定（统一响应格式、
 > WebSocket 路径、组件选型、部署架构）与最终实现存在差异，具体行为以代码与
 > 各模块文档（docs/modules/）为准。
+>
+> **已实现 / 未实现导流**：
+> - ✅ **已实现**：项目部署、任务调度、用户权限（[modules/](modules/) 各模块描述当前实现）
+> - ⚠️ **仅基础形态**：运行监控（健康检查 + 基础 dashboard，见 [modules/06-tasks.md](modules/06-tasks.md)）
+> - ❌ **未实现（V2 规划）**：代理池、API 管理、监控告警、数据质量、审计、ELK/日志平台
+>   等，详见 [remaining-work.md](remaining-work.md) 的 V2 规划。
 
 ## 一、产品概述
 
