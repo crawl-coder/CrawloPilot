@@ -113,9 +113,9 @@ def main():
     check("凭据列表可读", s == 200 and any(c["id"] == cred_id for c in r), r)
     check("列表不含秘密", "robot-token-xyz" not in json.dumps(r), r)
 
-    # 非 admin 写操作拒绝
+    # 非 admin 写操作拒绝（注册走 admin 令牌，兼容开放注册开关两种状态）
     uname = f"tester{int(time.time())}"
-    s, r = http("POST", "/auth/register", None, {
+    s, r = http("POST", "/auth/register", admin, {
         "username": uname, "email": f"{uname}@test.com", "password": "test123456",
     })
     check("注册普通用户", s in (200, 201), r)

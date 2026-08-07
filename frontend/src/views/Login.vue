@@ -162,7 +162,8 @@ const handleRegister = async () => {
     ElMessage.success('注册成功，请登录')
     showRegister.value = false
   } catch (error) {
-    ElMessage.error('注册失败')
+    if (error === false || error?.fields) return // 表单校验失败，element 已提示
+    ElMessage.error(error?.response?.data?.detail || '注册失败')
   }
 }
 </script>

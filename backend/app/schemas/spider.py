@@ -32,8 +32,7 @@ class SpiderBase(BaseModel):
     entry_file: Optional[str] = None  # 入口文件 (如 run.py)
     spider_name: Optional[str] = None  # 爬虫名称 (用于 crawlo run)
     config: Optional[Dict[str, Any]] = None  # 运行配置 (超时/重试等)
-    schedule_config: Optional[Dict[str, Any]] = None  # 调度配置 (定时开关/cron)
-    
+
     # Git相关
     git_url: Optional[str] = None
     git_auth_type: str = "password"
@@ -61,7 +60,6 @@ class SpiderUpdate(BaseModel):
     entry_file: Optional[str] = None
     spider_name: Optional[str] = None  # 运行名称 (用于 crawlo run)
     config: Optional[Dict[str, Any]] = None
-    schedule_config: Optional[Dict[str, Any]] = None
     git_credential_id: Optional[int] = None  # 更新引用的共享凭据（不传=不修改；显式传 null=清除引用）
 
 
@@ -71,8 +69,7 @@ class SpiderInDB(SpiderBase):
     status: SpiderStatus
     code_path: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
-    schedule_config: Optional[Dict[str, Any]] = None
-    
+
     # 统计
     last_run_at: Optional[datetime] = None
     last_run_status: Optional[str] = None

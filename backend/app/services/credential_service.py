@@ -12,7 +12,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.crypto import encrypt_text, decrypt_text
+from app.core.crypto import encrypt_text, decrypt_text, decrypt_or_plain
 from app.core.dependencies import require_admin  # noqa: F401（re-export，兼容既有引用）
 from app.models import User, GitCredential
 
@@ -82,11 +82,12 @@ def resolve_spider_git_credentials(db: Session, spider) -> SimpleNamespace:
                 git_ssh_key=decrypt_text(cred.ssh_key),
                 git_passphrase=decrypt_text(cred.passphrase),
             )
+    # 内联凭据：加密落库后统一解密；存量明文通过 decrypt_or_plain 兼容
     return SimpleNamespace(
         git_url=spider.git_url,
         git_auth_type=spider.git_auth_type,
         git_username=spider.git_username,
-        git_password=spider.git_password,
-        git_ssh_key=spider.git_ssh_key,
-        git_passphrase=spider.git_passphrase,
+        git_password=decrypt_or_plain(spider.git_password),
+        git_ssh_key=decrypt_or_plain(spider.git_ssh_key),
+        git_passphrase=decrypt_or_plain(spider.git_passphrase),
     )

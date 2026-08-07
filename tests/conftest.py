@@ -15,12 +15,12 @@ TEST_CONFIG = {
     'base_url': os.getenv('TEST_BASE_URL', 'http://localhost:8000'),
     'frontend_url': os.getenv('TEST_FRONTEND_URL', 'http://localhost:8080'),
     'nginx_url': os.getenv('TEST_NGINX_URL', 'http://localhost'),
-    'mysql_host': os.getenv('MYSQL_HOST', '117.72.16.51'),
+    'mysql_host': os.getenv('MYSQL_HOST', '127.0.0.1'),
     'mysql_port': int(os.getenv('MYSQL_PORT', 3306)),
-    'mysql_user': os.getenv('MYSQL_USER', 'crawlo'),
-    'mysql_password': os.getenv('MYSQL_PASSWORD', 'bJjGTZN4cDf6bmjc'),
+    'mysql_user': os.getenv('MYSQL_USER', 'crawlopilot'),
+    'mysql_password': os.getenv('MYSQL_PASSWORD', ''),
     'mysql_database': os.getenv('MYSQL_DATABASE', 'crawlo_pilot'),
-    'redis_host': os.getenv('REDIS_HOST', '117.72.16.51'),
+    'redis_host': os.getenv('REDIS_HOST', '127.0.0.1'),
     'redis_port': int(os.getenv('REDIS_PORT', 6379)),
     'admin_username': 'admin',
     'admin_password': 'admin123',
@@ -72,10 +72,11 @@ class APIClient:
         response = self.session.post(url, data=data, json=json_data, headers=req_headers)
         return self._handle_response(response)
     
-    def put(self, path: str, data: Dict = None) -> Any:
-        """PUT 请求"""
+    def put(self, path: str, data: Dict = None, json_data: Dict = None) -> Any:
+        """PUT 请求（json_data 与 data 等价，统一按 JSON 发送）"""
         url = f"{self.base_url}{path}"
-        response = self.session.put(url, json=data)
+        body = json_data if json_data is not None else data
+        response = self.session.put(url, json=body)
         return self._handle_response(response)
     
     def delete(self, path: str) -> Any:

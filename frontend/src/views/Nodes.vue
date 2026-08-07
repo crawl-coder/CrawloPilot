@@ -244,7 +244,7 @@
           <el-input v-model="serverForm.name" placeholder="如 beijing-web-01" />
         </el-form-item>
         <el-form-item label="IP 地址" required>
-          <el-input v-model="serverForm.host" placeholder="如 117.72.16.51" />
+          <el-input v-model="serverForm.host" placeholder="如 192.0.2.10" />
         </el-form-item>
         <el-form-item label="机房">
           <el-input v-model="serverForm.region" placeholder="可选" />

@@ -106,6 +106,7 @@ class GitService:
         if spider.git_auth_type == "ssh" and spider.git_ssh_key:
             fd, key_path = tempfile.mkstemp(prefix="crawlo_git_key_")
             os.close(fd)
+            askpass_path = None
             try:
                 with open(key_path, "w", encoding="utf-8") as f:
                     f.write(spider.git_ssh_key)
@@ -123,11 +124,24 @@ class GitService:
                 )
             }
 
+            # 私钥密码：通过 SSH_ASKPASS 提供（密码放环境变量，脚本只 echo，不落明文）
+            passphrase = getattr(spider, "git_passphrase", None)
+            if passphrase:
+                ask_fd, askpass_path = tempfile.mkstemp(prefix="crawlo_git_askpass_", text=True)
+                with os.fdopen(ask_fd, "w", encoding="utf-8") as f:
+                    f.write('#!/bin/sh\nprintf "%s" "$CRAWLO_GIT_PASS"\n')
+                os.chmod(askpass_path, 0o700)
+                env_extra["SSH_ASKPASS"] = askpass_path
+                env_extra["SSH_ASKPASS_REQUIRE"] = "force"  # OpenSSH 8.4+
+                env_extra["CRAWLO_GIT_PASS"] = passphrase
+
             def cleanup():
-                try:
-                    os.unlink(key_path)
-                except OSError:
-                    pass
+                for p in (key_path, askpass_path):
+                    if p:
+                        try:
+                            os.unlink(p)
+                        except OSError:
+                            pass
 
             return clean_url, env_extra, cleanup
 

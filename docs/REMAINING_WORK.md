@@ -33,8 +33,8 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 | 功能 | 说明 |
 |------|------|
 | 监控告警 | alerts API + alert_engine + 通知渠道 |
-| 数据质量 | data_quality API / service / 模型 |
-| 数据统计/数据管理 | DataStatistics / DataManagement 页面 |
+| ~~数据质量~~ | 2026-08-07 评估后取消（价值不大），表保留可恢复 |
+| ~~数据统计/数据管理~~ | 2026-08-07 评估后取消（价值不大），表保留可恢复 |
 | 代理池 | proxy_pool API / service / 模型 |
 | API 管理 | api_management API / service / 模型 |
 | 操作审计 | audit API / service / 中间件 |
@@ -43,16 +43,19 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 > 注意：上述功能对应的数据库表仍然保留（`alert_rule`、`proxy_pool`、
 > `api_config`、`audit_log`、`data_quality_rule` 等），便于 V2 平滑恢复，不做破坏性删除。
 
-## V1 收尾清单（小改动，建议进入 V2 前清掉）
+## V1 收尾清单（2026-08-07 全部完成 ✅）
 
-| 事项 | 说明 | 工作量 |
-|------|------|--------|
-| `spider.schedule_config` schema 清理 | SpiderCreate/Update 仍接受、详情仍返回该死字段，前端已不写 | 0.5h |
-| `git_passphrase` 接入 git_service | SSH 私钥密码已存库但 clone/push/pull 未使用 | 1h |
-| 爬虫内联 Git 凭据加密 | 个人/团队凭据已 Fernet 加密，内联字段（git_password/git_ssh_key）仍明文，加透明加解密 + 存量迁移 | 2h |
-| 开放注册开关 | `ALLOW_OPEN_REGISTER` 配置项，默认关闭，关闭时注册仅 admin 可用 | 1h |
-| Docker 模式真机验证 | DockerExecutor 代码完成但本机 Docker 未运行，需真实环境过一遍 | 0.5d |
-| 测试债 | `tests/unit/test_02_projects.py` 部分用例待修；`tests/run_all_tests.py` 明文凭据清理 | 1h |
+- [x] `spider.schedule_config` schema 清理（model 列保留兼容旧数据，schema/API 不再读写）
+- [x] `git_passphrase` 接入 git_service 与 clone（SSH_ASKPASS 方案，密码走环境变量不落明文脚本）
+- [x] 爬虫内联 Git 凭据 Fernet 加密落库（`encrypt_if_plain` 幂等 + `decrypt_or_plain`
+      兼容存量明文，已验证：新建落密文、解析还原、存量明文原样可用）
+- [x] 开放注册开关 `ALLOW_OPEN_REGISTER`（默认 False；关闭时 /auth/register 仅 admin 可用，
+      已验证两种模式；开发环境 .env 置 true）
+- [x] Docker 模式真机验证（2026-08-07 本机 Docker Desktop）：unix socket 节点激活 →
+      基础镜像构建 → 任务容器运行 SUCCESS → 日志落盘/接口可读；二次运行镜像 digest 命中 6.1s 复用
+- [x] 测试债清理：`test_02_projects.py` 7/7（分页/删除断言兼容 + put 参数修正 +
+      注册开关回退）；**全库明文凭据脱敏**（conftest.py、run_all_tests.py、_fix_db.py、
+      note.txt、Nodes.vue 占位 IP、server-management.md）
 
 ## V2 计划（分波次，按价值 × 依赖排序）
 
@@ -76,13 +79,12 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 - 通知通道：Webhook（钉钉/飞书）优先，邮件次之
 - 前端：告警规则配置页 + 告警记录列表
 
-### Wave 3：数据质量与统计
+### ~~Wave 3：数据质量与统计~~（2026-08-07 取消）
 
-- 恢复 data_quality API / service（表已建）
-- 数据统计/数据管理页面（DataStatistics / DataManagement）
-- 项目/爬虫/时间维度的数据量与趋势报表
+经评估对爬虫部署管理平台价值不大，不做。`data_quality_rule` 等表继续保留，
+将来若有需求可低成本恢复。
 
-### Wave 4：平台化（按实际需求裁剪，可独立并行）
+### Wave 3：平台化（按实际需求裁剪，可独立并行）
 
 - 代理池（proxy_pool 表已建）、API 管理（api_config 表已建）
 - 操作审计（audit_log 表已建，中间件按需开启）
@@ -109,5 +111,7 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
   **全新库不要直接 `alembic upgrade head`**，用 `Base.metadata.create_all` +
   `alembic stamp head` 建库（本地库已按此处理）
 - 远程 MySQL/Redis 网络延迟约 0.5~1s/请求；本地部署建议使用 Docker 版 MySQL/Redis
-- Docker 守护进程未运行，容器模式暂未在本机验证
-- `tests/run_all_tests.py` 中残留数据库明文凭据，生产环境需移除或改用环境变量
+- ~~Docker 守护进程未运行，容器模式暂未在本机验证~~（2026-08-07 已在本机 Docker
+  Desktop 验证通过：镜像构建/容器运行/日志/复用全链路，见 V1 收尾清单）
+- 遗留说明：`/execution/tasks` 与 `/task-instances` 是两套并存的任务 API（前端混用），
+  建议 V2 收敛为一个入口

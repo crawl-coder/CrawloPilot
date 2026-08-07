@@ -2,8 +2,8 @@
 import pymysql
 
 conn = pymysql.connect(
-    host='117.72.16.51', port=3306,
-    user='crawlo', password='bJjGTZN4cDf6bmjc',
+    host='127.0.0.1', port=3306,
+    user='crawlo', password='<mysql-password>',
     database='crawlo_pilot'
 )
 cur = conn.cursor()

@@ -8,7 +8,7 @@ import redis
 from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_user_optional
 from app.models import User
 from app.schemas.user import UserCreate, UserInDB, Token, GitCredentialPayload, GitCredentialInfo
 
@@ -122,8 +122,17 @@ def login(
 @router.post("/register", response_model=UserInDB)
 def register(
     user_data: UserCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
+    # 开放注册关闭时，仅 admin 可通过此接口创建账号
+    if not settings.ALLOW_OPEN_REGISTER:
+        if not current_user or not any(r.name == "admin" for r in current_user.roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="平台未开放注册，请联系管理员创建账号"
+            )
+
     # Check if user exists
     existing_user = db.query(User).filter(
         (User.username == user_data.username) | (User.email == user_data.email)

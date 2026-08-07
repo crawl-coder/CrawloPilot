@@ -114,7 +114,7 @@ async def get_spider(
         "git_credential_id": spider.git_credential_id,
         "code_path": spider.code_path,
         "config": spider.config,
-        "schedule_config": spider.schedule_config,
+
         "last_run_at": spider.last_run_at,
         "last_run_status": spider.last_run_status,
         "run_count": spider.run_count,
@@ -174,6 +174,11 @@ async def create_spider(
         data["git_passphrase"] = my_cred.get("passphrase") or None
         if not data.get("git_branch") and my_cred.get("default_branch"):
             data["git_branch"] = my_cred["default_branch"]
+
+    # 内联 Git 凭据加密落库（幂等：已是密文不重复加密）
+    from app.core.crypto import encrypt_if_plain
+    for field in ("git_password", "git_ssh_key", "git_passphrase"):
+        data[field] = encrypt_if_plain(data.get(field))
 
     # 创建爬虫
     new_spider = Spider(
@@ -567,6 +572,7 @@ async def clone_spider_git_repo(
     clone_url = git_url
     env = dict(os.environ)
     key_path = None
+    askpass_path = None
     if git_cred.git_auth_type == "password" and (git_cred.git_username or git_cred.git_password):
         if parsed.scheme in ("http", "https"):
             username = quote(git_cred.git_username or "x-access-token", safe="")
@@ -585,6 +591,15 @@ async def clone_spider_git_repo(
             env["GIT_SSH_COMMAND"] = (
                 f"ssh -i {key_path} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
             )
+            # 私钥密码：SSH_ASKPASS 方式提供（密码走环境变量，不落明文脚本）
+            if git_cred.git_passphrase:
+                ask_fd, askpass_path = tempfile.mkstemp(prefix="crawlo_git_askpass_", text=True)
+                with os.fdopen(ask_fd, "w", encoding="utf-8") as f:
+                    f.write('#!/bin/sh\nprintf "%s" "$CRAWLO_GIT_PASS"\n')
+                os.chmod(askpass_path, 0o700)
+                env["SSH_ASKPASS"] = askpass_path
+                env["SSH_ASKPASS_REQUIRE"] = "force"  # OpenSSH 8.4+
+                env["CRAWLO_GIT_PASS"] = git_cred.git_passphrase
         except OSError as e:
             if key_path:
                 os.unlink(key_path)
@@ -654,11 +669,12 @@ async def clone_spider_git_repo(
         raise HTTPException(status_code=500, detail=f"Git 克隆失败: {e}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        if key_path:
-            try:
-                os.unlink(key_path)
-            except OSError:
-                pass
+        for p in (key_path, askpass_path):
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
 
 @router.post("/{spider_id}/upload")

@@ -44,3 +44,21 @@ def decrypt_text(token: Optional[str]) -> Optional[str]:
     except (InvalidToken, ValueError) as e:
         logger.error(f"凭据解密失败（密钥可能已更换）: {e}")
         return None
+
+
+# Fernet token 固定以 gAAAA 开头（版本字节 0x80 的 base64url 编码）
+_FERNET_PREFIX = "gAAAA"
+
+
+def encrypt_if_plain(value: Optional[str]) -> Optional[str]:
+    """明文才加密，已是密文则原样返回（幂等，防双重加密）"""
+    if not value or value.startswith(_FERNET_PREFIX):
+        return value
+    return encrypt_text(value)
+
+
+def decrypt_or_plain(value: Optional[str]) -> Optional[str]:
+    """密文则解密，否则按明文原样返回（兼容加密迁移前的存量明文数据）"""
+    if not value or not value.startswith(_FERNET_PREFIX):
+        return value
+    return decrypt_text(value)

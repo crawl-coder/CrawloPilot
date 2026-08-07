@@ -34,16 +34,29 @@ class TestProjectModule:
         
         try:
             self.client.post('/api/v1/auth/register', json_data=user_data)
-        except:
-            pass
-        
+        except Exception:
+            # 开放注册可能已关闭：回退用 admin 创建测试用户
+            try:
+                admin_login = self.client.post(
+                    '/api/v1/auth/login',
+                    data={'username': TEST_CONFIG['admin_username'],
+                          'password': TEST_CONFIG['admin_password']},
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'}
+                )
+                if admin_login.get('access_token'):
+                    self.client.set_token(admin_login['access_token'])
+                    self.client.post('/api/v1/auth/register', json_data=user_data)
+                    self.client.clear_token()
+            except Exception:
+                pass
+
         # 登录
         result = self.client.post(
             '/api/v1/auth/login',
             data={'username': user_data['username'], 'password': user_data['password']},
             headers={'Content-Type': 'application/x-www-form-urlencoded'}
         )
-        
+
         if result.get('access_token'):
             self.client.set_token(result['access_token'])
             return True
@@ -56,13 +69,15 @@ class TestProjectModule:
         
         try:
             result = self.client.get('/api/v1/projects/')
-            
-            if isinstance(result, list):
+
+            # 兼容分页格式 {items, total} 与旧的纯列表格式
+            items = result.get('items') if isinstance(result, dict) else result
+            if isinstance(items, list):
                 self.reporter.add_result(
                     self.module_name, test_name, 'PASS',
-                    f'获取项目列表成功，共 {len(result)} 个项目', time.time() - start_time
+                    f'获取项目列表成功，共 {len(items)} 个项目', time.time() - start_time
                 )
-                return True, result
+                return True, items
             else:
                 self.reporter.add_result(
                     self.module_name, test_name, 'FAIL',
@@ -284,9 +299,9 @@ class TestProjectModule:
         
         try:
             result = self.client.delete(f'/api/v1/projects/{self.test_project_id}')
-            
-            # 删除成功返回204 No Content
-            if result is None:
+
+            # 删除成功返回 204（None）或 200 {"message": ...}
+            if result is None or (isinstance(result, dict) and result.get('message')):
                 self.reporter.add_result(
                     self.module_name, test_name, 'PASS',
                     '删除项目成功', time.time() - start_time

@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "your-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+
+    # 开放注册：False 时 /auth/register 仅 admin 可用（内部平台建议关闭）
+    ALLOW_OPEN_REGISTER: bool = False
     
     # MinIO
     MINIO_ENDPOINT: str = "minio:9000"

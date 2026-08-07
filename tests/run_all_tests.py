@@ -161,15 +161,15 @@ class TestRunner:
             except Exception as e:
                 print(f"    ✗ {name}: 无法连接 ({url})")
 
-        # 直接使用正确的云服务器凭据（忽略系统环境变量干扰）
-        mysql_user = 'crawlo'
-        mysql_pass = 'bJjGTZN4cDf6bmjc'
-        mysql_host = '117.72.16.51'
-        mysql_port = 3306
-        mysql_db = 'crawlo_pilot'
-        redis_host = '117.72.16.51'
-        redis_port = 6379
-        redis_pass = 'oscar0503'
+        # 凭据一律从环境变量读取（默认本机开发配置），不入库
+        mysql_user = os.getenv('MYSQL_USER', 'crawlopilot')
+        mysql_pass = os.getenv('MYSQL_PASSWORD', '')
+        mysql_host = os.getenv('MYSQL_HOST', '127.0.0.1')
+        mysql_port = int(os.getenv('MYSQL_PORT', 3306))
+        mysql_db = os.getenv('MYSQL_DATABASE', 'crawlo_pilot')
+        redis_host = os.getenv('REDIS_HOST', '127.0.0.1')
+        redis_port = int(os.getenv('REDIS_PORT', 6379))
+        redis_pass = os.getenv('REDIS_PASSWORD') or None
 
         # 检查数据库
         try:
