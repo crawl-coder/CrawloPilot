@@ -484,10 +484,12 @@ class LocalExecutor:
                 [sys.executable, "-m", "pip", "install", "-r", req_file,
                  "-i", os.environ.get("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple")],
                 timeout=600,
+                check=True,
             )
             logger.info("项目依赖安装完成")
         except Exception as e:
             logger.error(f"项目依赖安装失败: {e}")
+            raise RuntimeError(f"requirements.txt 依赖安装失败: {e}") from e
 
     def _monitor_process(self, task_id: str, process: LocalSpiderProcess, timeout: int):
         """
@@ -507,10 +509,20 @@ class LocalExecutor:
             
             # 更新进程状态
             process.finished_at = datetime.utcnow()
+            error_msg = None
             if process.status in (TaskStatus.RUNNING, TaskStatus.PENDING) and exit_code == 0:
                 process.status = TaskStatus.SUCCESS
             elif process.status in (TaskStatus.RUNNING, TaskStatus.PENDING):
                 process.status = TaskStatus.FAILED
+                # 非零退出码：取日志尾部作为失败原因，便于定位问题
+                try:
+                    tail = process.get_logs(tail=30).strip()
+                    error_msg = (
+                        tail[-800:] if tail else f"进程退出码: {exit_code}"
+                    )
+                except Exception as e:
+                    logger.error(f"[{task_id}] 读取失败日志失败: {e}")
+                    error_msg = f"进程退出码: {exit_code}"
             
             # 解析日志中的指标
             process.parse_metrics_from_logs()
@@ -525,7 +537,8 @@ class LocalExecutor:
                 process.finished_at,
                 process.pages_crawled,
                 process.items_scraped,
-                process.errors_count
+                process.errors_count,
+                error_message=error_msg
             )
 
             # 同步爬虫运行统计

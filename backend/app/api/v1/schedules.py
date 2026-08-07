@@ -213,6 +213,8 @@ async def list_schedules(
     current_user: User = Depends(get_current_user),
 ):
     """调度列表（可按项目/爬虫/状态筛选）"""
+    from app.core.pagination import clamp_pagination
+    skip, limit = clamp_pagination(skip, limit, default_limit=50)
     query = db.query(Schedule)
     if project_id:
         query = query.filter(Schedule.project_id == project_id)
@@ -428,6 +430,8 @@ async def schedule_history(
     current_user: User = Depends(get_current_user),
 ):
     """该调度的运行历史（任务列表）"""
+    from app.core.pagination import clamp_pagination
+    _, limit = clamp_pagination(0, limit, default_limit=20)
     _get_schedule_or_404(db, schedule_id)
     tasks = (
         db.query(TaskInstance)

@@ -22,24 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 def _get_executor_for_task(task):
-    """
-    按任务的部署模式返回对应执行器
-    - ssh: SshExecutor（远程节点）
-    - docker: DockerExecutor（直连节点 Docker API）
-    - 其他: LocalExecutor（本地进程）
-    """
-    deploy_mode = getattr(task, 'deploy_mode', None)
-    if deploy_mode == 'ssh':
-        from app.services.ssh_executor import get_ssh_executor
-        return get_ssh_executor()
-    if deploy_mode == 'docker':
-        from app.services.docker_executor import get_docker_executor
-        return get_docker_executor()
-    if deploy_mode == 'agent':
-        from app.services.agent_service import get_agent_service
-        return get_agent_service()
-    from app.services.local_executor import get_local_executor
-    return get_local_executor()
+    """按任务的部署模式返回对应执行器（复用公共执行器注册表）"""
+    from app.services.executor_registry import get_executor_for_task
+    return get_executor_for_task(task)
 
 
 @router.post("/tasks", response_model=TaskResponse)
@@ -50,8 +35,8 @@ async def create_and_execute_task(
     current_user: User = Depends(get_current_user)
 ):
     """
-    创建并执行任务
-    
+    创建并执行任务（委托统一任务服务，按节点自动分发 local/ssh/docker/agent）
+
     - **spider_id**: 爬虫 ID
     - **git_url**: Git 仓库地址 (可选)
     - **git_branch**: Git 分支
@@ -60,56 +45,29 @@ async def create_and_execute_task(
     - **cpu_limit**: CPU 限制
     - **timeout**: 超时时间
     """
-    # 验证爬虫存在
-    spider = db.query(Spider).filter(Spider.id == task_data.spider_id).first()
-    if not spider:
-        raise HTTPException(status_code=404, detail="Spider not found")
-    
-    # 检查代码目录
-    from app.services.upload_service import UploadService
-    import os
-    upload_service = UploadService()
-    code_dir = upload_service.get_spider_code_dir(spider.project_id, spider.id)
-    if not code_dir or not os.path.exists(code_dir):
-        raise HTTPException(status_code=400, detail="爬虫代码目录不存在，请先上传代码")
+    from app.services.task_service import create_and_run_task
 
-    # 创建任务记录
-    task = TaskInstance(
-        spider_id=spider.id,
-        spider_name=spider.spider_name or spider.name,
-        schedule_id=None,
-        deploy_mode="local",
-        status=TaskStatus.PENDING,
-    )
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    
-    logger.info(f"Task created: {task.id} for spider {spider.name}")
-    
-    # 本地模式后台执行（v1 默认，不依赖 Celery）
-    from app.services.local_executor import get_local_executor, LocalTaskConfig
-    config = LocalTaskConfig(
-        task_id=str(task.id),
-        spider_id=str(spider.id),
-        spider_name=spider.spider_name or spider.name,
-        code_dir=code_dir,
-        entry_file=spider.entry_file,
-        spider_name_to_run=spider.spider_name or spider.name,
-        timeout=task_data.timeout or 3600,
-    )
-    background_tasks.add_task(get_local_executor().execute_task, config)
+    try:
+        result = create_and_run_task(
+            db,
+            spider_id=int(task_data.spider_id),
+            node_id=int(task_data.node_id) if task_data.node_id else None,
+            background_tasks=background_tasks,
+            memory_limit=task_data.memory_limit,
+            cpu_limit=task_data.cpu_limit,
+            timeout=task_data.timeout,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    if task_data.node_id:
-        task.node_id = task_data.node_id
-        db.commit()
-    
+    task = db.query(TaskInstance).filter(TaskInstance.id == result["task_id"]).first()
+    spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
     return TaskResponse(
         id=task.id,
         spider_id=task.spider_id,
-        spider_name=spider.name,
+        spider_name=spider.name if spider else task.spider_name,
         status=task.status,
-        deploy_mode="local",
+        deploy_mode=task.deploy_mode or "local",
         node_id=task.node_id,
         created_at=task.created_at,
         started_at=task.started_at,
@@ -132,14 +90,15 @@ async def pause_task(
     if task.status != TaskStatus.RUNNING:
         raise HTTPException(status_code=400, detail=f"Cannot pause task in {task.status} status")
     
-    if getattr(task, 'deploy_mode', None) == 'ssh':
-        raise HTTPException(status_code=400, detail="SSH 模式暂不支持暂停/恢复")
+    deploy_mode = getattr(task, 'deploy_mode', None)
+    if deploy_mode in ('ssh', 'docker', 'agent'):
+        raise HTTPException(status_code=400, detail=f"{deploy_mode} 模式暂不支持暂停/恢复")
 
-    from app.services.local_executor import get_local_executor
-    ok = await get_local_executor().pause_task(task_id)
+    executor = _get_executor_for_task(task)
+    ok = await executor.pause_task(task_id)
     if not ok:
         raise HTTPException(status_code=500, detail="暂停任务失败（进程不存在或已结束）")
-    
+
     return {
         "message": "Pause task requested",
         "task_id": task_id,
@@ -161,14 +120,15 @@ async def resume_task(
     if task.status != TaskStatus.PAUSED:
         raise HTTPException(status_code=400, detail=f"Cannot resume task in {task.status} status")
     
-    if getattr(task, 'deploy_mode', None) == 'ssh':
-        raise HTTPException(status_code=400, detail="SSH 模式暂不支持暂停/恢复")
+    deploy_mode = getattr(task, 'deploy_mode', None)
+    if deploy_mode in ('ssh', 'docker', 'agent'):
+        raise HTTPException(status_code=400, detail=f"{deploy_mode} 模式暂不支持暂停/恢复")
 
-    from app.services.local_executor import get_local_executor
-    ok = await get_local_executor().resume_task(task_id)
+    executor = _get_executor_for_task(task)
+    ok = await executor.resume_task(task_id)
     if not ok:
         raise HTTPException(status_code=500, detail="恢复任务失败（进程不存在或已结束）")
-    
+
     return {
         "message": "Resume task requested",
         "task_id": task_id,
@@ -309,6 +269,8 @@ async def list_tasks(
     - **limit**: 返回数量限制
     - **offset**: 偏移量
     """
+    from app.core.pagination import clamp_pagination
+    offset, limit = clamp_pagination(offset, limit, default_limit=50)
     query = db.query(TaskInstance)
 
     if spider_id:
@@ -391,6 +353,8 @@ async def get_recent_tasks(
     current_user: User = Depends(get_current_user)
 ):
     """获取最近的任务"""
+    from app.core.pagination import clamp_pagination
+    _, limit = clamp_pagination(0, limit, default_limit=100)
     tasks = db.query(TaskInstance).order_by(
         TaskInstance.created_at.desc()
     ).limit(limit).all()
@@ -405,6 +369,8 @@ async def get_tasks_by_schedule(
     current_user: User = Depends(get_current_user)
 ):
     """获取指定调度的任务"""
+    from app.core.pagination import clamp_pagination
+    _, limit = clamp_pagination(0, limit, default_limit=50)
     tasks = db.query(TaskInstance).filter(
         TaskInstance.schedule_id == schedule_id
     ).order_by(TaskInstance.created_at.desc()).limit(limit).all()
@@ -419,6 +385,8 @@ async def get_tasks_by_status(
     current_user: User = Depends(get_current_user)
 ):
     """获取指定状态的任务"""
+    from app.core.pagination import clamp_pagination
+    _, limit = clamp_pagination(0, limit, default_limit=50)
     try:
         task_status = TaskStatus(status)
     except ValueError:
@@ -538,12 +506,12 @@ async def delete_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    # 如果任务正在运行,先停止
+    # 如果任务正在运行,先按部署模式停止对应执行器
     if task.status in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
         try:
-            from app.services.local_executor import get_local_executor
-            local_executor = get_local_executor()
-            await local_executor.stop_task(str(task_id))
+            from app.services.executor_registry import get_executor_for_task
+            executor = get_executor_for_task(task)
+            await executor.stop_task(str(task_id))
         except Exception as e:
             logger.warning(f"停止任务失败: {e}")
     

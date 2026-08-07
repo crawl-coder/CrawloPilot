@@ -189,6 +189,8 @@ async def list_nodes(
 ):
     """获取节点列表"""
     try:
+        from app.core.pagination import clamp_pagination
+        offset, limit = clamp_pagination(offset, limit, default_limit=100)
         node_service = NodeService(db)
         nodes = node_service.get_nodes(
             status=status,

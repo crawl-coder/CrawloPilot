@@ -79,6 +79,8 @@ async def list_servers(
     current_user: User = Depends(get_current_user),
 ):
     """服务器列表（分页 + 关键字 + 状态筛选）"""
+    from app.core.pagination import clamp_pagination
+    skip, limit = clamp_pagination(skip, limit, default_limit=20)
     service = ServerService(db)
     servers, total = service.get_servers(
         status=status,

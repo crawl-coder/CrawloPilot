@@ -25,7 +25,8 @@ class TaskWebSocket {
   
   connect() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/tasks/${this.taskId}`
+    const token = localStorage.getItem('token') || ''
+    const wsUrl = `${protocol}//${window.location.host}/ws/tasks/${this.taskId}?token=${encodeURIComponent(token)}`
     
     console.log(`🔌 连接 WebSocket: ${wsUrl}`)
     

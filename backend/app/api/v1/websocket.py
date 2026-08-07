@@ -76,6 +76,14 @@ async def task_websocket(websocket: WebSocket, task_id: str):
     3. 周期性推送状态更新
     4. 可发送控制命令 (暂停/恢复/停止)
     """
+    # WebSocket 鉴权：从 query 参数读取 token，无效则拒绝连接
+    from app.core.security import decode_access_token
+    token = websocket.query_params.get("token")
+    payload = decode_access_token(token) if token else None
+    if not payload or not payload.get("sub"):
+        await websocket.close(code=4401, reason="未授权")
+        return
+
     await manager.connect(task_id, websocket)
     broadcaster = get_log_broadcaster()
     log_queue = broadcaster.subscribe(task_id)

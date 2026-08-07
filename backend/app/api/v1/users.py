@@ -39,6 +39,8 @@ async def list_users(
     current_user: User = Depends(require_admin)
 ):
     """获取用户列表(带分页)"""
+    from app.core.pagination import clamp_pagination
+    skip, limit = clamp_pagination(skip, limit, default_limit=20)
     query = db.query(User).options(joinedload(User.roles))
     
     # 过滤条件

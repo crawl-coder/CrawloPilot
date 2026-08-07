@@ -118,6 +118,8 @@ async def list_deploys(
 ):
     """获取部署列表(带分页)"""
     try:
+        from app.core.pagination import clamp_pagination
+        offset, limit = clamp_pagination(offset, limit, default_limit=50)
         deploy_service = DeployService(db)
         deploys = deploy_service.get_deploys(
             project_id=project_id,

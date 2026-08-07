@@ -18,6 +18,8 @@ def list_projects(
     current_user: User = Depends(get_current_user)
 ):
     """获取项目列表(带分页，排除已删除项目)"""
+    from app.core.pagination import clamp_pagination
+    skip, limit = clamp_pagination(skip, limit, default_limit=20)
     query = db.query(Project).filter(Project.status != ProjectStatus.DELETED)
     total = query.count()
     projects = query.offset(skip).limit(limit).all()

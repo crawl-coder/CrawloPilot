@@ -45,6 +45,8 @@ async def list_spiders(
     current_user: User = Depends(get_current_user)
 ):
     """获取爬虫列表(带分页)"""
+    from app.core.pagination import clamp_pagination
+    skip, limit = clamp_pagination(skip, limit, default_limit=50)
     query = db.query(Spider)
     
     if project_id:
@@ -330,12 +332,13 @@ async def stop_spider(
     
     for task in target_tasks:
         try:
-            # 尝试本地执行器停止
-            from app.services.local_executor import get_local_executor
-            local_executor = get_local_executor()
-            await local_executor.stop_task(str(task.id))
+            # 按部署模式分发对应执行器（docker/ssh/agent/local），
+            # 避免 docker 任务只调 local executor 导致容器/远程进程无法真正停止
+            from app.services.executor_registry import get_executor_for_task
+            executor = get_executor_for_task(task)
+            await executor.stop_task(str(task.id))
 
-            # LocalExecutor.stop_task 已更新数据库状态，这里作为兜底
+            # executor 已更新数据库状态，这里作为兜底
             if task.status not in [TaskStatus.CANCELLED, TaskStatus.SUCCESS, TaskStatus.FAILED]:
                 task.status = TaskStatus.CANCELLED
                 task.finished_at = datetime.utcnow()
