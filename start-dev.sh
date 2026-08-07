@@ -53,13 +53,17 @@ mkdir -p logs
 
 stop_service() {
     local name=$1
+    local port=$2
     local pidfile="logs/${name}.pid"
     if [ -f "$pidfile" ]; then
         local pid=$(cat "$pidfile")
         if kill -0 "$pid" 2>/dev/null; then
+            # uvicorn --reload 是 supervisor + worker 双进程：只杀主进程会留下孤儿 worker
+            # 继续持有监听端口（旧代码继续服务，即"双监听/假停止"）。先杀子进程再杀主进程。
+            pkill -TERM -P "$pid" 2>/dev/null || true
             kill "$pid" 2>/dev/null
             sleep 1
-            # 强制杀死
+            pkill -9 -P "$pid" 2>/dev/null || true
             kill -9 "$pid" 2>/dev/null || true
             echo -e "  ${YELLOW}已停止 $name (PID: $pid)${NC}"
         else
@@ -68,6 +72,11 @@ stop_service() {
         rm -f "$pidfile"
     else
         echo -e "  ${YELLOW}$name PID 文件不存在${NC}"
+    fi
+    # 兜底：端口仍被占用则按端口清理，杜绝孤儿进程残留监听
+    if [ -n "$port" ] && check_port "$port"; then
+        echo -e "  ${YELLOW}端口 $port 仍有残留进程，按端口清理...${NC}"
+        lsof -ti:"$port" | xargs kill -9 2>/dev/null || true
     fi
 }
 
@@ -138,8 +147,8 @@ case "$MODE" in
         echo -e "${CYAN}=========================================${NC}"
         echo -e "${CYAN}  CrawloPilot 停止服务${NC}"
         echo -e "${CYAN}=========================================${NC}"
-        stop_service backend
-        stop_service frontend
+        stop_service backend 8000
+        stop_service frontend 3000
         echo -e "${GREEN}  全部停止${NC}"
         exit 0
         ;;
@@ -147,8 +156,8 @@ case "$MODE" in
         echo -e "${CYAN}=========================================${NC}"
         echo -e "${CYAN}  CrawloPilot 重启服务${NC}"
         echo -e "${CYAN}=========================================${NC}"
-        stop_service backend
-        stop_service frontend
+        stop_service backend 8000
+        stop_service frontend 3000
         echo ""
         # 继续启动流程
         ;;
@@ -191,7 +200,6 @@ echo -e "${BLUE}[4/7]${NC} 初始化数据库..."
 cd ../backend
 alembic upgrade head 2>/dev/null || echo -e "  ${YELLOW}迁移跳过（可能已是最新）${NC}"
 python init_db.py 2>/dev/null || true
-python migrate_schedule.py 2>/dev/null || true
 echo -e "${GREEN}  ✓ 数据库就绪${NC}"
 
 # 5. 清理旧进程

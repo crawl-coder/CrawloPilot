@@ -10,21 +10,11 @@ import json
 from types import SimpleNamespace
 from typing import Optional
 
-from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.crypto import encrypt_text, decrypt_text
-from app.core.dependencies import get_current_user
+from app.core.dependencies import require_admin  # noqa: F401（re-export，兼容既有引用）
 from app.models import User, GitCredential
-
-
-# ==================== 权限 ====================
-
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """仅 admin 角色可访问"""
-    if not any(r.name == "admin" for r in current_user.roles):
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    return current_user
 
 
 # ==================== 个人凭据（User.git_credentials） ====================

@@ -1,11 +1,11 @@
 """
-用户管理 API 路由
+用户管理 API 路由（全部端点仅 admin 可用）
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import require_admin
 from app.core.security import get_password_hash
 from app.models import User, Role
 from app.schemas.user import UserCreate, UserUpdate, UserInDB, RoleSimple
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/users", tags=["用户管理"])
 @router.get("/roles", response_model=List[RoleSimple])
 async def get_roles(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """获取所有角色列表"""
     roles = db.query(Role).all()
@@ -36,7 +36,7 @@ async def list_users(
     is_active: Optional[bool] = None,
     role_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """获取用户列表(带分页)"""
     query = db.query(User).options(joinedload(User.roles))
@@ -58,7 +58,7 @@ async def list_users(
 async def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """获取用户详情"""
     user = db.query(User).options(joinedload(User.roles)).filter(User.id == user_id).first()
@@ -71,7 +71,7 @@ async def get_user(
 async def create_user(
     user_data: UserCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """创建用户"""
     # 检查用户名是否已存在
@@ -113,7 +113,7 @@ async def update_user(
     user_id: int,
     user_data: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """更新用户信息"""
     user = db.query(User).options(joinedload(User.roles)).filter(User.id == user_id).first()
@@ -142,7 +142,7 @@ async def update_user(
 async def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """删除用户"""
     # 不允许删除自己
@@ -165,7 +165,7 @@ async def reset_password(
     user_id: int,
     new_password: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """重置用户密码"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -183,7 +183,7 @@ async def reset_password(
 async def toggle_user_status(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """切换用户启用/禁用状态"""
     # 不允许禁用自己
