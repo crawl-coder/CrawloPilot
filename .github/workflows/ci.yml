@@ -121,8 +121,11 @@ jobs:
   docker-build:
     needs: [backend-test, frontend-test]
     runs-on: ubuntu-latest
-    # secrets 不能用于 job 级 if；未配置时在 step 级跳过登录/推送
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # secrets 不能直接在 if 中引用，映射到 job 级 env 后用 env 判断
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
     
     steps:
       - name: Checkout code
@@ -132,31 +135,31 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Login to Docker Hub
-        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' }}
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
       
       - name: Build and push backend
-        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' }}
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/crawlopilot-backend:latest
-            ${{ secrets.DOCKER_USERNAME }}/crawlopilot-backend:${{ github.sha }}
+            ${{ env.DOCKER_USERNAME }}/crawlopilot-backend:latest
+            ${{ env.DOCKER_USERNAME }}/crawlopilot-backend:${{ github.sha }}
       
       - name: Build and push frontend
-        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        if: ${{ env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != '' }}
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/crawlopilot-frontend:latest
-            ${{ secrets.DOCKER_USERNAME }}/crawlopilot-frontend:${{ github.sha }}
+            ${{ env.DOCKER_USERNAME }}/crawlopilot-frontend:latest
+            ${{ env.DOCKER_USERNAME }}/crawlopilot-frontend:${{ github.sha }}
 
   # ==================== 代码质量检查 ====================
   code-quality:
