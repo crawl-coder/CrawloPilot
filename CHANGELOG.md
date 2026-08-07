@@ -15,6 +15,12 @@
   `REDIS_*` 配置项、Compose redis 服务与 `docker/redis/` 配置；
   平台运行时外部依赖收敛为仅 MySQL
 
+### Security
+
+- 节点 SSH 凭据（`ssh_pwd` / `ssh_key`）改为 Fernet 加密落库：
+  写入经 `encrypt_if_plain`、读取经 `decrypt_or_plain`（兼容存量明文），
+  与 Git 凭据加密同源；`migrate_node_credentials.py` 幂等迁移存量数据
+
 ## [1.0.0] - 2026-08-07
 
 首次正式发布：爬虫部署管理平台 V1 全链路打通。

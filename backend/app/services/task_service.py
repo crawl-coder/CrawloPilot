@@ -137,6 +137,7 @@ def _dispatch_local(spider, task, code_dir, spider_name, background_tasks):
 def _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks):
     """SSH 模式：上传代码远程运行"""
     from app.services.ssh_executor import get_ssh_executor, SshTaskConfig
+    from app.core.crypto import decrypt_or_plain
 
     config = SshTaskConfig(
         task_id=str(task.id),
@@ -145,8 +146,8 @@ def _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks):
         ssh_host=node.ssh_host or node.host,
         ssh_port=node.ssh_port or 22,
         ssh_user=node.ssh_user or "root",
-        ssh_pwd=node.ssh_pwd,
-        ssh_key=node.ssh_key,
+        ssh_pwd=decrypt_or_plain(node.ssh_pwd),
+        ssh_key=decrypt_or_plain(node.ssh_key),
         code_dir=code_dir,
         entry_file=spider.entry_file,
         spider_name_to_run=spider_name,

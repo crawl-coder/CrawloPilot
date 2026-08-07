@@ -7,11 +7,22 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models import Node, NodeStatus, Container, ContainerStatus
 from app.services.docker_service import DockerService
+from app.core.crypto import encrypt_if_plain, decrypt_or_plain
 import logging
 import socket
 import uuid
 
 logger = logging.getLogger(__name__)
+
+
+def encrypt_node_credential(value: Optional[str]) -> Optional[str]:
+    """节点 SSH 凭据写入前加密（明文→密文，已加密则原样返回，幂等）"""
+    return encrypt_if_plain(value)
+
+
+def decrypt_node_credential(value: Optional[str]) -> Optional[str]:
+    """节点 SSH 凭据读取时解密（兼容加密迁移前的存量明文）"""
+    return decrypt_or_plain(value)
 
 
 class NodeService:
@@ -72,8 +83,8 @@ class NodeService:
             ssh_host=ssh_host or host,
             ssh_port=ssh_port or 22,
             ssh_user=ssh_user or "root",
-            ssh_pwd=ssh_pwd,
-            ssh_key=ssh_key,
+            ssh_pwd=encrypt_if_plain(ssh_pwd),
+            ssh_key=encrypt_if_plain(ssh_key),
             docker_host=docker_host,
             labels=labels or {},
             public_ip=public_ip,
@@ -138,9 +149,9 @@ class NodeService:
         if ssh_user is not None:
             node.ssh_user = ssh_user
         if ssh_pwd is not None:
-            node.ssh_pwd = ssh_pwd
+            node.ssh_pwd = encrypt_if_plain(ssh_pwd)
         if ssh_key is not None:
-            node.ssh_key = ssh_key
+            node.ssh_key = encrypt_if_plain(ssh_key)
         if labels is not None:
             node.labels = labels
         if public_ip is not None:
@@ -232,8 +243,8 @@ class NodeService:
                 host=target_host,
                 port=target_port,
                 user=node.ssh_user or "root",
-                password=node.ssh_pwd,
-                key=node.ssh_key,
+                password=decrypt_or_plain(node.ssh_pwd),
+                key=decrypt_or_plain(node.ssh_key),
             )
             client = conn.connect()
             transport = client.get_transport()
