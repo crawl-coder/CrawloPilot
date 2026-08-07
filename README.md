@@ -1,6 +1,6 @@
 # 🕷️ CrawloPilot
 
-> Crawlo 爬虫框架的配套管理平台 —— 项目、爬虫、代码、执行、调度一站式管理。
+> Crawlo 爬虫框架的管理部署平台 —— 本地 / SSH / Docker / Agent 跨节点分发，项目、爬虫、代码、调度、日志一站式管理。
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
@@ -8,8 +8,9 @@
 ![Vue 3](https://img.shields.io/badge/Frontend-Vue3-4FC08D.svg)
 ![Crawlo](https://img.shields.io/badge/Crawlo-1.7.2-purple.svg)
 
-CrawloPilot 是围绕 [Crawlo](https://github.com/crawl-coder/Crawlo) 爬虫框架构建的管理平台。
-在 Web 界面上完成项目与爬虫管理、代码克隆/上传/在线编辑、定时调度、多节点执行，
+CrawloPilot 是围绕 [Crawlo](https://github.com/crawl-coder/Crawlo) 爬虫框架构建的管理部署平台，
+支持本地 / SSH / Docker / Agent 四种执行模式跨节点分发爬虫任务。在 Web 界面上完成
+项目与爬虫管理、代码克隆/上传/在线编辑、定时调度、任务全生命周期管控，
 并实时查看任务状态、日志与运行指标。
 
 ## 目录
