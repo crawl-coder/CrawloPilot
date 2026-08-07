@@ -373,7 +373,7 @@ CrawloPilot/
 
 **V1（已完成）**：项目 / 爬虫 / 四种执行模式 / 任务与日志 / Server 实体 / 定时调度 / Git 工作流与凭据体系
 
-**V2（规划）**：调度管理增强、监控告警、数据质量、代理池 / API 管理、操作审计
+**V2（规划）**：调度管理增强、监控告警、代理池 / API 管理、操作审计
 
 详见 [docs/REMAINING_WORK.md](docs/REMAINING_WORK.md)。
 
