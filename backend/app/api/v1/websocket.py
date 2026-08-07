@@ -177,7 +177,8 @@ async def task_websocket(websocket: WebSocket, task_id: str):
                 from app.services.local_executor import get_local_executor
                 executor = get_local_executor()
 
-            if mtype in ("pause", "resume") and deploy_mode in ("ssh", "docker", "agent"):
+            from app.services.executor_protocol import supports_pause
+            if mtype in ("pause", "resume") and not supports_pause(executor):
                 await send({"type": "error", "message": f"{deploy_mode.upper()} 模式暂不支持暂停/恢复"})
                 continue
 

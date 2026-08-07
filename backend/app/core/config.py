@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # Database
     DATABASE_TYPE: str = "mysql"  # mysql 或 sqlite
     SQLITE_PATH: str = "./crawlopilot.db"
-    MYSQL_HOST: str = "mysql"
+    MYSQL_HOST: str = "127.0.0.1"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "crawlopilot"
     MYSQL_PASSWORD: str = "crawlopilot123"

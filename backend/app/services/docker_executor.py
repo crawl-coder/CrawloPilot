@@ -18,6 +18,7 @@ import hashlib
 import os
 import re
 import time
+import uuid
 import tarfile
 import logging
 from datetime import datetime
@@ -35,11 +36,10 @@ logger = logging.getLogger(__name__)
 
 # crawlo 版本（与 PyPI 最新保持一致）
 CRAWLO_VERSION = "1.7.2"
-# 本地 crawlo wheel（纯 Python，安装快），可通过环境变量覆盖
-CRAWLO_WHEEL_PATH = os.environ.get(
-    "CRAWLO_WHEEL_PATH",
-    "/Users/oscar/projects/Crawlo/dist/crawlo-1.7.2-py3-none-any.whl",
-)
+# 本地 crawlo wheel（纯 Python，安装快），默认不硬编码：
+# - 显式配置 CRAWLO_WHEEL_PATH 时优先使用
+# - 开发机若已构建 wheel 可设置环境变量；生产走 pip 安装
+CRAWLO_WHEEL_PATH = os.environ.get("CRAWLO_WHEEL_PATH") or None
 # pip 国内镜像（默认清华源）
 PIP_INDEX_URL = os.environ.get("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple")
 # 可复用基础镜像（crawlo 运行环境，构建一次后任务镜像秒级叠加）
@@ -385,7 +385,8 @@ class DockerExecutor:
 
             container = docker.create_container(
                 image=tag,
-                name=f"task-{str(config.task_id)[:8]}",
+                # 全 task_id + 短随机后缀，避免前 8 位重复导致容器名冲突
+                name=f"task-{str(config.task_id)}-{uuid.uuid4().hex[:4]}",
                 environment=env,
                 resource_limits={
                     "mem_limit": config.memory_limit,

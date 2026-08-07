@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 from threading import Thread
 
-from app.models import TaskInstance, TaskStatus, Spider, Node
+from app.models import TaskInstance, TaskStatus, Spider, SpiderStatus, Node
 from app.services.upload_service import UploadService
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ def create_and_run_task(
     spider = db.query(Spider).filter(Spider.id == spider_id).first()
     if not spider:
         raise ValueError("爬虫不存在")
-    if spider.status == "disabled":
+    if spider.status == SpiderStatus.DISABLED:
         raise ValueError("爬虫已禁用，无法运行")
 
     upload_service = UploadService()
@@ -81,8 +81,6 @@ def create_and_run_task(
         if node.status.value != "online":
             raise ValueError(f"节点 {node.name} 状态为 {node.status.value}，不可用")
 
-    # Docker 资源限制仅在节点为 docker 时生效；其余模式保留 None
-    is_docker = bool(node and node.connect_type == "docker")
     # 按节点类型确定部署模式，供 executor_registry 分发 stop/status/logs
     if not node:
         deploy_mode = "local"
@@ -100,8 +98,8 @@ def create_and_run_task(
         status=TaskStatus.PENDING,
         node_id=node.id if node else None,
         deploy_mode=deploy_mode,
-        memory_limit=memory_limit if is_docker else None,
-        cpu_limit=cpu_limit if is_docker else None,
+        memory_limit=memory_limit,
+        cpu_limit=cpu_limit,
     )
     db.add(task)
     db.commit()
@@ -122,13 +120,16 @@ def create_and_run_task(
             result = _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks)
     else:
         result = _dispatch_local(spider, task, code_dir, spider_name, background_tasks,
-                                 timeout=timeout)
+                                 timeout=timeout,
+                                 memory_limit=memory_limit,
+                                 cpu_limit=cpu_limit)
 
     _update_spider_run_stats(db, spider)
     return result
 
 
-def _dispatch_local(spider, task, code_dir, spider_name, background_tasks, timeout=None):
+def _dispatch_local(spider, task, code_dir, spider_name, background_tasks, timeout=None,
+                    memory_limit=None, cpu_limit=None):
     """本地模式：子进程运行"""
     from app.services.local_executor import get_local_executor, LocalTaskConfig
 
@@ -140,6 +141,8 @@ def _dispatch_local(spider, task, code_dir, spider_name, background_tasks, timeo
         entry_file=spider.entry_file,
         spider_name_to_run=spider_name,
         timeout=timeout or 3600,
+        memory_limit=memory_limit,
+        cpu_limit=cpu_limit,
     )
     if background_tasks:
         background_tasks.add_task(get_local_executor().execute_task, config)
@@ -230,7 +233,6 @@ def _dispatch_agent(spider, task, node, db):
     """Agent 模式：任务保持 PENDING，由节点 agent 领取执行"""
     task.deploy_mode = "agent"
     task.node_id = node.id
-    task.status = TaskStatus.PENDING
     db.commit()
 
     return {

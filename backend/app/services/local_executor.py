@@ -51,6 +51,10 @@ class LocalTaskConfig:
     
     # 超时配置
     timeout: int = 3600  # 1小时
+
+    # 资源限制（MB / CPU 核数，None=不限制）
+    memory_limit: Optional[int] = None
+    cpu_limit: Optional[float] = None
     
     # 环境变量
     extra_env: Dict[str, str] = field(default_factory=dict)
@@ -101,16 +105,50 @@ class LocalSpiderProcess:
             env.update(config.extra_env)
 
             try:
+                # 资源限制（RLIMIT）：memory_limit 如 "256m"/"1g" → RLIMIT_AS，
+                # cpu_limit 核 → 软限制用 RLIMIT_CPU（秒）近似
+                def _set_limits():
+                    # 尽力而为：个别平台（如 macOS RLIMIT_AS）不支持时
+                    # 跳过对应限制，绝不因限制设置失败而阻塞任务启动。
+                    try:
+                        import resource
+                        if config.memory_limit:
+                            mem = str(config.memory_limit).strip().lower()
+                            mult = 1024 * 1024
+                            if mem.endswith("g"):
+                                mult = 1024 ** 3
+                                mem = mem[:-1]
+                            elif mem.endswith("m"):
+                                mem = mem[:-1]
+                            try:
+                                bytes_limit = int(float(mem) * mult)
+                            except (TypeError, ValueError):
+                                bytes_limit = None
+                            if bytes_limit:
+                                resource.setrlimit(
+                                    resource.RLIMIT_AS, (bytes_limit, bytes_limit)
+                                )
+                        if config.cpu_limit:
+                            cpu_secs = int(float(config.cpu_limit) * 3600)
+                            resource.setrlimit(
+                                resource.RLIMIT_CPU, (cpu_secs, cpu_secs + 60)
+                            )
+                    except (ValueError, OSError) as e:
+                        # RLIMIT_AS 在 macOS 上可能让子进程无法启动，跳过
+                        logger.warning(f"资源限制设置被跳过: {e}")
+
                 self.process = subprocess.Popen(
                     cmd,
                     cwd=str(code_dir),
                     env=env,
+                    preexec_fn=_set_limits if hasattr(os, "fork") else None,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     encoding='utf-8',
                     errors='replace',
                     bufsize=1,  # 行缓冲
+                    start_new_session=True,  # 独立进程组，暂停/停止可覆盖子进程
                 )
                 self.status = TaskStatus.RUNNING
                 self.started_at = datetime.utcnow()
@@ -182,7 +220,7 @@ asyncio.run(CrawlerProcess().crawl('{spider_name_to_run or config.spider_name}')
                 if sys.platform == 'win32':
                     self.process.terminate()
                 else:
-                    os.kill(pid, signal.SIGTERM)
+                    os.killpg(pid, signal.SIGTERM)
 
                 try:
                     self.process.wait(timeout=timeout)
@@ -192,7 +230,7 @@ asyncio.run(CrawlerProcess().crawl('{spider_name_to_run or config.spider_name}')
                     if sys.platform == 'win32':
                         self.process.kill()
                     else:
-                        os.kill(pid, signal.SIGKILL)
+                        os.killpg(pid, signal.SIGKILL)
                     self.process.wait(timeout=5)
 
                 self.status = TaskStatus.CANCELLED
@@ -669,7 +707,8 @@ class LocalExecutor:
                 # Windows: 使用 SIGBREAK
                 os.kill(pid, signal.CTRL_BREAK_EVENT)
             else:
-                os.kill(pid, signal.SIGSTOP)
+                # 暂停整个进程组（含 crawlo 派生的子进程/协程）
+                os.killpg(pid, signal.SIGSTOP)
 
             process.status = TaskStatus.PAUSED
             self._update_task_status(task_id, TaskStatus.PAUSED)
@@ -688,7 +727,7 @@ class LocalExecutor:
         try:
             pid = process.process.pid
             if sys.platform != 'win32':
-                os.kill(pid, signal.SIGCONT)
+                os.killpg(pid, signal.SIGCONT)
 
             process.status = TaskStatus.RUNNING
             self._update_task_status(task_id, TaskStatus.RUNNING)

@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
         log_cleanup_task.cancel()
         scheduler_service.shutdown()
     except Exception as e:
-        logger.warning(f"TaskExecutor cleanup was interrupted: {e}")
+        logger.warning(f"cleanup was interrupted: {e}")
 
 
 app = FastAPI(
@@ -197,6 +197,28 @@ app.include_router(websocket.router)
 
 # Prometheus metrics endpoint
 metrics_app = make_asgi_app()
+
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import PlainTextResponse
+
+
+class MetricsAuthMiddleware(BaseHTTPMiddleware):
+    """/metrics 鉴权：校验 Authorization: Bearer <JWT>，未授权返回 401"""
+
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        if path == "/metrics" or path.startswith("/metrics/"):
+            auth = request.headers.get("Authorization", "")
+            from app.core.security import decode_access_token
+            token = auth[7:].strip() if auth.startswith("Bearer ") else ""
+            payload = decode_access_token(token) if token else None
+            if not payload or not payload.get("sub"):
+                return PlainTextResponse("Unauthorized", status_code=401)
+        return await call_next(request)
+
+
+app.add_middleware(MetricsAuthMiddleware)
 app.mount("/metrics", metrics_app)
 
 

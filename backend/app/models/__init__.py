@@ -293,7 +293,7 @@ class TaskInstance(Base):
     worker_node = Column(String(64))
     container_id = Column(String(64))
     process_id = Column(Integer)  # 本地进程 PID (非Docker模式)
-    deploy_mode = Column(String(16), default="local")  # local / docker / ssh
+    deploy_mode = Column(String(16), default="local")  # local / ssh / docker / agent
     memory_limit = Column(String(16), nullable=True)  # Docker 内存限制，如 "512m" / "1g"
     cpu_limit = Column(Float, nullable=True)  # Docker CPU 配额（核数）
     workspace = Column(String(512))  # SSH模式服务器工作目录

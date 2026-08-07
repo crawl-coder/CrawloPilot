@@ -30,6 +30,52 @@ class SchedulerService:
     def __init__(self):
         self.scheduler = BackgroundScheduler(timezone=ZoneInfo(DEFAULT_TZ))
         self._started = False
+        self._lock_conn = None
+
+    # ==================== 多实例选主锁 ====================
+
+    def _acquire_leader_lock(self) -> bool:
+        """尝试获取调度器主实例锁（MySQL GET_LOCK，连接断开自动释放）。
+
+        多实例部署时只有一个实例能拿到锁并运行调度器，其余实例等待/跳过，
+        避免同一 cron 被多个进程同时触发。
+        """
+        from app.core.config import settings
+        if settings.DATABASE_TYPE != "mysql":
+            return True  # sqlite/单实例：无锁需求
+        try:
+            from sqlalchemy import text
+            from app.core.database import SessionLocal
+            db = SessionLocal()
+            conn = db.connection()
+            result = conn.execute(
+                text("SELECT GET_LOCK('crawlopilot_scheduler_leader', 0)")
+            ).scalar()
+            if result == 1:
+                self._lock_conn = conn
+                logger.info("获取调度器主实例锁成功，本实例作为调度主节点")
+                return True
+            logger.warning("调度器主实例锁被其他实例持有，本实例跳过调度（备节点）")
+            db.close()
+            return False
+        except Exception as e:
+            logger.warning(f"获取调度器主实例锁失败（降级为单实例模式）: {e}")
+            return True
+
+    def _release_leader_lock(self):
+        """释放调度器主实例锁"""
+        if self._lock_conn is not None:
+            try:
+                from sqlalchemy import text
+                self._lock_conn.execute(text("SELECT RELEASE_LOCK('crawlopilot_scheduler_leader')"))
+            except Exception as e:
+                logger.warning(f"释放调度器主实例锁失败: {e}")
+            finally:
+                try:
+                    self._lock_conn.close()
+                except Exception:
+                    pass
+                self._lock_conn = None
 
     # ==================== 生命周期 ====================
 
@@ -37,6 +83,10 @@ class SchedulerService:
         """启动调度器并从 DB 恢复 job"""
         if self._started:
             return
+        if not self._acquire_leader_lock():
+            self._is_leader = False
+            return
+        self._is_leader = True
         self.scheduler.start()
         self._started = True
         self._recover_from_db()
@@ -47,6 +97,7 @@ class SchedulerService:
             self.scheduler.shutdown(wait=False)
             self._started = False
             logger.info("调度器已停止")
+        self._release_leader_lock()
 
     def _recover_from_db(self):
         """启动恢复：错跑检测 + 注册所有 enabled 调度"""
