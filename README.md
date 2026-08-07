@@ -93,7 +93,7 @@ cp .env.example .env        # 按需修改数据库/Redis 地址
 | Python | 3.10+ | 后端运行环境 |
 | Node.js | 18+ | 前端构建与开发 |
 | MySQL | 8.0+ | 业务数据库（本机或 Docker 均可） |
-| Redis | 7.x | Celery 异步任务 broker / 健康检查；缺失时服务降级可用 |
+| Redis | 7.x | 健康检查 / 监控缓存 / 预留限流（登录限流代码保留未启用）；缺失时服务降级可用 |
 | Docker | 可选 | 仅「Docker 直连」执行模式与 Compose 部署需要 |
 
 ### 2. 准备数据库与 Redis
@@ -133,6 +133,8 @@ cp .env.example .env
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `127.0.0.1` / `6379` / `0` | Redis 地址 |
 | `REDIS_PASSWORD` | 空 | Redis 密码（本机默认无） |
 | `SECRET_KEY` | 示例值 | JWT 与凭据加密密钥，**生产必须更换**（`openssl rand -hex 32`） |
+| `ALLOW_OPEN_REGISTER` | `false` | 开放注册开关；`false` 时注册仅 admin 可用（内部平台建议保持关闭） |
+| `CRAWLOPILOT_ENV_FILE` | 空 | 显式指定 .env 路径（默认自动探测：仓库根 → CWD） |
 | `DEBUG` | `true` | 开发模式；生产改为 `false` |
 | `API_PREFIX` | `/api/v1` | API 前缀 |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | 控制面默认 Docker 连接 |
@@ -362,7 +364,7 @@ CrawloPilot/
 │   └── uploads/        # 爬虫代码与任务日志（运行时数据，不入库）
 ├── frontend/           # Vue3 前端
 ├── agent/              # 节点 Agent 程序（纯标准库）
-├── spider-runner/      # 爬虫运行器
+├── spider-runner/      # 兜底 Docker 基础镜像构建目录（非主链路，主链路由本地 wheel 构建）
 ├── docker/             # Docker 配置（mysql 初始化等）
 ├── docs/               # 设计哲学 / 产品设计 / 模块文档
 ├── examples/           # 示例爬虫（ofweek_standalone）

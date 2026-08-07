@@ -14,19 +14,32 @@
 - `entry_file`：入口文件（默认 run.py）
 - `spider_name`：传给 crawlo 的爬虫名称
 - `run_count / success_count / error_count / last_run_at / last_run_status`：运行统计
-- `git_*`：Git 相关字段（V1 保留字段，功能已裁剪）
+- `git_*`：Git 工作流字段（仓库地址/认证方式/分支；秘密字段加密落库、API 不回传）
+- `git_credential_id`：引用的共享 Git 凭据（凭据池，见 `git_credential` 表）
 
 ## 后端实现（`backend/app/api/v1/spiders.py`）
 
 | 接口 | 说明 |
 |------|------|
-| `GET/POST/PUT/DELETE /spiders` | CRUD |
+| `GET/POST/PUT/DELETE /spiders` | CRUD（创建支持 use_my_git_credential / git_credential_id 凭据来源） |
 | `POST /spiders/{id}/run` | 运行（body 可选，无节点=本地执行） |
 | `POST /spiders/{id}/stop` | 停止（按 task_id 或停止全部运行中） |
+| `POST /spiders/{id}/upload` | ZIP/TAR 代码包上传解压 |
 | `GET /spiders/{id}/files/tree` | 代码文件树 |
 | `GET/POST /spiders/{id}/files/content` | 读取/保存文件内容 |
 | `POST /spiders/{id}/files/create` | 创建文件/目录 |
 | `DELETE /spiders/{id}/files` | 删除文件 |
+| `GET /spiders/{id}/git/status` `GET .../git/branches` | 仓库状态 / 分支列表 |
+| `POST /spiders/{id}/git/clone` | 克隆（支持 http/https/ssh，完整仓库含 .git） |
+| `POST /spiders/{id}/git/commit` `.../git/push` `.../git/pull` `.../git/checkout` | 提交 / 推送 / 拉取 / 切分支 |
+
+### Git 工作流与凭据
+
+- Git 来源爬虫保留完整 `.git`，详情页可直接提交/推送/拉取/切分支；
+- 认证凭据单次命令注入（密码拼 URL / SSH 私钥临时文件），不写回 `.git/config`；
+- 凭据三级来源：**共享凭据池**（git_credential_id）> **个人凭据**（use_my_git_credential
+  自动填充）> 手动内联；内联秘密字段（git_password/git_ssh_key/git_passphrase）
+  Fernet 加密落库，详情接口不回传。
 
 ### 运行分发逻辑
 

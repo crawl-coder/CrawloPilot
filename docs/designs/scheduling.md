@@ -8,7 +8,7 @@
 
 **已落地**：Schedule 模型扩展（spider_id 外键 + 迁移回填）、进程内 APScheduler（lifespan 启停 +
 启动恢复 + 错跑检测 skipped）、并发守卫、触发幂等（唯一索引方案）、once 自动停用、
-`/schedules` 全部 9 个端点、三层生命周期同步、enabled=false 保留行语义、
+`/schedules` 全部 10 个端点（含 preview）、三层生命周期同步、enabled=false 保留行语义、
 前端 SpiderFormDialog 定时区块改走 `/schedules`（编辑回显默认调度）。
 
 **与设计的偏差**：
@@ -24,7 +24,7 @@
   独立「定时任务」页面定为**全局只读视图 + 快捷操作**（V2 工作 A），完整 CRUD 表单不做；
 - 「一个爬虫一条调度」是 **API 层 upsert 约定**（POST /schedules 按 spider_id 找第一条
   更新），`schedule` 表无 (spider_id) 唯一索引；放开多调度需把 POST 从 upsert 改为 create；
-- `spider.schedule_config` schema 层清理为 V2 增量（见第 7 节）。
+- `spider.schedule_config` schema 层已清理（2026-08-07：schema/API 不再读写，model 列保留兼容旧数据）。
 
 ## 1. 目标与范围
 

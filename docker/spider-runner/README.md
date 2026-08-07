@@ -1,170 +1,28 @@
-# CrawloPilot Spider Runner Docker Image
+# CrawloPilot Spider Runner Docker Image（历史镜像，已不在主链路）
 
-标准爬虫运行环境 Docker 镜像
+> **状态：遗留**。本文档描述的"SDK 注入 / 心跳保活 / 数据上报"架构已废弃
+> （`crawlopilot` SDK 包已从仓库移除）。当前 Docker 执行链路见
+> [docs/modules/04-execution.md](../../docs/modules/04-execution.md)：
+> 平台使用 `crawlopilot/base:1.7.2` 基础镜像（由本地 Crawlo wheel 构建）+
+> 任务镜像 COPY 代码的方式运行容器，日志/状态由控制端执行器管理，
+> 容器内无需任何 SDK 或上报逻辑。
+>
+> 本目录的 Dockerfile/entrypoint 仅作为自定义运行环境的参考样例保留。
 
-## 特性
+## 当前实际行为
 
-- ✅ 预装 CrawloPilot SDK
-- ✅ 自动配置注入
-- ✅ Git 代码拉取
-- ✅ 日志与数据上报
-- ✅ 心跳保活
-- ✅ 系统监控
-- ✅ 非 root 用户运行
+- 入口脚本 `entrypoint.sh`：校验环境变量 → 可选安装 requirements → 执行爬虫命令
+- 环境变量中的 `API_URL` / `API_TOKEN` 已无消费方（SDK 已移除），传入也不会产生上报
 
-## 镜像信息
+## 当前平台的 Docker 执行方式（摘要）
 
-- **名称**: `crawlopilot/spider-runner`
-- **基础镜像**: `python:3.10-slim`
-- **镜像大小**: ~500MB
-- **架构**: linux/amd64, linux/arm64
-
-## 环境变量
-
-| 变量名 | 必填 | 默认值 | 说明 |
-|--------|------|--------|------|
-| API_URL | ✅ | - | 平台 API 地址 |
-| API_TOKEN | ✅ | - | 认证令牌 |
-| TASK_ID | ✅ | - | 任务 ID |
-| SPIDER_NAME | ✅ | - | 爬虫名称 |
-| GIT_URL | ❌ | - | Git 仓库地址 |
-| GIT_BRANCH | ❌ | main | Git 分支 |
-| OUTPUT_FORMAT | ❌ | json | 输出格式 |
-| OUTPUT_PATH | ❌ | /output | 输出路径 |
-| LOG_LEVEL | ❌ | INFO | 日志级别 |
-| NODE_ID | ❌ | - | 节点 ID |
-| CONTAINER_ID | ❌ | - | 容器 ID |
-
-## 快速开始
-
-### 1. 构建镜像
-
-```bash
-cd /Users/oscar/projects/CrawloPilot
-./docker/spider-runner/build.sh
+```text
+crawlopilot/base:1.7.2（python:3.10-slim + crawlo 全家桶 wheel，一次性构建）
+  └── 任务镜像 crawlo-project-{id}-{内容摘要}（COPY 代码 + 装 requirements，秒级缓存复用）
+        └── 容器运行入口：entry_file 或 run.py
 ```
 
-### 2. 运行容器
-
-```bash
-# 基本用法 (已有代码)
-docker run -it --rm \
-  -e API_URL=http://localhost:8000 \
-  -e API_TOKEN=your_token_here \
-  -e TASK_ID=task_123 \
-  -e SPIDER_NAME=my_spider \
-  -v $(pwd)/output:/output \
-  crawlopilot/spider-runner:latest
-
-# 从 Git 拉取代码
-docker run -it --rm \
-  -e API_URL=http://localhost:8000 \
-  -e API_TOKEN=your_token_here \
-  -e TASK_ID=task_123 \
-  -e SPIDER_NAME=my_spider \
-  -e GIT_URL=https://github.com/xxx/spider.git \
-  -e GIT_BRANCH=main \
-  -v $(pwd)/output:/output \
-  crawlopilot/spider-runner:latest
-```
-
-### 3. 查看输出
-
-```bash
-# 查看爬取数据
-cat output/items.json
-
-# 查看日志
-tar -xzf output/logs.tar.gz
-cat spider.log
-```
-
-## 目录结构
-
-```
-容器内部:
-/app/                 # 爬虫代码目录
-/output/              # 输出目录 (挂载)
-  ├── items.json      # 爬取数据
-  ├── logs.tar.gz     # 日志压缩包
-  └── config.py       # SDK 配置
-/logs/                # 日志目录
-  └── spider.log      # 爬虫日志
-```
-
-## 工作流程
-
-```
-1. 容器启动
-   ↓
-2. 验证环境变量
-   ↓
-3. 拉取 Git 代码 (如果设置 GIT_URL)
-   ↓
-4. 安装依赖 (requirements.txt)
-   ↓
-5. 注入 SDK 配置
-   ↓
-6. 上报任务开始
-   ↓
-7. 启动爬虫
-   ↓
-8. SDK 自动工作:
-   ├─ 日志上报
-   ├─ 数据上传
-   ├─ 心跳保活
-   └─ 指标上报
-   ↓
-9. 打包日志
-   ↓
-10. 上报任务完成
-   ↓
-11. 容器退出
-```
-
-## 安全
-
-- ✅ 非 root 用户运行 (crawlopilot:crawlopilot)
-- ✅ 最小权限原则
-- ✅ 健康检查
-- ✅ 资源限制 (通过 Docker run 参数)
-
-## 资源限制示例
-
-```bash
-docker run -it --rm \
-  --memory=512m \
-  --cpus=1.0 \
-  --network=crawlopilot-network \
-  -e API_URL=http://localhost:8000 \
-  -e API_TOKEN=token \
-  -e TASK_ID=task_123 \
-  -e SPIDER_NAME=my_spider \
-  -v $(pwd)/output:/output \
-  crawlopilot/spider-runner:latest
-```
-
-## 调试
-
-### 进入容器调试
-
-```bash
-docker run -it --rm \
-  --entrypoint /bin/bash \
-  -e API_URL=http://localhost:8000 \
-  -e API_TOKEN=token \
-  -e TASK_ID=task_123 \
-  -e SPIDER_NAME=my_spider \
-  crawlopilot/spider-runner:latest
-```
-
-### 查看日志
-
-```bash
-docker logs <container_id>
-docker logs --tail 100 <container_id>
-docker logs -f <container_id>
-```
+构建与验证流程见 [docs/modules/04-execution.md](../../docs/modules/04-execution.md) 第 4 节。
 
 ## 许可证
 

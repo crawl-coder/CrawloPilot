@@ -25,6 +25,9 @@ cd .. && python tests/test_deployment_flow.py
 | `tests/schedule_test.py` | 定时调度端到端（35/35，含 cron 真实触发/幂等/启停/once 自动停用/级联删除，约 4 分钟） |
 | `tests/git_credentials_test.py` | Git 凭据体系端到端（34/34，个人凭据/团队凭据池/引用保护/脱敏） |
 | `tests/ws_push_test.py` | WebSocket 日志与状态推送验证 |
+| `tests/api_test.py` | API 全量冒烟（登录后逐接口校验） |
+| `tests/test_pagination.py` / `test_pagination_quick.py` | 分页行为专项 |
+| `tests/integration/pages/` | 页面级联调（nodes/spiders/tasks） |
 | `tests/unit/test_01_auth.py` | 认证单测（6/6） |
 | `tests/unit/test_02_projects.py` | 项目单测（部分用例与分页/删除接口格式不匹配，待修） |
 | `tests/unit/test_edge_cases.py` | 边界条件（已移除调度相关用例） |
@@ -44,6 +47,6 @@ cd .. && python tests/test_deployment_flow.py
 
 ## 已知问题
 
-- `test_02_projects` 有 3 个用例失败：测试脚本期望的响应格式与当前分页/删除接口
-  不一致（既有问题，非本次改动引入）
+- ~~`test_02_projects` 有 3 个用例失败~~（2026-08-07 已修复 7/7：分页/删除断言兼容
+  当前接口格式 + `APIClient.put` 参数修正 + 注册开关回退）
 - 依赖 `pytest`、`aiomysql` 需在 `crawlo_pilot` 环境安装

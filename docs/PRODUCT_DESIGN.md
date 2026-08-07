@@ -1,5 +1,10 @@
 # Crawlo 管理平台（CrawloPilot）- 产品设计与技术方案
 
+> **阅读提示**：本文是项目初期的完整愿景设计稿（历史文档）。当前实际交付范围以
+> [REMAINING_WORK.md](REMAINING_WORK.md) 为准；文中部分接口约定（统一响应格式、
+> WebSocket 路径、组件选型、部署架构）与最终实现存在差异，具体行为以代码与
+> 各模块文档（docs/modules/）为准。
+
 ## 一、产品概述
 
 ### 1.1 产品定位
@@ -462,7 +467,7 @@ Spider ──1:N──> DataQualityReport
 | GET | /api/v1/monitor/projects/{id}/status | 项目状态 |
 | GET | /api/v1/monitor/nodes | 节点列表 |
 | GET | /api/v1/monitor/metrics | Prometheus 指标 |
-| WS | /api/v1/ws/logs/{task_id} | 实时日志推送 |
+| WS | /ws/tasks/{task_id}（实际实现，无 API 前缀） | 实时日志推送 |
 
 **~~数据质量~~（2026-08-07 取消）**
 | 方法 | 路径 | 说明 |

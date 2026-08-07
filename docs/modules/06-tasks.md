@@ -9,15 +9,21 @@
 
 ### 接口
 
-- `backend/app/api/v1/execution.py`（prefix `/execution`）：
+- `backend/app/api/v1/execution.py`（prefix `/execution`，任务 API 统一入口）：
   - `POST /execution/tasks`：创建并执行（本地模式）
-  - `GET /execution/tasks`：分页列表（`{total, items}`）
+  - `GET /execution/tasks`：分页列表（`{total, items}`，支持 spider_id/schedule_id/node_id/status 过滤）
+  - `GET /execution/tasks/running`：运行中的任务
+  - `GET /execution/tasks/stats/summary`：统计概览（可按 schedule_id 过滤）
+  - `GET /execution/tasks/recent`：最近任务
+  - `GET /execution/tasks/schedule/{schedule_id}`：指定调度的任务
+  - `GET /execution/tasks/status/{status}`：指定状态的任务
   - `GET /execution/tasks/{id}`：任务完整详情（含实时进程状态）
   - `GET /execution/tasks/{id}/status`：状态 + 指标
   - `GET /execution/tasks/{id}/logs`：日志
   - `POST /execution/tasks/{id}/pause|resume|stop`：控制
+  - `POST /execution/tasks/{id}/retry`：重试（终态任务；保留原节点与部署模式）
   - `DELETE /execution/tasks/{id}`：删除
-- `backend/app/api/v1/tasks.py`（prefix `/task-instances`）：实例列表/统计/重试/日志/最近任务
+- 历史路由 `/task-instances/*` 已于 2026-08-07 收敛至此（旧文件 tasks.py 已删除）
 
 ### 按模式分发
 

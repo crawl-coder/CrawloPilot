@@ -8,9 +8,11 @@ Vue3 + Vite + Element Plus + Pinia + Vue Router + ECharts
 
 ```text
 frontend/src/
-├── api/          # 后端接口封装（auth/project/spider/execution/node/team/monitoring）
-├── components/   # 通用组件（Pagination/StatCard）
+├── api/          # 后端接口封装（auth/project/spider/execution/schedule/node/server/team/user/git-credential/monitoring/project-files）
+├── components/   # 通用组件（Pagination/StatCard/SpiderFormDialog）
 ├── composables/  # 组合式函数
+├── stores/       # Pinia（user/theme）
+├── styles/       # 设计 token 与全局样式（tokens.css/global.css，含暗色模式）
 ├── router/       # 路由与守卫
 ├── utils/        # 通用工具（状态映射/格式化/WebSocket）
 └── views/        # 页面
@@ -28,12 +30,16 @@ frontend/src/
 | SpiderDetail | `/spiders/:id` | 代码结构 + 运行记录 + 运行对话框 |
 | Tasks | `/tasks` | 任务列表（筛选/操作/日志） |
 | TaskDetail | `/tasks/:id` | 执行详情（状态/指标/实时日志） |
-| Nodes | `/nodes` | 节点管理（SSH/Docker/Agent） |
-| Users | `/users` | 用户管理 |
+| Nodes | `/nodes` | 节点管理（SSH/Docker/Agent 通道） |
+| Servers | `/servers` | 真实服务器管理（服务器 × 通道） |
+| ServerDetail | `/servers/:id` | 服务器详情（通道/探测/维护） |
+| Users | `/users` | 用户管理（admin 专属） |
+| Profile | `/profile` | 个人中心（基本信息 + 个人 Git 凭据 + 共享凭据管理[admin]） |
 
 ## 布局
 
-侧边栏菜单顺序：仪表盘 → 项目管理 → 爬虫管理 → 任务管理 → 节点管理 → 系统管理。
+侧边栏菜单顺序：仪表盘 → 项目管理 → 爬虫管理 → 任务管理 → 节点管理（含服务器 Tab）→ 系统管理。
+系统管理（用户管理）为 admin 专属，顶栏含暗色模式切换与个人信息入口。
 
 ## 交互约定
 

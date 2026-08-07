@@ -7,7 +7,7 @@
 
 ## 数据模型
 
-- `user`：用户（username/email/password_hash/is_active）
+- `user`：用户（username 唯一；email 可选可空；password_hash；is_active；git_credentials 为 Fernet 加密的个人 Git 凭据 JSON）
 - `role` / `permission` / `user_role` / `role_permission`：RBAC 四表
 - `team` / `team_member`：团队（项目归属团队）
 
@@ -17,9 +17,12 @@
 
 | 接口 | 说明 |
 |------|------|
-| `POST /auth/login` | 表单登录（OAuth2PasswordRequestForm），返回 JWT |
-| `POST /auth/register` | 注册新用户 |
+| `POST /auth/login` | 表单登录（OAuth2PasswordRequestForm），返回 JWT；用户名支持手机号 |
+| `POST /auth/register` | 注册新用户；受 `ALLOW_OPEN_REGISTER` 开关控制，关闭时仅 admin 可用（邮箱可选、姓名不在注册采集） |
 | `GET /auth/me` | 当前用户信息 |
+| `GET/PUT/DELETE /auth/me/git-credentials` | 个人 Git 凭据（Fernet 加密落库；查询脱敏；秘密字段留空=保留原值） |
+
+> 用户管理接口（`/users/*`）仅 admin 可用（`require_admin`），见 `backend/app/api/v1/users.py`。
 
 ### 权限控制
 
@@ -47,4 +50,5 @@ V1 精简版：仅提供 `GET /teams` 列表，供创建项目时选择团队。
 ## 安全说明
 
 - 登录表单采用 OAuth2 表单协议（不是 JSON），客户端需以 `application/x-www-form-urlencoded` 提交
-- V1 未启用登录频率限制与审计中间件（已移除，V2 可恢复）
+- 登录频率限制：代码保留（Redis + `_login_guard`），当前注释停用，取消注释即可启用
+- 审计中间件已移除（V2 可恢复）
