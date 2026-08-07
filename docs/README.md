@@ -37,6 +37,7 @@ docs/
 ├── designs/                # 专项设计文档
 │   ├── server-management.md  # Server 实体管理设计（含 API/前端/迁移）
 │   └── scheduling.md         # 定时任务配置功能设计
+│   └── distributed-deployment.md # 分布式部署方案（控制面 + 多节点服务器）
 ├── releases/               # 版本发布说明（按版本号组织）
 │   ├── README.md             # 版本发布管理（版本号策略/发版流程/索引）
 │   ├── TEMPLATE.md           # Release 正文模板
