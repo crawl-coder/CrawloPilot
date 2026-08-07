@@ -25,7 +25,7 @@
           </div>
           <div class="hero-meta">
             <span class="meta-item">
-              <el-icon><Message /></el-icon>{{ userStore.user?.email }}
+              <el-icon><Message /></el-icon>{{ userStore.user?.email || '未设置邮箱' }}
             </span>
             <span class="meta-item">
               <el-icon><User /></el-icon>{{ userStore.user?.full_name || '未设置姓名' }}

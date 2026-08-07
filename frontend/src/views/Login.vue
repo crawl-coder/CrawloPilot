@@ -12,7 +12,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="loginForm.username"
-            placeholder="用户名"
+            placeholder="用户名或手机号"
             :prefix-icon="User"
             size="large"
           />
@@ -58,17 +58,13 @@
       <el-form :model="registerForm" :rules="registerRules" ref="registerFormRef"
                label-position="left" label-width="80px">
         <el-form-item prop="username" label="用户名">
-          <el-input v-model="registerForm.username" />
+          <el-input v-model="registerForm.username" placeholder="用户名或手机号" />
         </el-form-item>
-        
+
         <el-form-item prop="email" label="邮箱">
-          <el-input v-model="registerForm.email" type="email" />
+          <el-input v-model="registerForm.email" type="email" placeholder="可选" />
         </el-form-item>
-        
-        <el-form-item prop="full_name" label="姓名">
-          <el-input v-model="registerForm.full_name" />
-        </el-form-item>
-        
+
         <el-form-item prop="password" label="密码">
           <el-input v-model="registerForm.password" type="password" show-password />
         </el-form-item>
@@ -114,7 +110,6 @@ const rules = {
 const registerForm = reactive({
   username: '',
   email: '',
-  full_name: '',
   password: '',
   confirm_password: ''
 })
@@ -127,10 +122,23 @@ const validateConfirmPassword = (rule, value, callback) => {
   }
 }
 
+// 用户名：普通用户名（字母/数字/下划线/中划线，3-64 位）或 11 位手机号
+const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{3,64}$/
+const PHONE_PATTERN = /^1[3-9]\d{9}$/
+const validateUsername = (rule, value, callback) => {
+  if (!value) {
+    callback(new Error('请输入用户名'))
+  } else if (USERNAME_PATTERN.test(value) || PHONE_PATTERN.test(value)) {
+    callback()
+  } else {
+    callback(new Error('请输入 3-64 位字母/数字/下划线，或 11 位手机号'))
+  }
+}
+
 const registerRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  username: [{ validator: validateUsername, trigger: 'blur' }],
   email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    // 可选，但填写则需为合法邮箱
     { type: 'email', message: '请输入有效的邮箱地址', trigger: 'blur' }
   ],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
@@ -158,6 +166,7 @@ const handleRegister = async () => {
   try {
     await registerFormRef.value.validate()
     const { confirm_password, ...data } = registerForm
+    data.email = data.email?.trim() || null  // 邮箱可选：空串转 null，避免后端格式校验 422
     await register(data)
     ElMessage.success('注册成功，请登录')
     showRegister.value = false

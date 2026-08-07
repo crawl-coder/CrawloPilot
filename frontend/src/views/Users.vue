@@ -49,7 +49,9 @@
             <span class="username-cell">{{ row.username }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.email || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="full_name" label="姓名" width="110">
           <template #default="{ row }">{{ row.full_name || '-' }}</template>
         </el-table-column>
@@ -115,7 +117,7 @@
         </el-form-item>
 
         <el-form-item label="邮箱" prop="email">
-          <el-input v-model="userForm.email" />
+          <el-input v-model="userForm.email" placeholder="可选" />
         </el-form-item>
 
         <el-form-item label="姓名">
@@ -220,7 +222,7 @@ const passwordForm = reactive({
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    // 可选，但填写则需为合法邮箱
     { type: 'email', message: '请输入有效的邮箱地址', trigger: 'blur' }
   ],
   password: [{ required: true, message: '请输入密码', trigger: 'blur', min: 6 }]
@@ -311,10 +313,13 @@ const handleSubmit = async () => {
   try {
     await formRef.value.validate()
     
+    // 邮箱可选：空串转 null，避免后端格式校验 422
+    const email = userForm.email?.trim() || null
+
     if (editingUser.value) {
       // 更新用户
       await updateUser(editingUser.value.id, {
-        email: userForm.email,
+        email,
         full_name: userForm.full_name,
         is_active: userForm.is_active,
         role_ids: userForm.role_ids
@@ -322,7 +327,7 @@ const handleSubmit = async () => {
       ElMessage.success('更新成功')
     } else {
       // 创建用户
-      await createUser(userForm)
+      await createUser({ ...userForm, email })
       ElMessage.success('创建成功')
     }
     

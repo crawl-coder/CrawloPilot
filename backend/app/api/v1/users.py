@@ -79,10 +79,11 @@ async def create_user(
     if existing_user:
         raise HTTPException(status_code=400, detail="用户名已存在")
     
-    # 检查邮箱是否已存在
-    existing_email = db.query(User).filter(User.email == user_data.email).first()
-    if existing_email:
-        raise HTTPException(status_code=400, detail="邮箱已被注册")
+    # 检查邮箱是否已存在（邮箱可选；为空时跳过，避免 IS NULL 误判重复）
+    if user_data.email:
+        existing_email = db.query(User).filter(User.email == user_data.email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="邮箱已被注册")
     
     # 验证角色是否存在
     roles = []

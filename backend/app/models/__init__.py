@@ -10,7 +10,7 @@ class User(Base):
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     username = Column(String(64), unique=True, nullable=False, index=True)
-    email = Column(String(128), unique=True, nullable=False, index=True)
+    email = Column(String(128), unique=True, nullable=True, index=True)  # 邮箱可选
     password_hash = Column(String(256), nullable=False)
     full_name = Column(String(128))
     is_active = Column(Boolean, default=True)

@@ -15,7 +15,7 @@ class RoleSimple(BaseModel):
 
 class UserBase(BaseModel):
     username: str
-    email: EmailStr
+    email: Optional[EmailStr] = None  # 邮箱可选（V2 告警通知再启用消费）
     full_name: Optional[str] = None
 
 
