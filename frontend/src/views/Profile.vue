@@ -1,43 +1,77 @@
 <template>
-  <div>
-    <div style="margin-bottom: 20px">
+  <div class="profile-container">
+    <div class="page-header">
       <h2>个人中心</h2>
+      <span class="page-subtitle">账号信息与 Git 凭据管理</span>
     </div>
 
-    <!-- 基本信息 -->
-    <el-card class="profile-card" shadow="never">
-      <template #header>
-        <span class="card-title">基本信息</span>
-      </template>
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="用户名">{{ userStore.username }}</el-descriptions-item>
-        <el-descriptions-item label="姓名">{{ userStore.user?.full_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="邮箱">{{ userStore.user?.email }}</el-descriptions-item>
-        <el-descriptions-item label="角色">
-          <el-tag
-            v-for="role in userStore.user?.roles || []"
-            :key="role.id"
-            size="small"
-            style="margin-right: 5px"
-          >
-            {{ role.name }}
-          </el-tag>
-        </el-descriptions-item>
-      </el-descriptions>
+    <!-- 身份卡 -->
+    <el-card class="profile-card cp-animate-in" shadow="never">
+      <div class="hero">
+        <div class="hero-avatar">{{ avatarInitial }}</div>
+        <div class="hero-info">
+          <div class="hero-name-row">
+            <span class="hero-name">{{ userStore.username }}</span>
+            <el-tag
+              v-for="role in userStore.user?.roles || []"
+              :key="role.id"
+              :type="role.name === 'admin' ? 'primary' : 'info'"
+              effect="light"
+              size="small"
+              round
+            >
+              {{ role.name }}
+            </el-tag>
+          </div>
+          <div class="hero-meta">
+            <span class="meta-item">
+              <el-icon><Message /></el-icon>{{ userStore.user?.email }}
+            </span>
+            <span class="meta-item">
+              <el-icon><User /></el-icon>{{ userStore.user?.full_name || '未设置姓名' }}
+            </span>
+            <span class="meta-item">
+              <el-icon><Calendar /></el-icon>注册于 {{ formatDateTime(userStore.user?.created_at) }}
+            </span>
+          </div>
+        </div>
+      </div>
     </el-card>
 
     <!-- 我的 Git 凭据 -->
-    <el-card class="profile-card" shadow="never">
+    <el-card class="profile-card cp-animate-in" shadow="never">
       <template #header>
-        <div style="display: flex; justify-content: space-between; align-items: center">
-          <span class="card-title">我的 Git 凭据</span>
-          <el-tag v-if="myCred.configured" type="success" size="small">已配置</el-tag>
-          <el-tag v-else type="info" size="small">未配置</el-tag>
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-icon icon-key"><el-icon><Key /></el-icon></span>
+            <h3>我的 Git 凭据</h3>
+          </div>
+          <span class="status-pill" :class="myCred.configured ? 'is-on' : 'is-off'">
+            <span class="pill-dot"></span>{{ myCred.configured ? '已配置' : '未配置' }}
+          </span>
         </div>
       </template>
+
       <div class="card-tip">
         配置后，创建爬虫时可一键使用本人的 Git 凭据，无需重复填写。凭据加密存储，仅本人可用。
       </div>
+
+      <!-- 已配置摘要 -->
+      <div v-if="myCred.configured" class="cred-summary">
+        <el-tag :type="myCred.auth_type === 'ssh' ? 'warning' : 'primary'" effect="plain" size="small">
+          {{ myCred.auth_type === 'ssh' ? 'SSH密钥' : '密码/Token' }}
+        </el-tag>
+        <span v-if="myCred.username" class="summary-item">
+          <el-icon><User /></el-icon>{{ myCred.username }}
+        </span>
+        <span v-if="myCred.default_branch" class="summary-item">
+          <el-icon><Share /></el-icon>{{ myCred.default_branch }}
+        </span>
+        <span class="summary-item summary-secret">
+          <el-icon><Lock /></el-icon>秘密已加密存储
+        </span>
+      </div>
+
       <el-form :model="myCredForm" label-width="110px" style="max-width: 560px">
         <el-form-item label="认证方式">
           <el-radio-group v-model="myCredForm.auth_type">
@@ -91,10 +125,14 @@
     </el-card>
 
     <!-- 共享 Git 凭据（团队机器人，仅 admin 可管理） -->
-    <el-card v-if="userStore.isAdmin" class="profile-card" shadow="never">
+    <el-card v-if="userStore.isAdmin" class="profile-card cp-animate-in" shadow="never">
       <template #header>
-        <div style="display: flex; justify-content: space-between; align-items: center">
-          <span class="card-title">共享 Git 凭据（团队机器人）</span>
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-icon icon-team"><el-icon><Connection /></el-icon></span>
+            <h3>共享 Git 凭据</h3>
+            <span class="panel-sub">团队机器人账号 / Deploy Key</span>
+          </div>
           <el-button type="primary" size="small" @click="showCredDialog()">
             <el-icon><Plus /></el-icon>
             新建凭据
@@ -102,10 +140,14 @@
         </div>
       </template>
       <div class="card-tip">
-        团队级机器人账号 / Deploy Key，全体成员创建爬虫时可引用。建议配合 Git 平台的只读或受限权限账号使用。
+        全体成员创建爬虫时可引用。建议配合 Git 平台的只读或受限权限账号使用。
       </div>
       <el-table :data="sharedCreds" v-loading="sharedLoading" style="width: 100%">
-        <el-table-column prop="name" label="名称" min-width="140" />
+        <el-table-column prop="name" label="名称" min-width="140">
+          <template #default="{ row }">
+            <span class="cred-name">{{ row.name }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="认证方式" width="110">
           <template #default="{ row }">
             <el-tag size="small" :type="row.auth_type === 'ssh' ? 'warning' : 'primary'" effect="plain">
@@ -124,9 +166,9 @@
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
-              {{ row.is_active ? '启用' : '停用' }}
-            </el-tag>
+            <span class="status-pill" :class="row.is_active ? 'is-on' : 'is-off'">
+              <span class="pill-dot"></span>{{ row.is_active ? '启用' : '停用' }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="230" fixed="right">
@@ -143,6 +185,9 @@
             <el-button size="small" type="danger" plain @click="removeCred(row)">删除</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无共享凭据" :image-size="80" />
+        </template>
       </el-table>
     </el-card>
 
@@ -205,9 +250,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Key, Connection, Message, User, Calendar, Share, Lock } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { getMyGitCredentials, saveMyGitCredentials, deleteMyGitCredentials } from '@/api/auth'
 import {
@@ -216,8 +261,11 @@ import {
   updateGitCredential,
   deleteGitCredential,
 } from '@/api/git-credential'
+import { formatDateTime } from '@/utils/common'
 
 const userStore = useUserStore()
+
+const avatarInitial = computed(() => (userStore.username || '?').charAt(0).toUpperCase())
 
 // ==================== 我的 Git 凭据 ====================
 
@@ -418,21 +466,214 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.profile-card {
-  margin-bottom: 20px;
-  border-radius: var(--cp-radius-md);
+.profile-container {
+  padding: 0;
 }
 
-.card-title {
-  font-size: 15px;
+/* ==================== 页头 ==================== */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-sm);
+  margin-bottom: var(--cp-space-lg);
+}
+
+.page-header h2 {
+  font-size: 20px;
   font-weight: 600;
   color: var(--cp-text-primary);
 }
 
+.page-subtitle {
+  font-size: 13px;
+  color: var(--cp-text-secondary);
+}
+
+/* ==================== 卡片基础 ==================== */
+.profile-card {
+  margin-bottom: var(--cp-space-md);
+  border-radius: var(--cp-radius-md);
+  border: 1px solid var(--cp-border-light);
+  box-shadow: var(--cp-shadow-1);
+  transition: box-shadow var(--cp-motion-base) var(--cp-ease-out);
+}
+
+.profile-card:hover {
+  box-shadow: var(--cp-shadow-2);
+}
+
+/* ==================== 身份 Hero ==================== */
+.hero {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-lg);
+  padding: var(--cp-space-xs) var(--cp-space-sm);
+}
+
+.hero-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, var(--cp-primary) 0%, #7c5cff 100%);
+  box-shadow: 0 4px 14px rgba(59, 124, 255, 0.35);
+  flex-shrink: 0;
+}
+
+.hero-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-xs);
+  margin-bottom: var(--cp-space-xs);
+}
+
+.hero-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--cp-text-primary);
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cp-space-xs) var(--cp-space-lg);
+}
+
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--cp-text-secondary);
+}
+
+.meta-item .el-icon {
+  font-size: 14px;
+}
+
+/* ==================== 面板头 ==================== */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-sm);
+}
+
+.panel-title h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cp-text-primary);
+  margin: 0;
+}
+
+.panel-sub {
+  font-size: 12px;
+  color: var(--cp-text-secondary);
+}
+
+.panel-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--cp-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.icon-key {
+  color: var(--cp-primary);
+  background: rgba(59, 124, 255, 0.1);
+}
+
+.icon-team {
+  color: #7c5cff;
+  background: rgba(124, 92, 255, 0.1);
+}
+
+/* ==================== 状态 Pill（脉冲点） ==================== */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.status-pill.is-on {
+  color: var(--cp-success);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.status-pill.is-off {
+  color: var(--cp-info);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-pill.is-on .pill-dot {
+  animation: pill-pulse 2s infinite;
+}
+
+@keyframes pill-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* ==================== 凭据摘要条 ==================== */
+.cred-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cp-space-md);
+  padding: 10px 14px;
+  margin-bottom: var(--cp-space-md);
+  border-radius: var(--cp-radius-sm);
+  background: rgba(59, 124, 255, 0.05);
+  border: 1px dashed var(--cp-border-light);
+}
+
+.summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--cp-text-regular);
+}
+
+.summary-secret {
+  color: var(--cp-text-secondary);
+  font-size: 12px;
+}
+
+/* ==================== 其他 ==================== */
 .card-tip {
   margin-bottom: 16px;
   color: var(--cp-text-secondary);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.cred-name {
+  font-weight: 500;
+  color: var(--cp-text-primary);
 }
 </style>

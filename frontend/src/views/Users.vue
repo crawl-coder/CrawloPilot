@@ -1,7 +1,10 @@
 <template>
-  <div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 20px">
-      <h2>用户管理</h2>
+  <div class="users-container">
+    <div class="page-header">
+      <div class="page-title">
+        <h2>用户管理</h2>
+        <span class="page-subtitle">系统账号与角色权限管理</span>
+      </div>
       <el-button type="primary" @click="showCreateDialog">
         <el-icon><Plus /></el-icon>
         创建用户
@@ -9,86 +12,100 @@
     </div>
 
     <!-- 搜索栏 -->
-    <el-form :inline="true" :model="searchForm" style="margin-bottom: 20px">
-      <el-form-item label="用户名">
-        <el-input v-model="searchForm.username" placeholder="请输入用户名" clearable />
-      </el-form-item>
-      <el-form-item label="角色">
-        <el-select v-model="searchForm.role_id" placeholder="全部" clearable style="width: 150px">
-          <el-option
-            v-for="role in roles"
-            :key="role.id"
-            :label="role.name"
-            :value="role.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-select v-model="searchForm.is_active" placeholder="全部" clearable style="width: 120px">
-          <el-option label="启用" :value="true" />
-          <el-option label="禁用" :value="false" />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="loadUsers">搜索</el-button>
-        <el-button @click="resetSearch">重置</el-button>
-      </el-form-item>
-    </el-form>
+    <el-card class="users-card cp-animate-in" shadow="never">
+      <el-form :inline="true" :model="searchForm" class="search-form">
+        <el-form-item label="用户名">
+          <el-input v-model="searchForm.username" placeholder="请输入用户名" clearable style="width: 180px" />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="searchForm.role_id" placeholder="全部" clearable style="width: 150px">
+            <el-option
+              v-for="role in roles"
+              :key="role.id"
+              :label="role.name"
+              :value="role.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="searchForm.is_active" placeholder="全部" clearable style="width: 120px">
+            <el-option label="启用" :value="true" />
+            <el-option label="禁用" :value="false" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="loadUsers">搜索</el-button>
+          <el-button @click="resetSearch">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
 
     <!-- 用户列表 -->
-    <el-table :data="users" v-loading="loading" style="width: 100%">
-      <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="username" label="用户名" width="150" />
-      <el-table-column prop="email" label="邮箱" width="200" />
-      <el-table-column prop="full_name" label="姓名" width="120" />
-      <el-table-column label="角色" width="200">
-        <template #default="{ row }">
-          <el-tag
-            v-for="role in row.roles"
-            :key="role.id"
-            size="small"
-            style="margin-right: 5px"
-          >
-            {{ role.name }}
-          </el-tag>
-          <span v-if="!row.roles || row.roles.length === 0" style="color: #999">无</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'danger'">
-            {{ row.is_active ? '启用' : '禁用' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180">
-        <template #default="{ row }">
-          {{ formatDate(row.created_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="280">
-        <template #default="{ row }">
-          <el-button size="small" @click="showEditDialog(row)">编辑</el-button>
-          <el-button size="small" type="warning" @click="showResetPasswordDialog(row)">重置密码</el-button>
-          <el-button 
-            size="small" 
-            :type="row.is_active ? 'danger' : 'success'"
-            @click="handleToggleStatus(row)"
-          >
-            {{ row.is_active ? '禁用' : '启用' }}
-          </el-button>
-          <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <el-card class="users-card cp-animate-in" shadow="never">
+      <el-table :data="users" v-loading="loading" style="width: 100%">
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column prop="username" label="用户名" min-width="130">
+          <template #default="{ row }">
+            <span class="username-cell">{{ row.username }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="full_name" label="姓名" width="110">
+          <template #default="{ row }">{{ row.full_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="角色" min-width="150">
+          <template #default="{ row }">
+            <el-tag
+              v-for="role in row.roles"
+              :key="role.id"
+              :type="role.name === 'admin' ? 'primary' : 'info'"
+              effect="light"
+              size="small"
+              round
+              style="margin-right: 5px"
+            >
+              {{ role.name }}
+            </el-tag>
+            <span v-if="!row.roles || row.roles.length === 0" style="color: var(--cp-info)">无</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <span class="status-pill" :class="row.is_active ? 'is-on' : 'is-off'">
+              <span class="pill-dot"></span>{{ row.is_active ? '启用' : '禁用' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="170">
+          <template #default="{ row }">
+            {{ formatDateTime(row.created_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="280" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" @click="showEditDialog(row)">编辑</el-button>
+            <el-button size="small" type="warning" plain @click="showResetPasswordDialog(row)">重置密码</el-button>
+            <el-button
+              size="small"
+              :type="row.is_active ? 'warning' : 'success'"
+              plain
+              @click="handleToggleStatus(row)"
+            >
+              {{ row.is_active ? '禁用' : '启用' }}
+            </el-button>
+            <el-button size="small" type="danger" plain @click="handleDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <!-- 分页 -->
-    <Pagination
-      v-model:current-page="currentPage"
-      v-model:page-size="pageSize"
-      :total="total"
-      @change="loadUsers"
-    />
+      <!-- 分页 -->
+      <Pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :total="total"
+        @change="loadUsers"
+      />
+    </el-card>
 
     <!-- 创建/编辑对话框 -->
     <el-dialog v-model="showUserDialog" :title="editingUser ? '编辑用户' : '创建用户'" width="500px">
@@ -164,7 +181,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getUsers, createUser, updateUser, deleteUser, resetPassword, toggleUserStatus, getRoles } from '@/api/user'
-import { parseDate } from '@/utils/format'
+import { formatDateTime } from '@/utils/common'
 import Pagination from '@/components/Pagination.vue'
 
 const users = ref([])
@@ -266,6 +283,7 @@ const loadUsers = async ({ page, size } = {}) => {
 
 const resetSearch = () => {
   searchForm.username = ''
+  searchForm.role_id = null
   searchForm.is_active = null
   currentPage.value = 1
   loadUsers()
@@ -395,9 +413,88 @@ const resetUserForm = () => {
   })
 }
 
-const formatDate = (dateStr) => {
-  const date = parseDate(dateStr)
-  if (!date || isNaN(date.getTime())) return '-'
-  return date.toLocaleString('zh-CN')
-}
 </script>
+
+<style scoped>
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--cp-space-lg);
+}
+
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cp-space-sm);
+}
+
+.page-title h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--cp-text-primary);
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--cp-text-secondary);
+}
+
+.users-card {
+  margin-bottom: var(--cp-space-md);
+  border-radius: var(--cp-radius-md);
+  border: 1px solid var(--cp-border-light);
+  box-shadow: var(--cp-shadow-1);
+  transition: box-shadow var(--cp-motion-base) var(--cp-ease-out);
+}
+
+.users-card:hover {
+  box-shadow: var(--cp-shadow-2);
+}
+
+.search-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.username-cell {
+  font-weight: 500;
+  color: var(--cp-text-primary);
+}
+
+/* 状态 Pill（脉冲点，与 Profile 页一致） */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.status-pill.is-on {
+  color: var(--cp-success);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.status-pill.is-off {
+  color: var(--cp-danger);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-pill.is-on .pill-dot {
+  animation: pill-pulse 2s infinite;
+}
+
+@keyframes pill-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+</style>

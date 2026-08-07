@@ -280,8 +280,31 @@
         </el-form-item>
 
         <template v-if="spiderForm.schedule_enabled">
-          <el-form-item label="Cron表达式">
+          <el-form-item label="触发方式">
+            <el-radio-group v-model="spiderForm.schedule_type">
+              <el-radio value="cron">Cron表达式</el-radio>
+              <el-radio value="interval">固定间隔</el-radio>
+              <el-radio value="once">一次性</el-radio>
+            </el-radio-group>
+          </el-form-item>
+
+          <el-form-item v-if="spiderForm.schedule_type === 'cron'" label="Cron表达式">
             <el-input v-model="spiderForm.cron_expr" placeholder="例如: 0 */2 * * * (每2小时)" />
+          </el-form-item>
+
+          <el-form-item v-if="spiderForm.schedule_type === 'interval'" label="间隔时间">
+            <el-input-number v-model="spiderForm.interval_minutes" :min="1" :max="525600" />
+            <span style="margin-left: 8px; color: var(--cp-text-secondary); font-size: 13px">分钟</span>
+          </el-form-item>
+
+          <el-form-item v-if="spiderForm.schedule_type === 'once'" label="运行时间">
+            <el-date-picker
+              v-model="spiderForm.run_at"
+              type="datetime"
+              placeholder="选择运行时间"
+              :disabled-date="(d) => d.getTime() < Date.now() - 86400000"
+              style="width: 100%"
+            />
           </el-form-item>
         </template>
 
@@ -347,8 +370,8 @@ const currentStep = ref(0)
 const uploadFile = ref(null)
 const formRef = ref(null)
 const nameInputRef = ref(null)
-const existingScheduleId = ref(null)
-const existingScheduleCron = ref('')
+// 该爬虫的现有调度行（id/type/触发字段），用于停用路径保留配置
+const existingSchedule = ref(null)
 
 // Git 凭据来源（创建模式）
 const myCred = ref({ configured: false })
@@ -372,7 +395,10 @@ const spiderForm = reactive({
   entry_file: 'run.py',
   spider_name: '',
   schedule_enabled: false,
+  schedule_type: 'cron',
   cron_expr: '',
+  interval_minutes: 60,
+  run_at: null,
   timeout_seconds: 3600,
   retry_count: 3,
   status: 'draft'
@@ -472,8 +498,7 @@ const goProfile = () => {
 const initForm = () => {
   currentStep.value = 0
   uploadFile.value = null
-  existingScheduleId.value = null
-  existingScheduleCron.value = ''
+  existingSchedule.value = null
   spiderNameTouched = false
   if (props.spider) {
     // 编辑模式：回填（运行配置 + git 字段保持状态真实；调度从 /schedules 读取）
@@ -498,7 +523,10 @@ const initForm = () => {
       timeout_seconds: row.config?.timeout_seconds ?? 3600,
       retry_count: row.config?.retry_count ?? 3,
       schedule_enabled: false,
-      cron_expr: '0 * * * *'
+      schedule_type: 'cron',
+      cron_expr: '0 * * * *',
+      interval_minutes: 60,
+      run_at: null
     })
     loadExistingSchedule(row.id)
   } else {
@@ -520,7 +548,10 @@ const initForm = () => {
       entry_file: 'run.py',
       spider_name: '',
       schedule_enabled: false,
+      schedule_type: 'cron',
       cron_expr: '',
+      interval_minutes: 60,
+      run_at: null,
       timeout_seconds: 3600,
       retry_count: 3,
       status: 'draft'
@@ -529,40 +560,72 @@ const initForm = () => {
 }
 
 // 编辑模式：从 /schedules 读取该爬虫的默认调度并回显
+// 注意 run_at 库存为 UTC naive，展示时需按 UTC 解析（+'Z'）
 const loadExistingSchedule = async (spiderId) => {
   try {
     const list = await getSchedules({ spider_id: spiderId })
     if (list && list.length > 0) {
       const sched = list[0]
-      existingScheduleId.value = sched.id
-      existingScheduleCron.value = sched.cron_expr || ''
+      existingSchedule.value = sched
       spiderForm.schedule_enabled = !!sched.enabled
+      spiderForm.schedule_type = sched.schedule_type || 'cron'
       spiderForm.cron_expr = sched.cron_expr || '0 * * * *'
+      spiderForm.interval_minutes = sched.interval_seconds
+        ? Math.max(1, Math.round(sched.interval_seconds / 60))
+        : 60
+      spiderForm.run_at = sched.run_at ? new Date(sched.run_at + 'Z') : null
     }
   } catch (error) {
     // 读取失败不阻塞编辑，保持关闭状态
   }
 }
 
+// 按触发类型组装触发字段；run_at 统一转 tz-aware ISO 提交，
+// 后端 _to_utc_naive 对带时区输入直接 astimezone(UTC)，避免 naive 被按调度时区二次解释
+const buildTriggerPayload = (type, { cronExpr, intervalMinutes, runAt }) => {
+  if (type === 'cron') return { cron_expr: cronExpr }
+  if (type === 'interval') return { interval_seconds: Math.round(intervalMinutes * 60) }
+  if (type === 'once') return { run_at: runAt ? new Date(runAt).toISOString() : null }
+  return {}
+}
+
 // 提交后同步调度（写 /schedules，不再写 spider.schedule_config JSON）
 const syncSchedule = async (spiderId) => {
   if (spiderForm.schedule_enabled) {
+    const type = spiderForm.schedule_type
+    if (type === 'cron' && !spiderForm.cron_expr?.trim()) {
+      throw new Error('请填写 Cron 表达式')
+    }
+    if (type === 'once' && !spiderForm.run_at) {
+      throw new Error('请选择一次性调度的运行时间')
+    }
     await createSchedule({
       spider_id: spiderId,
-      schedule_type: 'cron',
-      cron_expr: spiderForm.cron_expr,
+      schedule_type: type,
+      ...buildTriggerPayload(type, {
+        cronExpr: spiderForm.cron_expr?.trim(),
+        intervalMinutes: spiderForm.interval_minutes,
+        runAt: spiderForm.run_at
+      }),
       timezone: 'Asia/Shanghai',
       max_concurrency: 1,
       timeout_seconds: spiderForm.timeout_seconds,
       enabled: true
     })
-  } else if (existingScheduleId.value) {
-    // 有关联调度但用户关闭：保留行、停用（不删除配置）
+  } else if (existingSchedule.value) {
+    // 有关联调度但用户关闭：保留行、停用（保留原触发配置，run_at 原值往返不漂移）
+    const ex = existingSchedule.value
     await createSchedule({
       spider_id: spiderId,
-      schedule_type: 'cron',
-      cron_expr: existingScheduleCron.value || '0 * * * *',
-      timezone: 'Asia/Shanghai',
+      schedule_type: ex.schedule_type || 'cron',
+      ...buildTriggerPayload(ex.schedule_type || 'cron', {
+        cronExpr: ex.cron_expr || '0 * * * *',
+        intervalMinutes: (ex.interval_seconds || 3600) / 60,
+        runAt: ex.run_at ? new Date(ex.run_at + 'Z') : null
+      }),
+      timezone: ex.timezone || 'Asia/Shanghai',
+      max_concurrency: ex.max_concurrency || 1,
+      timeout_seconds: ex.timeout_seconds || spiderForm.timeout_seconds,
       enabled: false
     })
   }
