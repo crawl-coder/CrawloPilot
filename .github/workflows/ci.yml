@@ -121,8 +121,8 @@ jobs:
   docker-build:
     needs: [backend-test, frontend-test]
     runs-on: ubuntu-latest
-    # 未配置 Docker Hub secrets 时跳过，避免登录失败导致 CI 红
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != ''
+    # secrets 不能用于 job 级 if；未配置时在 step 级跳过登录/推送
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     
     steps:
       - name: Checkout code
@@ -132,26 +132,28 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Login to Docker Hub
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
         uses: docker/login-action@v3
-        if: github.event_name != 'pull_request'
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       
       - name: Build and push backend
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
         uses: docker/build-push-action@v5
         with:
           context: ./backend
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/crawlopilot-backend:latest
             ${{ secrets.DOCKER_USERNAME }}/crawlopilot-backend:${{ github.sha }}
       
       - name: Build and push frontend
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/crawlopilot-frontend:latest
             ${{ secrets.DOCKER_USERNAME }}/crawlopilot-frontend:${{ github.sha }}
