@@ -109,7 +109,13 @@
         <!-- Git 仓库 -->
         <div v-show="spiderForm.code_source === 'git'">
           <el-form-item label="Git地址" prop="git_url">
-            <el-input v-model="spiderForm.git_url" placeholder="https://github.com/user/repo.git（创建时自动克隆）" />
+            <el-input v-model="spiderForm.git_url" :placeholder="gitUrlPlaceholder" />
+            <div class="form-tip" style="line-height: 1.5; margin-top: 4px">
+              认证方式为「{{ effectiveAuthType === 'ssh' ? 'SSH密钥' : '密码/Token' }}」。
+              {{ effectiveAuthType === 'ssh'
+                ? 'SSH密钥认证需使用 SSH 地址（git@ 开头），如：git@github.com:user/repo.git'
+                : '密码/Token认证需使用 HTTP(S) 地址，如：https://github.com/user/repo.git' }}
+            </div>
           </el-form-item>
 
           <el-form-item v-if="hasCredOptions" label="凭据来源">
@@ -373,11 +379,7 @@ const nameInputRef = ref(null)
 // 该爬虫的现有调度行（id/type/触发字段），用于停用路径保留配置
 const existingSchedule = ref(null)
 
-// Git 凭据来源（创建模式）
-const myCred = ref({ configured: false })
-const sharedCreds = ref([])
-const hasCredOptions = computed(() => myCred.value.configured || sharedCreds.value.length > 0)
-
+// 爬虫表单（先声明，后续 computed/watch 依赖它）
 const spiderForm = reactive({
   name: '',
   project_id: null,
@@ -402,6 +404,46 @@ const spiderForm = reactive({
   timeout_seconds: 3600,
   retry_count: 3,
   status: 'draft'
+})
+
+// Git 凭据来源（创建模式）
+const myCred = ref({ configured: false })
+const sharedCreds = ref([])
+const hasCredOptions = computed(() => myCred.value.configured || sharedCreds.value.length > 0)
+
+// 实际生效的认证方式（手动 / 我的凭据 / 团队凭据）
+const effectiveAuthType = computed(() => {
+  if (spiderForm.code_source !== 'git') return ''
+  if (spiderForm.cred_source === 'mine' && myCred.value.configured) {
+    return myCred.value.auth_type || 'password'
+  }
+  if (spiderForm.cred_source === 'shared' && spiderForm.git_credential_id) {
+    const cred = sharedCreds.value.find(c => c.id === spiderForm.git_credential_id)
+    return cred ? (cred.auth_type || 'password') : ''
+  }
+  return spiderForm.git_auth_type || 'password'
+})
+
+// Git URL 格式提示（根据认证方式实时给出建议）
+const gitUrlPlaceholder = computed(() => {
+  if (effectiveAuthType.value === 'ssh') {
+    return 'git@github.com:user/repo.git（SSH密钥认证）'
+  }
+  return 'https://github.com/user/repo.git（密码/Token认证）'
+})
+
+// 认证方式变更时，如果 URL 已填且格式不匹配，给出提示
+watch(effectiveAuthType, (newType, oldType) => {
+  if (!oldType || !newType || oldType === newType) return
+  const url = (spiderForm.git_url || '').trim()
+  if (!url) return
+  const isSsh = /^git@[\w.-]+:[\w.\-/]+\.git$/i.test(url) || /^ssh:\/\//i.test(url)
+  const isHttp = /^https?:\/\//i.test(url)
+  if (newType === 'ssh' && isHttp) {
+    ElMessage.warning('当前使用密码/Token格式的HTTP地址，SSH密钥认证建议改为 git@ 格式地址')
+  } else if (newType === 'password' && isSsh) {
+    ElMessage.warning('当前使用SSH格式地址，密码/Token认证建议改为 https:// 格式地址')
+  }
 })
 
 const spiderTypeOptions = [
@@ -441,11 +483,34 @@ const rules = {
     trigger: 'blur',
     validator: (rule, value, callback) => {
       // 仅在创建模式的 Git 来源下校验（编辑模式步骤2隐藏，不校验）
-      if (!isEdit.value && spiderForm.code_source === 'git' && !value) {
-        callback(new Error('请输入Git仓库地址'))
-      } else {
+      if (isEdit.value || spiderForm.code_source !== 'git') {
         callback()
+        return
       }
+      if (!value) {
+        callback(new Error('请输入Git仓库地址'))
+        return
+      }
+      // 根据认证方式判断 URL 格式
+      const authType = effectiveAuthType.value
+      const trimmed = value.trim()
+      if (authType === 'ssh') {
+        // SSH 密钥：要求 git@ 或 ssh:// 格式（SCP-like: git@host:path）
+        const isValidSsh = /^git@[\w.-]+:[\w.\-/]+\.git$/i.test(trimmed)
+          || /^ssh:\/\/git@[\w.-]+[\w.\-/]*\.git$/i.test(trimmed)
+        if (!isValidSsh) {
+          callback(new Error('SSH密钥认证需使用 SSH 地址，如 git@github.com:user/repo.git'))
+          return
+        }
+      } else {
+        // 密码/Token：要求 https:// 或 http:// 格式
+        const isValidHttp = /^https?:\/\/.+/.test(trimmed)
+        if (!isValidHttp) {
+          callback(new Error('密码/Token认证需使用 HTTP(S) 地址，如 https://github.com/user/repo.git'))
+          return
+        }
+      }
+      callback()
     }
   }],
   git_credential_id: [{
