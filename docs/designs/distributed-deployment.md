@@ -100,6 +100,58 @@ sudo chown -R root:root /opt/crawlopilot   # 或用执行用户
 # 3. 在 CrawloPilot 节点管理里创建 SSH 节点，填 host/port/用户/密码或密钥
 ```
 
+### 3.3 免密登录最佳实践（推荐）
+
+**目标**：控制面 A 与节点 B-G 之间建立 SSH 互信，节点只填密钥、不填密码。
+
+**一次性配置**（在控制面 A 执行，对每台节点服务器 B-G）：
+
+```bash
+# 1. 控制面 A 生成密钥对（如已有可跳过）
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
+
+# 2. 把 A 的公钥加入 B-G 的 authorized_keys（每台节点执行一次）
+ssh-copy-id root@<B-G 的 IP>
+# 或手动：
+# echo "$(cat ~/.ssh/id_ed25519.pub)" >> ~/.ssh/authorized_keys
+
+# 3. 验证免密
+ssh root@<B-G 的 IP> "echo OK"
+```
+
+**在 CrawloPilot 中创建节点**：
+
+- SSH 节点只填 `ssh_key`（A 的私钥内容），**不填 ssh_pwd**；
+- 系统 SSH 执行器原生支持 RSA / Ed25519 密钥认证（paramiko pkey 方式）；
+- 已实测：仅密钥节点连接测试成功、任务执行 SUCCESS（2026-08-07）。
+
+**优点**：
+
+- 所有节点统一用一把私钥管理，无需记忆各服务器密码；
+- 私钥在控制面 A 加密落库（Fernet），节点侧只保存 A 的公钥（公钥无泄露风险）；
+- 免去密码认证带来的口令管理/轮换成本。
+
+### 3.4 凭据加密现状（已实现）
+
+控制面 A 集中持有节点凭据、**加密落库**的功能当前已实现并实测通过：
+
+| 凭据 | 落库方式 | 实测证据 |
+|------|----------|----------|
+| SSH 密码 | `encrypt_if_plain`（Fernet）写入 `node.ssh_pwd` | 创建节点后 DB 为密文（`gAAAA...`），运行时 `decrypt_or_plain` 解密 |
+| SSH 私钥 | `encrypt_if_plain`（Fernet）写入 `node.ssh_key` | 仅密钥节点 DB 存 652 字符密文，无明文私钥 |
+| agent_token | 建节点时自动生成 uuid 写入 `node.agent_token` | 节点创建即带 token |
+| Git 凭据 | Fernet 加密（个人/团队凭据） | 已通过加密测试 |
+
+**加解密链路**（代码路径）：
+
+```text
+写入: node_service.create_node → encrypt_if_plain(ssh_pwd/ssh_key) → DB
+读取: task_service.create_and_run_task → decrypt_or_plain(node.ssh_pwd/ssh_key)
+      → ssh_executor.SshConnection(password/key) → paramiko 连接
+```
+
+**结论**：无需额外开发，"控制面集中持有 + 加密落库"模型已经可用。
+
 **Docker 模式**（每台节点服务器 B-G）：
 
 ```bash
