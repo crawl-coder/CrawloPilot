@@ -90,7 +90,7 @@ class DeployService:
     
     def execute_deploy_sync(self, deploy_id: int) -> Dict[str, Any]:
         """
-        执行部署（同步版本,用于 Celery 任务）
+        执行部署（同步版本，供后台任务调用）
             
         Args:
             deploy_id: 部署 ID

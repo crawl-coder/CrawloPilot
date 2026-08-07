@@ -88,7 +88,7 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 
 - 代理池（proxy_pool 表已建）、API 管理（api_config 表已建）
 - 操作审计（audit_log 表已建，中间件按需开启）
-- 生产化：Scheduler 主备（Redis 分布式锁）、多实例控制面（UPLOAD_DIR 共享存储）、
+- 生产化：Scheduler 主备（数据库行锁/分布式锁，按需选型）、多实例控制面（UPLOAD_DIR 共享存储）、
   MinIO / Prometheus / Grafana / ELK（compose 恢复）
 
 ## 待定问题（已记录）
@@ -110,7 +110,7 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 - 迁移链注意：早期裁剪移除的表（api_call_log/proxy_* 等）仍被旧迁移引用，
   **全新库不要直接 `alembic upgrade head`**，用 `Base.metadata.create_all` +
   `alembic stamp head` 建库（本地库已按此处理）
-- 远程 MySQL/Redis 网络延迟约 0.5~1s/请求；本地部署建议使用 Docker 版 MySQL/Redis
+- 远程 MySQL 网络延迟约 0.5~1s/请求；本地部署建议使用 Docker 版 MySQL
 - ~~Docker 守护进程未运行，容器模式暂未在本机验证~~（2026-08-07 已在本机 Docker
   Desktop 验证通过：镜像构建/容器运行/日志/复用全链路，见 V1 收尾清单）
 - ~~`/execution/tasks` 与 `/task-instances` 双任务 API 并存~~（2026-08-07 已收敛：

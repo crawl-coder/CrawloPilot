@@ -45,7 +45,6 @@ CrawloPilot 是围绕 [Crawlo](https://github.com/crawl-coder/Crawlo) 爬虫框�
 flowchart TB
     UI["Web UI (Vue3)"] --> API[FastAPI 控制面]
     API --> DB[(MySQL)]
-    API --> RD[(Redis)]
     API --> FS[uploads/ 代码与日志]
     SCH[APScheduler 调度器<br/>进程内] --> API
 
@@ -69,12 +68,12 @@ flowchart TB
 
 ## 🚀 快速开始
 
-前置：Python 3.10+、Node.js 18+、本机或 Docker 版 MySQL 8.0+ 与 Redis。
+前置：Python 3.10+、Node.js 18+、本机或 Docker 版 MySQL 8.0+。
 
 ```bash
 git clone git@github.com:crawl-coder/CrawloPilot.git
 cd CrawloPilot
-cp .env.example .env        # 按需修改数据库/Redis 地址
+cp .env.example .env        # 按需修改数据库地址
 ./start-dev.sh              # 初始化依赖与数据库，启动前后端
 ```
 
@@ -93,12 +92,11 @@ cp .env.example .env        # 按需修改数据库/Redis 地址
 | Python | 3.10+ | 后端运行环境 |
 | Node.js | 18+ | 前端构建与开发 |
 | MySQL | 8.0+ | 业务数据库（本机或 Docker 均可） |
-| Redis | 7.x | 健康检查 / 监控缓存 / 预留限流（登录限流代码保留未启用）；缺失时服务降级可用 |
 | Docker | 可选 | 仅「Docker 直连」执行模式与 Compose 部署需要 |
 
-### 2. 准备数据库与 Redis
+### 2. 准备数据库
 
-**方式 A：本机 MySQL + Redis（推荐本地开发）**
+**方式 A：本机 MySQL（推荐本地开发）**
 
 创建数据库与账号（以 `.env` 默认配置为例，请按需修改）：
 
@@ -109,12 +107,10 @@ GRANT ALL PRIVILEGES ON crawlo_pilot.* TO 'crawlopilot'@'%';
 FLUSH PRIVILEGES;
 ```
 
-启动本机 Redis（默认无密码，端口 6379）。
-
 **方式 B：Docker Compose 启动依赖**
 
 ```bash
-docker-compose up -d mysql redis
+docker-compose up -d mysql
 ```
 
 ### 3. 配置环境变量
@@ -130,8 +126,6 @@ cp .env.example .env
 | `MYSQL_HOST` / `MYSQL_PORT` | `127.0.0.1` / `3306` | MySQL 地址 |
 | `MYSQL_USER` / `MYSQL_PASSWORD` | `crawlopilot` / `crawlopilot123` | MySQL 账号 |
 | `MYSQL_DATABASE` | `crawlo_pilot` | 业务库名 |
-| `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` | `127.0.0.1` / `6379` / `0` | Redis 地址 |
-| `REDIS_PASSWORD` | 空 | Redis 密码（本机默认无） |
 | `SECRET_KEY` | 示例值 | JWT 与凭据加密密钥，**生产必须更换**（`openssl rand -hex 32`） |
 | `ALLOW_OPEN_REGISTER` | `false` | 开放注册开关；`false` 时注册仅 admin 可用（内部平台建议保持关闭） |
 | `CRAWLOPILOT_ENV_FILE` | 空 | 显式指定 .env 路径（默认自动探测：仓库根 → CWD） |
@@ -184,7 +178,7 @@ docker-compose up -d
 ```
 
 Compose 包含 V1 必需服务：`api-server`（FastAPI）、`frontend`（Nginx 端口 8080）、
-`mysql:8.0`、`redis:7`，服务间通过内部网络互连，带健康检查与自动重启。
+`mysql:8.0`，服务间通过内部网络互连，带健康检查与自动重启。
 
 ### 7. 验证部署
 

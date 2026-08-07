@@ -329,19 +329,8 @@ async def stop_spider(
             # 尝试本地执行器停止
             from app.services.local_executor import get_local_executor
             local_executor = get_local_executor()
-            success = await local_executor.stop_task(str(task.id))
-            
-            if not success:
-                # 尝试 Docker 执行器停止
-                try:
-                    from app.workers.celery_app import celery_app
-                    celery_app.send_task(
-                        'app.workers.task_tasks.stop_spider_task',
-                        args=[str(task.id)]
-                    )
-                except Exception:
-                    pass
-            
+            await local_executor.stop_task(str(task.id))
+
             # LocalExecutor.stop_task 已更新数据库状态，这里作为兜底
             if task.status not in [TaskStatus.CANCELLED, TaskStatus.SUCCESS, TaskStatus.FAILED]:
                 task.status = TaskStatus.CANCELLED

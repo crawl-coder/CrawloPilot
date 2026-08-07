@@ -212,7 +212,6 @@ app.mount("/metrics", metrics_app)
 @app.get("/health")
 async def health_check():
     """详细的健康检查端点"""
-    import redis as redis_lib
     from sqlalchemy import text
 
     health_info = {
@@ -230,23 +229,6 @@ async def health_check():
         health_info["services"]["database"] = "connected"
     except Exception as e:
         health_info["services"]["database"] = f"error: {str(e)}"
-        health_info["status"] = "degraded"
-
-    # 检查 Redis
-    try:
-        r = redis_lib.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DB,
-            password=settings.REDIS_PASSWORD,
-            socket_connect_timeout=3,
-            socket_timeout=3
-        )
-        r.ping()
-        r.close()
-        health_info["services"]["redis"] = "connected"
-    except Exception as e:
-        health_info["services"]["redis"] = f"error: {str(e)}"
         health_info["status"] = "degraded"
 
     return health_info

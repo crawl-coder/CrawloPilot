@@ -167,9 +167,6 @@ class TestRunner:
         mysql_host = os.getenv('MYSQL_HOST', '127.0.0.1')
         mysql_port = int(os.getenv('MYSQL_PORT', 3306))
         mysql_db = os.getenv('MYSQL_DATABASE', 'crawlo_pilot')
-        redis_host = os.getenv('REDIS_HOST', '127.0.0.1')
-        redis_port = int(os.getenv('REDIS_PORT', 6379))
-        redis_pass = os.getenv('REDIS_PASSWORD') or None
 
         # 检查数据库
         try:
@@ -186,20 +183,6 @@ class TestRunner:
         except Exception as e:
             print(f"    ✗ MySQL: 连接失败 ({str(e)[:60]})")
 
-        # 检查 Redis
-        try:
-            import redis as redis_lib
-            r = redis_lib.Redis(
-                host=redis_host,
-                port=redis_port,
-                password=redis_pass
-            )
-            r.ping()
-            r.close()
-            print(f"    ✓ Redis: 连接正常 ({redis_host}:{redis_port})")
-        except Exception as e:
-            print(f"    ✗ Redis: 连接失败 ({str(e)[:60]})")
-    
     def generate_summary_report(self):
         """生成汇总报告"""
         print("\n" + "="*70)

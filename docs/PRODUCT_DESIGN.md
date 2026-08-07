@@ -36,11 +36,8 @@ CrawloPilot 是 Crawlo 爬虫框架的配套管理部署平台，提供爬虫项
 │ 项目管理  │ 任务调度  │ 运行监控  │   用户权限    │
 │  Service │  Service │  Service │   Service      │
 ├──────────┴──────────┴──────────┴────────────────┤
-│              Message Bus (Redis Pub/Sub)          │
-├──────────┬──────────┬───────────────────────────┤
-│  MySQL   │  Redis   │     MinIO/OSS             │
-│ (元数据) │(队列/缓存)│   (项目包/日志)            │
-├──────────┴──────────┴───────────────────────────┤
+│  MySQL (元数据)   │   uploads/ (项目代码/任务日志)  │
+├──────────────────┴───────────────────────────────┤
 │           Docker Engine / API                     │
 ├─────────────────────────────────────────────────┤
 │   Worker Node 1  │  Worker Node 2  │  Node N    │
@@ -58,12 +55,11 @@ CrawloPilot 是 Crawlo 爬虫框架的配套管理部署平台，提供爬虫项
 | 前端 | Vue3 + Element Plus + Pinia | 响应式管理后台 |
 | API 网关 | Nginx | 反向代理、负载均衡 |
 | 后端 | FastAPI + Uvicorn | 高性能异步 API |
-| 任务调度 | APScheduler + Celery | 定时任务 + 分布式任务队列 |
+| 任务调度 | APScheduler（进程内） | 定时任务（cron / interval / once） |
 | 容器编排 | Docker Engine API | 容器生命周期管理 |
-| 消息总线 | Redis Pub/Sub | 实时状态推送 |
+| 实时推送 | WebSocket | 任务状态与日志实时推送 |
 | 元数据库 | MySQL 8.0 | 项目/任务/用户元数据 |
-| 缓存/队列 | Redis 7.x | 调度队列、状态缓存 |
-| 对象存储 | MinIO / 阿里云 OSS | 项目包、日志文件 |
+| 对象存储 | MinIO / 阿里云 OSS（可选） | 项目包、日志文件 |
 | 监控 | Prometheus + Grafana | 指标采集与可视化 |
 | 日志 | ELK (Elasticsearch + Logstash + Kibana) | 日志聚合检索 |
 
@@ -589,11 +585,8 @@ Spider 容器 → StatsD Exporter → Prometheus → Grafana
 ```
 Docker Compose
 ├── api-server
-├── scheduler-server
 ├── mysql
-├── redis
-├── minio
-└── nginx
+└── frontend (nginx)
 ```
 
 ### 8.2 集群部署（生产）
@@ -601,9 +594,8 @@ Docker Compose
 ```
 ┌────────────── Master Node ──────────────┐
 │  Nginx → API Server (x2)                │
-│  Scheduler Server (x1, 主备)            │
+│  Scheduler（进程内 APScheduler，主备）    │
 │  MySQL (主从)                            │
-│  Redis (Sentinel)                       │
 │  MinIO                                  │
 │  Prometheus + Grafana                   │
 │  ELK                                    │
@@ -628,9 +620,8 @@ Docker Compose
 | 组件 | 高可用方案 |
 |------|------------|
 | API Server | 多实例 + Nginx 负载均衡 |
-| Scheduler | 主备切换（基于 Redis 分布式锁） |
+| Scheduler | 主备切换（数据库行锁，按需选型） |
 | MySQL | 主从复制 + 自动故障转移 |
-| Redis | Sentinel 集群模式 |
 | MinIO | 分布式对象存储 |
 
 ### 9.2 备份恢复
@@ -638,7 +629,6 @@ Docker Compose
 | 类型 | 策略 | 保留周期 |
 |------|------|----------|
 | MySQL | 每日全量 + 每小时增量 | 30 天 |
-| Redis | RDB 快照 + AOF 日志 | 7 天 |
 | MinIO | 跨区域复制 | 永久 |
 | 配置备份 | 版本化管理（Git） | 永久 |
 
@@ -719,7 +709,7 @@ Docker Compose
 
 | 集成点 | 说明 | 当前状态 |
 |--------|------|----------|
-| Stats 上报 | 运行统计推送到 Redis | 框架已有 stats_collector |
+| Stats 采集 | 平台解析任务日志，回写 pages/items/errors | 已实现（V1） |
 | 日志输出 | 结构化日志 + 远程采集 | 框架已有 logging 模块 |
 | 健康检查 | HTTP 健康端点 | 需新增 |
 | 优雅关闭 | 信号处理 + 检查点保存 | 框架已有 checkpoint |

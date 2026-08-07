@@ -21,7 +21,7 @@
 ```bash
 git clone git@github.com:crawl-coder/CrawloPilot.git
 cd CrawloPilot
-cp .env.example .env   # 按需修改数据库/Redis 地址
+cp .env.example .env   # 按需修改数据库地址
 ./start-dev.sh         # 初始化依赖与数据库，启动前后端
 ```
 

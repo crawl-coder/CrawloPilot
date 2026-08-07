@@ -10,9 +10,28 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models import User, Deploy, DeployStatus, DeployStrategy
 from app.services.deploy_service import DeployService
-from app.workers.deploy_tasks import execute_deploy_task
 
 router = APIRouter(prefix="/deploys", tags=["部署管理"])
+
+
+def _run_deploy_execute(deploy_id: int):
+    """后台执行部署（独立 DB 会话，供 BackgroundTasks 调用）"""
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        DeployService(db).execute_deploy_sync(deploy_id)
+    finally:
+        db.close()
+
+
+def _run_deploy_rollback(deploy_id: int):
+    """后台回滚部署（独立 DB 会话，供 BackgroundTasks 调用）"""
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        DeployService(db).rollback_deploy_sync(deploy_id)
+    finally:
+        db.close()
 
 
 # ==================== Pydantic Schemas ====================
@@ -78,7 +97,7 @@ async def create_deploy(
         )
         
         # 异步执行部署
-        background_tasks.add_task(execute_deploy_task.delay, deploy.id)
+        background_tasks.add_task(_run_deploy_execute, deploy.id)
         
         return deploy
         
@@ -154,8 +173,7 @@ async def rollback_deploy(
         
         if deploy.status == DeployStatus.SUCCESS:
             # 异步回滚
-            from app.workers.deploy_tasks import rollback_deploy_task
-            background_tasks.add_task(rollback_deploy_task.delay, deploy_id)
+            background_tasks.add_task(_run_deploy_rollback, deploy_id)
             
             return {"message": "回滚任务已提交", "deploy_id": deploy_id}
         else:
@@ -187,9 +205,8 @@ async def retry_deploy(
             raise HTTPException(status_code=404, detail="部署记录不存在")
         
         if deploy.status == DeployStatus.FAILED:
-            # 异步重试
-            from app.workers.deploy_tasks import retry_deploy_task
-            background_tasks.add_task(retry_deploy_task.delay, deploy_id)
+            # 异步重试（重新执行一次部署）
+            background_tasks.add_task(_run_deploy_execute, deploy_id)
             
             return {"message": "重试任务已提交", "deploy_id": deploy_id}
         else:

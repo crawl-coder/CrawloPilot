@@ -112,30 +112,6 @@ node_disk_usage_percent = Gauge(
 )
 
 
-# ==================== 任务队列指标 ====================
-
-# Celery 队列长度
-celery_queue_length = Gauge(
-    'celery_queue_length',
-    'Number of tasks in Celery queue',
-    ['queue_name']
-)
-
-# Celery 活跃 Worker 数
-celery_active_workers = Gauge(
-    'celery_active_workers',
-    'Number of active Celery workers'
-)
-
-# 任务执行时间
-celery_task_duration_seconds = Histogram(
-    'celery_task_duration_seconds',
-    'Celery task execution duration',
-    ['task_name'],
-    buckets=[1, 5, 10, 30, 60, 300, 600, 1800, 3600]
-)
-
-
 # ==================== 告警指标 ====================
 
 # 告警触发总数
@@ -159,12 +135,6 @@ active_alerts_count = Gauge(
 db_connections_active = Gauge(
     'db_connections_active',
     'Number of active database connections'
-)
-
-# Redis 连接状态
-redis_connection_status = Gauge(
-    'redis_connection_status',
-    'Redis connection status (1=connected, 0=disconnected)'
 )
 
 

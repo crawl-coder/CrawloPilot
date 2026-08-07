@@ -149,8 +149,7 @@ class ProjectAssessment:
                 'architecture_pattern': '分层架构',
                 'layers': ['API层', 'Service层', 'Model层', 'Schema层'],
                 'database': 'MySQL 8.0',
-                'cache': 'Redis 7.x',
-                'message_queue': 'Celery + Redis'
+                'scheduler': 'APScheduler（进程内）'
             },
             'frontend': {
                 'framework': 'Vue 3',
@@ -273,7 +272,6 @@ class ProjectAssessment:
         self.assessment['performance'] = performance
         
         print(f"  ✓ 异步支持: 已启用")
-        print(f"  ✓ 缓存策略: Redis")
         print(f"  ✓ 负载均衡: Nginx")
     
     def generate_recommendations(self):
@@ -291,7 +289,7 @@ class ProjectAssessment:
                 'priority': '高',
                 'area': '安全',
                 'recommendation': '添加API请求频率限制',
-                'details': '使用Redis实现API限流，防止恶意请求'
+                'details': '在网关或中间件层实现API限流，防止恶意请求'
             },
             {
                 'priority': '中',

@@ -31,34 +31,12 @@ async def get_health_status(
     except Exception:
         db_healthy = False
     
-    # 检查 Redis 连接
-    redis_healthy = True
-    try:
-        from app.core.config import settings
-        import redis
-        r = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DB,
-            password=settings.REDIS_PASSWORD,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
-        r.ping()
-    except Exception:
-        redis_healthy = False
-    
-    overall_healthy = db_healthy and redis_healthy
-    
     return {
-        "status": "healthy" if overall_healthy else "degraded",
+        "status": "healthy" if db_healthy else "degraded",
         "timestamp": datetime.utcnow().isoformat(),
         "components": {
             "database": {
                 "status": "healthy" if db_healthy else "unhealthy"
-            },
-            "redis": {
-                "status": "healthy" if redis_healthy else "unhealthy"
             }
         }
     }

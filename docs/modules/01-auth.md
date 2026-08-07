@@ -50,5 +50,6 @@ V1 精简版：仅提供 `GET /teams` 列表，供创建项目时选择团队。
 ## 安全说明
 
 - 登录表单采用 OAuth2 表单协议（不是 JSON），客户端需以 `application/x-www-form-urlencoded` 提交
-- 登录频率限制：代码保留（Redis + `_login_guard`），当前注释停用，取消注释即可启用
+- 登录频率限制：V1 未启用（原 Redis 实现已随 Celery/Redis 依赖一同移除）；
+  如需限流，建议在网关层（Nginx limit_req）或中间件实现
 - 审计中间件已移除（V2 可恢复）

@@ -54,18 +54,6 @@ class Settings(BaseSettings):
             return f"sqlite:///{os.path.abspath(db_path)}"
         return f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
     
-    # Redis
-    REDIS_HOST: str = "redis"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    REDIS_PASSWORD: Optional[str] = None
-    
-    @property
-    def REDIS_URL(self) -> str:
-        if self.REDIS_PASSWORD:
-            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
-        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
-    
     # JWT
     SECRET_KEY: str = "your-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
@@ -89,18 +77,6 @@ class Settings(BaseSettings):
     # 生产环境务必配置绝对路径，如 /data/crawlopilot/uploads
     UPLOAD_DIR: str = "uploads"
 
-    # Celery
-    CELERY_BROKER_URL: str = ""
-    CELERY_RESULT_BACKEND: str = ""
-    
-    @property
-    def CELERY_BROKER_URL_PROP(self) -> str:
-        return self.CELERY_BROKER_URL or self.REDIS_URL
-    
-    @property
-    def CELERY_RESULT_BACKEND_PROP(self) -> str:
-        return self.CELERY_RESULT_BACKEND or self.REDIS_URL
-    
     # CORS
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:8080"]
     

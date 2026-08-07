@@ -109,7 +109,6 @@ Docker 部署里有两层职责，刻意分开：
 flowchart TB
     UI["Web UI (Vue3)"] --> API[FastAPI 控制面]
     API --> DB[(MySQL)]
-    API --> RD[(Redis)]
     API --> FS[uploads/ 代码与日志]
 
     subgraph 执行面

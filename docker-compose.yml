@@ -12,15 +12,11 @@ services:
       - MYSQL_USER=crawlopilot
       - MYSQL_PASSWORD=crawlopilot123
       - MYSQL_DATABASE=crawlopilot
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
     volumes:
       - ./backend:/app
     depends_on:
       mysql:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - crawlopilot-network
@@ -53,24 +49,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
-    command: redis-server /usr/local/etc/redis/redis.conf
-    networks:
-      - crawlopilot-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Vue3 前端
   frontend:
     build:
@@ -91,7 +69,6 @@ services:
 
 volumes:
   mysql-data:
-  redis-data:
 
 networks:
   crawlopilot-network:

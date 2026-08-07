@@ -15,7 +15,6 @@ from app.core.dependencies import get_current_user
 from app.models import TaskInstance, TaskStatus, Spider, User
 from app.schemas.task import TaskCreate, TaskResponse, TaskStatusResponse, TaskLogResponse
 from app.services.task_executor import get_executor
-from app.workers.celery_app import celery_app
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -240,18 +239,6 @@ async def get_task_status(
                 }
         except Exception as e:
             logger.warning(f"获取执行器状态失败: {e}")
-    else:
-        # 尝试通过 Celery 查询容器状态
-        try:
-            result = celery_app.send_task(
-                'app.workers.task_tasks.get_task_status',
-                args=[task_id]
-            )
-            container_status_raw = result.get(timeout=5)
-            if container_status_raw and container_status_raw.get('success'):
-                container_status = container_status_raw.get('status')
-        except Exception as e:
-            logger.warning(f"获取容器状态失败: {e}")
     
     # 计算 duration
     duration = None
@@ -293,18 +280,6 @@ async def get_task_logs(
             logs_text = executor.get_task_logs(task_id, tail=tail)
         except Exception as e:
             logger.warning(f"获取执行器日志失败: {e}")
-    else:
-        # 尝试通过 Celery 获取容器日志
-        try:
-            result = celery_app.send_task(
-                'app.workers.task_tasks.get_task_logs',
-                args=[task_id, tail]
-            )
-            logs_data = result.get(timeout=5)
-            if logs_data and logs_data.get('success'):
-                logs_text = logs_data.get('logs', '')
-        except Exception as e:
-            logger.warning(f"获取容器日志失败: {e}")
     
     return TaskLogResponse(
         task_id=task_id,

@@ -20,8 +20,6 @@ TEST_CONFIG = {
     'mysql_user': os.getenv('MYSQL_USER', 'crawlopilot'),
     'mysql_password': os.getenv('MYSQL_PASSWORD', ''),
     'mysql_database': os.getenv('MYSQL_DATABASE', 'crawlo_pilot'),
-    'redis_host': os.getenv('REDIS_HOST', '127.0.0.1'),
-    'redis_port': int(os.getenv('REDIS_PORT', 6379)),
     'admin_username': 'admin',
     'admin_password': 'admin123',
     'test_username': 'test_user',

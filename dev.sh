@@ -136,7 +136,6 @@ init_environment() {
     # 创建必要的目录
     print_info "创建数据目录..."
     mkdir -p docker/mysql/data
-    mkdir -p docker/redis/data
     mkdir -p docker/minio/data
     mkdir -p docker/prometheus/data
     mkdir -p docker/grafana/data
@@ -193,13 +192,13 @@ start_database() {
         exit 1
     fi
     
-    print_info "启动 MySQL 和 Redis..."
-    
+    print_info "启动 MySQL..."
+
     # 使用 docker-compose 仅启动数据库服务
     if command -v docker-compose &> /dev/null; then
-        docker-compose up -d mysql redis
+        docker-compose up -d mysql
     else
-        docker compose up -d mysql redis
+        docker compose up -d mysql
     fi
     
     print_info "等待数据库启动..."
@@ -223,8 +222,7 @@ start_database() {
         print_error "MySQL 启动超时"
         exit 1
     fi
-    
-    print_success "Redis 已就绪"
+
     echo ""
 }
 
@@ -406,7 +404,6 @@ clean_data() {
         
         print_info "清理数据目录..."
         rm -rf docker/mysql/data/*
-        rm -rf docker/redis/data/*
         rm -rf docker/minio/data/*
         rm -rf docker/prometheus/data/*
         rm -rf docker/grafana/data/*

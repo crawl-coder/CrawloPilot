@@ -4,6 +4,17 @@
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循
 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Removed
+
+- 移除 Celery 死代码：`app/workers/` 任务模块（无任何活跃调用方）、
+  `CELERY_*` 配置项、Prometheus Celery 指标；部署 / 回滚 / 重试改为
+  FastAPI BackgroundTasks 直调 `DeployService`
+- 移除 Redis 依赖：`/health` 与监控探针、登录限流死代码（原已注释停用）、
+  `REDIS_*` 配置项、Compose redis 服务与 `docker/redis/` 配置；
+  平台运行时外部依赖收敛为仅 MySQL
+
 ## [1.0.0] - 2026-08-07
 
 首次正式发布：爬虫部署管理平台 V1 全链路打通。
