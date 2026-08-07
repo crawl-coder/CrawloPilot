@@ -37,6 +37,10 @@ docs/
 ├── designs/                # 专项设计文档
 │   ├── server-management.md  # Server 实体管理设计（含 API/前端/迁移）
 │   └── scheduling.md         # 定时任务配置功能设计
+├── releases/               # 版本发布说明（按版本号组织）
+│   ├── README.md             # 版本发布管理（版本号策略/发版流程/索引）
+│   ├── TEMPLATE.md           # Release 正文模板
+│   └── v1.0.0.md             # v1.0.0 发布说明（首个正式版）
 └── legacy/                 # 早期阶段历史文档（部分功能已裁剪）
 ```
 
@@ -44,3 +48,4 @@ docs/
 
 - 项目根 [README](../README.md)：快速开始与部署
 - [Agent 使用说明](../agent/README.md)：节点 Agent 部署手册
+- [版本发布管理](releases/README.md)：发版流程与版本索引
