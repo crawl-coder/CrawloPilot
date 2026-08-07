@@ -18,7 +18,7 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 - [x] Server 实体（真实服务器管理）：server 表 + 服务器 Tab/详情页 +
       服务器下创建 SSH/Docker/Agent 通道 + 状态聚合
 - [x] 任务状态 / 实时日志 / WebSocket 推送
-- [x] 定时调度（方案 A′）：进程内 APScheduler + Schedule 表驱动 + 爬虫表单入口，
+- [x] 定时调度（方案 A）：进程内 APScheduler + Schedule 表驱动 + 爬虫表单入口，
       cron/interval/once 三种触发、并发守卫、触发幂等、启停/run-now/预览/历史，
       测试 `tests/schedule_test.py`（35/35 ✅）
 - [x] Git 工作流：完整克隆保留 .git，详情页提交/推送/拉取/切分支，
@@ -43,23 +43,57 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 > 注意：上述功能对应的数据库表仍然保留（`alert_rule`、`proxy_pool`、
 > `api_config`、`audit_log`、`data_quality_rule` 等），便于 V2 平滑恢复，不做破坏性删除。
 
-## V2 建议顺序
+## V1 收尾清单（小改动，建议进入 V2 前清掉）
 
-1. **调度管理增强**（2026-08-07 重评估：不做完整的独立 CRUD 页面，降级为轻量全局视图）：
-   - 全局调度列表（只读视图 + 快捷操作：启停 / run-now / 运行历史），
-     创建与编辑仍走爬虫表单入口（方案 A′ 一对一约束保持不变）；
-   - 调度终态统计回写（success_count/fail_count、last_run_status 终态更新）；
-   - 后端 9 个接口已全部就绪，纯前端增量。
-   待出现"一个爬虫多条调度"的真实需求时，再放开 upsert 一对一约束并补齐独立表单。
-2. 监控告警（基于任务状态与节点指标）
-3. 数据质量与统计
-4. 代理池 / API 管理
-5. 操作审计（中间件按需开启）
+| 事项 | 说明 | 工作量 |
+|------|------|--------|
+| `spider.schedule_config` schema 清理 | SpiderCreate/Update 仍接受、详情仍返回该死字段，前端已不写 | 0.5h |
+| `git_passphrase` 接入 git_service | SSH 私钥密码已存库但 clone/push/pull 未使用 | 1h |
+| 爬虫内联 Git 凭据加密 | 个人/团队凭据已 Fernet 加密，内联字段（git_password/git_ssh_key）仍明文，加透明加解密 + 存量迁移 | 2h |
+| 开放注册开关 | `ALLOW_OPEN_REGISTER` 配置项，默认关闭，关闭时注册仅 admin 可用 | 1h |
+| Docker 模式真机验证 | DockerExecutor 代码完成但本机 Docker 未运行，需真实环境过一遍 | 0.5d |
+| 测试债 | `tests/unit/test_02_projects.py` 部分用例待修；`tests/run_all_tests.py` 明文凭据清理 | 1h |
+
+## V2 计划（分波次，按价值 × 依赖排序）
+
+### Wave 1：调度与运维增强（产品核心链路完善，前置无依赖）
+
+| # | 事项 | 前后端 | 工作量 |
+|---|------|--------|--------|
+| 1.1 | **调度全局视图页**：只读列表 + 快捷操作（启停/run-now/历史），接口零改动 | 前端 | 1d |
+| 1.2 | **调度终态统计回写**：任务终态回调更新 success_count/fail_count/last_run_status（与 1.1 配套，列表"上次结果"依赖它） | 后端 | 0.5d |
+| 1.3 | **一爬虫多调度**（需求触发再做）：POST /schedules 从 upsert 改 create，列表页管多条规则；引擎层无需改动 | 前后端 | 1d |
+| 1.4 | **爬虫级防并行守卫**（按需）：同爬虫运行中任务达阈值时拒绝新触发（手动+调度统一） | 后端 | 0.5d |
+
+> 「一个爬虫一条调度」当前是 **API 层 upsert 约定**（POST 按 spider_id 找第一条更新），
+> `schedule` 表无 (spider_id) 唯一索引。1.3 实施时的接口变更点：upsert → create
+> （或拆 create + PUT by id）。
+
+### Wave 2：监控告警（V1 裁剪表中运营价值最高）
+
+- 告警规则引擎：`alert_rule` 表已建，恢复 alerts API + alert_engine
+- 规则类型：任务失败 / 超时 / 节点离线 / 成功率阈值（任务与节点指标 V1 已具备）
+- 通知通道：Webhook（钉钉/飞书）优先，邮件次之
+- 前端：告警规则配置页 + 告警记录列表
+
+### Wave 3：数据质量与统计
+
+- 恢复 data_quality API / service（表已建）
+- 数据统计/数据管理页面（DataStatistics / DataManagement）
+- 项目/爬虫/时间维度的数据量与趋势报表
+
+### Wave 4：平台化（按实际需求裁剪，可独立并行）
+
+- 代理池（proxy_pool 表已建）、API 管理（api_config 表已建）
+- 操作审计（audit_log 表已建，中间件按需开启）
+- 生产化：Scheduler 主备（Redis 分布式锁）、多实例控制面（UPLOAD_DIR 共享存储）、
+  MinIO / Prometheus / Grafana / ELK（compose 恢复）
 
 ## 待定问题（已记录）
 
-- ~~定时任务入口放在哪个页面~~（2026-08-07 已落定方案 A′：
-  V1 走爬虫表单入口写 `schedule` 表，全局视图见 V2 第 1 条，详见 `docs/designs/scheduling.md`）
+- ~~定时任务入口放在哪个页面~~（2026-08-07 已落定方案 A：
+  V1 走爬虫表单入口写 `schedule` 表（cron/interval/once 均已支持），
+  全局视图见 V2 Wave 1.1，详见 `docs/designs/scheduling.md`）
 - ~~迁移机制双轨~~（2026-08-07 已统一：`migrate_schedule.py` 删除，
   职责由 alembic 迁移 `s2c3h4e5d6u7` 吸收，DDL 带存在性检查可安全空跑）
 - ~~`/users` 管理接口缺少后端 admin 鉴权~~（2026-08-07 已修复：

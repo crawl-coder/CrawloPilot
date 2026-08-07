@@ -344,7 +344,7 @@ README 覆盖部署与使用主线；设计、实现与运维细节在 `docs/` �
 | [节点管理](docs/modules/05-nodes.md) | 真实服务器 × SSH/Docker/Agent 通道设计 |
 | [Server 管理设计](docs/designs/server-management.md) | 真实服务器实体管理方案 |
 | [任务管理](docs/modules/06-tasks.md) | 任务状态机、实时日志、定时调度 |
-| [定时调度设计](docs/designs/scheduling.md) | 方案 A′：模型 / 引擎 / 幂等 / 生命周期同步 |
+| [定时调度设计](docs/designs/scheduling.md) | 方案 A：模型 / 引擎 / 幂等 / 生命周期同步 |
 | [爬虫管理](docs/modules/03-spiders.md) | 代码目录规范、文件管理、运行控制 |
 | [测试](docs/modules/08-testing.md) | 部署流程验收与自动化测试 |
 | [Agent 使用说明](agent/README.md) | 节点 Agent 部署手册 |

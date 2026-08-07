@@ -20,7 +20,11 @@
 - 删除调度/爬虫时，任务历史通过**解除外键引用（SET NULL 语义）**保留，不删任务行；
 - run-now 不占幂等槽位（`expected_run_at=NULL`），避免与周期触发同秒撞唯一索引误报失败；
 - 启动恢复具备**单调度异常隔离**（一条脏 cron 不中断整体恢复）；
-- 独立「定时任务」页面、`spider.schedule_config` schema 层清理为 V2 增量（见第 7 节）。
+- 爬虫表单定时区块已支持 cron / interval / once 三种类型（2026-08-07 补齐类型选择器）；
+  独立「定时任务」页面定为**全局只读视图 + 快捷操作**（V2 工作 A），完整 CRUD 表单不做；
+- 「一个爬虫一条调度」是 **API 层 upsert 约定**（POST /schedules 按 spider_id 找第一条
+  更新），`schedule` 表无 (spider_id) 唯一索引；放开多调度需把 POST 从 upsert 改为 create；
+- `spider.schedule_config` schema 层清理为 V2 增量（见第 7 节）。
 
 ## 1. 目标与范围
 
@@ -53,7 +57,7 @@ V1 范围：
 仪表盘 / 项目管理 / 爬虫管理 / 任务管理 / 定时任务 / 节点管理 / 系统
 ```
 
-> **V1 过渡形态（方案 A′）**：为保留"创建爬虫顺手配定时"的习惯，V1 先不拆独立页面——
+> **V1 过渡形态（方案 A）**：为保留"创建爬虫顺手配定时"的习惯，V1 先不拆独立页面——
 > 爬虫创建/编辑表单里的「定时调度」区块保留，但**落库改为写入 `schedule` 表**
 > （不再写 `spider.schedule_config` JSON）。独立「定时任务」页面作为 V2 增量：
 > 数据模型与调度引擎一次到位，未来加页面只是前端增量，后端零迁移。
@@ -303,7 +307,7 @@ def create_and_run_task(db, spider_id, node_id=None, schedule_id=None,
 
 ### 7.3 入口与改造
 
-**V1（方案 A′）**：
+**V1（方案 A）**：
 
 - 保留 [SpiderFormDialog.vue](../../frontend/src/components/SpiderFormDialog.vue) 的
   「定时调度」区块，但提交时**不再写 `spider.schedule_config` JSON**，
@@ -344,7 +348,7 @@ def create_and_run_task(db, spider_id, node_id=None, schedule_id=None,
 3. 触发链路**幂等/互斥（机制二：GET_LOCK 或唯一索引）** + 并发守卫 +
    **enabled=false 保留行暂停 job 语义**
 4. `/schedules` API（CRUD/启停/run-now/预览/历史）
-5. 前端（V1/A′）：SpiderFormDialog 定时区块改走 `/schedules`，编辑回显默认调度
+5. 前端（V1/A）：SpiderFormDialog 定时区块改走 `/schedules`，编辑回显默认调度
 6. 前端（V2）：独立页面 + 路由/菜单 + 爬虫详情入口 + 任务管理页跳转
 7. 清理 `spider.schedule_config` 读写（列保留兼容）
 8. 测试（后端单测/集成 + 前端，含错跑检测、重复触发、生命周期同步、改名/禁用用例）

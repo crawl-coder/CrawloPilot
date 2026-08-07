@@ -1,7 +1,7 @@
 """
 定时任务调度 API
 
-V1（方案 A′）以"爬虫默认调度"为主：POST /schedules 对同一爬虫做 upsert。
+V1（方案 A）以"爬虫默认调度"为主：POST /schedules 对同一爬虫做 upsert。
 独立列表页（V2）复用同一套接口。
 """
 from datetime import datetime, timedelta
