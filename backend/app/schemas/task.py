@@ -31,6 +31,8 @@ class TaskResponse(BaseModel):
     node_id: Optional[int] = None
     node_name: Optional[str] = None
     deploy_mode: Optional[str] = None
+    memory_limit: Optional[str] = None
+    cpu_limit: Optional[float] = None
     created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None

@@ -1,5 +1,5 @@
 from app.core.database import Base
-from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer, UniqueConstraint
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer, UniqueConstraint, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -294,6 +294,8 @@ class TaskInstance(Base):
     container_id = Column(String(64))
     process_id = Column(Integer)  # 本地进程 PID (非Docker模式)
     deploy_mode = Column(String(16), default="local")  # local / docker / ssh
+    memory_limit = Column(String(16), nullable=True)  # Docker 内存限制，如 "512m" / "1g"
+    cpu_limit = Column(Float, nullable=True)  # Docker CPU 配额（核数）
     workspace = Column(String(512))  # SSH模式服务器工作目录
     started_at = Column(DateTime)
     finished_at = Column(DateTime)

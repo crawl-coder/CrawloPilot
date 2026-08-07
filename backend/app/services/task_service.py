@@ -80,6 +80,8 @@ def create_and_run_task(
         if node.status.value != "online":
             raise ValueError(f"节点 {node.name} 状态为 {node.status.value}，不可用")
 
+    # Docker 资源限制仅在节点为 docker 时生效；其余模式保留 None
+    is_docker = bool(node and node.connect_type == "docker")
     task = TaskInstance(
         spider_id=spider.id,
         spider_name=spider.spider_name or spider.name,
@@ -87,6 +89,8 @@ def create_and_run_task(
         expected_run_at=expected_run_at,
         status=TaskStatus.PENDING,
         node_id=node.id if node else None,
+        memory_limit=memory_limit if is_docker else None,
+        cpu_limit=cpu_limit if is_docker else None,
     )
     db.add(task)
     db.commit()

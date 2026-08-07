@@ -447,6 +447,8 @@ def _serialize_task(task: TaskInstance, spider: Optional[Spider] = None) -> dict
         "node_id": task.node_id,
         "node_name": task.node.name if task.node else None,
         "deploy_mode": task.deploy_mode,
+        "memory_limit": task.memory_limit,
+        "cpu_limit": task.cpu_limit,
         "process_id": task.process_id,
         "created_at": task.created_at,
         "started_at": task.started_at,
@@ -515,6 +517,8 @@ async def retry_task(
             node_id=task.node_id,
             schedule_id=None,       # 重试视为手动触发，不占调度幂等槽位
             expected_run_at=None,
+            memory_limit=task.memory_limit,  # 保留原任务 Docker 资源限制
+            cpu_limit=task.cpu_limit,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
