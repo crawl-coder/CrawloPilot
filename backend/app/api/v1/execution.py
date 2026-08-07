@@ -5,6 +5,7 @@
 """
 
 import logging
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.core.dependencies import get_current_user
 from app.models import TaskInstance, TaskStatus, Spider, User
 from app.schemas.task import TaskCreate, TaskResponse, TaskStatusResponse, TaskLogResponse
 from app.services.task_executor import get_executor
+from app.workers.celery_app import celery_app
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
