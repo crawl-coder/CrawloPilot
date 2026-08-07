@@ -1,6 +1,31 @@
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 from pathlib import Path
+
+
+def _resolve_env_file() -> Optional[str]:
+    """
+    解析 .env 文件路径，按优先级：
+    1. CRAWLOPILOT_ENV_FILE 环境变量显式指定
+    2. 仓库根目录 .env（本地开发：backend/app/core/config.py 上溯 4 级）
+    3. 当前工作目录 .env（其他部署形态）
+
+    都找不到则返回 None：仅使用系统环境变量（如 Docker Compose 的 environment: 注入）。
+
+    注意（优先级语义）：本地开发时 .env 通过 load_dotenv(override=True) **覆盖**
+    系统环境变量（防止 shell 旧变量干扰，见底部加载逻辑）；无 .env 时（如 Docker
+    容器）系统环境变量自然生效。
+    """
+    candidates = [
+        os.environ.get("CRAWLOPILOT_ENV_FILE"),
+        Path(__file__).parent.parent.parent.parent / ".env",
+        Path.cwd() / ".env",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return str(candidate)
+    return None
 
 
 class Settings(BaseSettings):
@@ -80,18 +105,18 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:8080"]
     
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).parent.parent.parent.parent / ".env"),
+        env_file=_resolve_env_file(),
         env_file_encoding="utf-8",
         case_sensitive=True,
-        # 禁用系统环境变量，只使用 .env 文件
         extra="ignore"
     )
 
 
-# 手动加载 .env 文件以确保优先级
-from dotenv import load_dotenv
-env_path = Path(__file__).parent.parent.parent.parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path, override=True)
+# .env 优先于系统环境变量（override=True）：本地开发防止 shell 旧变量干扰；
+# Docker 容器内无 .env 文件时此逻辑天然跳过，由 compose environment: 注入生效
+_ENV_FILE = _resolve_env_file()
+if _ENV_FILE:
+    from dotenv import load_dotenv
+    load_dotenv(_ENV_FILE, override=True)
 
 settings = Settings()

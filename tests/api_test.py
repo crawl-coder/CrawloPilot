@@ -218,11 +218,11 @@ print("\n" + "=" * 60)
 print("  6. TASKS 任务管理模块")
 print("=" * 60)
 
-test("任务列表", "GET", "/task-instances", check_fn=lambda d: assert_true(isinstance(d, list)))
-test("任务统计", "GET", "/task-instances/stats/summary")
-test("最近任务", "GET", "/task-instances/recent")
-test("按状态查(running)", "GET", "/task-instances/running")
-test("按状态过滤", "GET", "/task-instances", params={"status": "success"})
+test("任务列表", "GET", "/execution/tasks", check_fn=lambda d: assert_true(isinstance(d, dict) and isinstance(d.get('items'), list)))
+test("任务统计", "GET", "/execution/tasks/stats/summary")
+test("最近任务", "GET", "/execution/tasks/recent")
+test("按状态查(running)", "GET", "/execution/tasks/running")
+test("按状态过滤", "GET", "/execution/tasks", params={"status": "success"})
 
 
 # ============================================================

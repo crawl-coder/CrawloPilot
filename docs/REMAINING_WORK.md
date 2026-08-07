@@ -113,5 +113,10 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 - 远程 MySQL/Redis 网络延迟约 0.5~1s/请求；本地部署建议使用 Docker 版 MySQL/Redis
 - ~~Docker 守护进程未运行，容器模式暂未在本机验证~~（2026-08-07 已在本机 Docker
   Desktop 验证通过：镜像构建/容器运行/日志/复用全链路，见 V1 收尾清单）
-- 遗留说明：`/execution/tasks` 与 `/task-instances` 是两套并存的任务 API（前端混用），
-  建议 V2 收敛为一个入口
+- ~~`/execution/tasks` 与 `/task-instances` 双任务 API 并存~~（2026-08-07 已收敛：
+  统一为 `/execution/tasks`，旧路由文件删除；retry 顺带升级为统一任务服务分发，
+  保留原部署模式与节点，不再强制 local 重跑）
+- 配置加载语义（2026-08-07 加固并明确）：`.env` 解析按 `CRAWLOPILOT_ENV_FILE` →
+  仓库根 `.env` → CWD `.env` 顺序探测；本地开发时 .env 通过 `load_dotenv(override=True)`
+  覆盖系统环境变量（防 shell 旧变量干扰），Docker 容器无 .env 时由 compose
+  `environment:` 注入自然生效

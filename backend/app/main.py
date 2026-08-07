@@ -188,9 +188,8 @@ app.include_router(nodes.router, prefix=settings.API_PREFIX)
 app.include_router(agent.router, prefix=settings.API_PREFIX)
 app.include_router(servers.router, prefix=settings.API_PREFIX)
 
-# 任务
-from app.api.v1 import tasks, execution
-app.include_router(tasks.router, prefix=settings.API_PREFIX)
+# 任务（统一入口 /execution/tasks；旧 /task-instances 路由已收敛移除）
+from app.api.v1 import execution
 app.include_router(execution.router, prefix=settings.API_PREFIX)
 
 # 定时任务

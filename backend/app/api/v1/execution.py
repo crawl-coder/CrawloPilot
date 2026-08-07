@@ -316,6 +316,8 @@ async def get_task_logs(
 @router.get("/tasks")
 async def list_tasks(
     spider_id: Optional[str] = None,
+    schedule_id: Optional[int] = None,
+    node_id: Optional[int] = None,
     status: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
@@ -324,34 +326,133 @@ async def list_tasks(
 ):
     """
     查询任务列表
-    
+
     - **spider_id**: 爬虫 ID (可选)
+    - **schedule_id**: 调度 ID (可选)
+    - **node_id**: 节点 ID (可选)
     - **status**: 任务状态 (可选)
     - **limit**: 返回数量限制
     - **offset**: 偏移量
     """
     query = db.query(TaskInstance)
-    
+
     if spider_id:
         query = query.filter(TaskInstance.spider_id == spider_id)
-    
+
+    if schedule_id:
+        query = query.filter(TaskInstance.schedule_id == schedule_id)
+
+    if node_id:
+        query = query.filter(TaskInstance.node_id == node_id)
+
     if status:
         query = query.filter(TaskInstance.status == status)
-    
+
     total = query.count()
     tasks = query.order_by(TaskInstance.id.desc()).offset(offset).limit(limit).all()
-    
+
     result = []
     for task in tasks:
         spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
         result.append(_serialize_task(task, spider))
-    
+
     return {
         "total": total,
         "items": result,
         "skip": offset,
         "limit": limit
     }
+
+
+# ==================== 静态子路径（必须注册在 /tasks/{task_id} 之前） ====================
+
+@router.get("/tasks/running")
+async def get_running_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取运行中的任务"""
+    tasks = db.query(TaskInstance).filter(
+        TaskInstance.status.in_([TaskStatus.RUNNING, TaskStatus.PENDING])
+    ).order_by(TaskInstance.created_at.desc()).all()
+    return [_serialize_task(t) for t in tasks]
+
+
+@router.get("/tasks/stats/summary")
+async def get_task_stats(
+    schedule_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取任务统计概览"""
+    from datetime import timedelta
+
+    query = db.query(TaskInstance)
+    if schedule_id:
+        query = query.filter(TaskInstance.schedule_id == schedule_id)
+
+    total = query.count()
+    running = query.filter(TaskInstance.status == TaskStatus.RUNNING).count()
+    success = query.filter(TaskInstance.status == TaskStatus.SUCCESS).count()
+    failed = query.filter(TaskInstance.status == TaskStatus.FAILED).count()
+    today = query.filter(
+        TaskInstance.created_at >= datetime.utcnow() - timedelta(days=1)
+    ).count()
+
+    return {
+        "total": total,
+        "running": running,
+        "failed": failed,
+        "success": success,
+        "today": today,
+        "success_rate": round(success / total * 100, 2) if total > 0 else 0,
+    }
+
+
+@router.get("/tasks/recent")
+async def get_recent_tasks(
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取最近的任务"""
+    tasks = db.query(TaskInstance).order_by(
+        TaskInstance.created_at.desc()
+    ).limit(limit).all()
+    return [_serialize_task(t) for t in tasks]
+
+
+@router.get("/tasks/schedule/{schedule_id}")
+async def get_tasks_by_schedule(
+    schedule_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取指定调度的任务"""
+    tasks = db.query(TaskInstance).filter(
+        TaskInstance.schedule_id == schedule_id
+    ).order_by(TaskInstance.created_at.desc()).limit(limit).all()
+    return [_serialize_task(t) for t in tasks]
+
+
+@router.get("/tasks/status/{status}")
+async def get_tasks_by_status(
+    status: str,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取指定状态的任务"""
+    try:
+        task_status = TaskStatus(status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的任务状态")
+
+    tasks = db.query(TaskInstance).filter(
+        TaskInstance.status == task_status
+    ).order_by(TaskInstance.created_at.desc()).limit(limit).all()
+    return [_serialize_task(t) for t in tasks]
 
 
 def _serialize_task(task: TaskInstance, spider: Optional[Spider] = None) -> dict:
@@ -409,6 +510,42 @@ async def get_task_detail(
 
     data["process_status"] = process_status
     return data
+
+
+@router.post("/tasks/{task_id}/retry")
+async def retry_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    重试任务（终态任务：失败/超时=纠错重跑，成功/取消=再跑一次）
+
+    走统一任务服务创建并分发，保留原任务的节点与部署模式
+    （旧实现强制 local 重跑，docker/ssh 任务重试会降级，已修复）
+    """
+    task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    TERMINAL_STATUSES = [TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.TIMEOUT, TaskStatus.CANCELLED]
+    if task.status not in TERMINAL_STATUSES:
+        raise HTTPException(status_code=400, detail="运行中的任务不能重试，请先停止")
+
+    from app.services.task_service import create_and_run_task
+    try:
+        result = create_and_run_task(
+            db,
+            spider_id=task.spider_id,
+            node_id=task.node_id,
+            schedule_id=None,       # 重试视为手动触发，不占调度幂等槽位
+            expected_run_at=None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # create_and_run_task 返回任务信息 dict（含 task_id/mode 等）
+    return {"message": "任务重试已提交", **result}
 
 
 @router.delete("/tasks/{task_id}")

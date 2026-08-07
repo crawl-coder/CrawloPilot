@@ -98,22 +98,22 @@ export function deleteTask(taskId) {
 }
 
 /**
- * 任务实例统计（task-instances API）
+ * 任务统计概览
  */
 export function getTaskStats(params) {
   return request({
-    url: '/task-instances/stats/summary',
+    url: '/execution/tasks/stats/summary',
     method: 'get',
     params
   })
 }
 
 /**
- * 最近任务实例
+ * 最近任务
  */
 export function getRecentTasks(limit = 8) {
   return request({
-    url: '/task-instances/recent',
+    url: '/execution/tasks/recent',
     method: 'get',
     params: { limit }
   })
@@ -124,7 +124,7 @@ export function getRecentTasks(limit = 8) {
  */
 export function retryTask(taskId) {
   return request({
-    url: `/task-instances/${taskId}/retry`,
+    url: `/execution/tasks/${taskId}/retry`,
     method: 'post'
   })
 }

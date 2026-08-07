@@ -211,16 +211,16 @@ def main():
           f"(task {task_id})")
 
     # 任务统计
-    status, d = http("GET", "/task-instances/stats/summary", token=token)
-    check("GET /task-instances/stats/summary", status == 200, f"({status})")
+    status, d = http("GET", "/execution/tasks/stats/summary", token=token)
+    check("GET /execution/tasks/stats/summary", status == 200, f"({status})")
 
     # 运行中任务
-    status, d = http("GET", "/task-instances/running", token=token)
-    check("GET /task-instances/running", status == 200, f"({status})")
+    status, d = http("GET", "/execution/tasks/running", token=token)
+    check("GET /execution/tasks/running", status == 200, f"({status})")
 
     # 最近任务
-    status, d = http("GET", "/task-instances/recent", token=token)
-    check("GET /task-instances/recent", status == 200, f"({status})")
+    status, d = http("GET", "/execution/tasks/recent", token=token)
+    check("GET /execution/tasks/recent", status == 200, f"({status})")
 
     # ================= TaskDetail =================
     print("\n[10] TaskDetail 任务详情 (等待执行完成)")
@@ -242,11 +242,11 @@ def main():
     check("POST /execution/tasks/{id}/pause", status in (200, 400, 409), f"({status})")
 
     # 重试：仅允许重试失败/超时任务；对已成功任务返回 400 属合理业务规则
-    status, d = http("POST", f"/task-instances/{task_id}/retry", token=token)
+    status, d = http("POST", f"/execution/tasks/{task_id}/retry", token=token)
     if status == 200:
-        check("POST /task-instances/{id}/retry", True, f"(成功重试，新任务 {get_val(d,'task_id')})")
+        check("POST /execution/tasks/{id}/retry", True, f"(成功重试，新任务 {get_val(d,'task_id')})")
     else:
-        check("POST /task-instances/{id}/retry(成功任务)",
+        check("POST /execution/tasks/{id}/retry(成功任务)",
               status == 400 and "只能重试失败或超时" in str(d),
               f"({status}) {d if isinstance(d,str) else get_val(d,'detail',d)}")
 
