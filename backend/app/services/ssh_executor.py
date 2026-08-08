@@ -352,6 +352,20 @@ class SshSpiderProcess:
         """返回实际使用的 Python：优先 venv 内 python，否则系统 python。"""
         return getattr(self, '_venv_python', None) or self._python_path
 
+    def _append_task_log(self, message: str) -> None:
+        """向远程 task.log 追加一行带时间戳的日志，使用户通过任务日志可见进度。
+
+        调用方确保 self.ssh 已连接、self.workspace 已就绪。
+        """
+        try:
+            ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.ssh.exec_command(
+                f"printf '%s %s\\n' {_q(ts)} {_q(message)} >> {_q(self.workspace + '/task.log')}",
+                timeout=10,
+            )
+        except Exception as e:
+            logger.warning(f"[{self.task_id}] 追加任务日志失败: {e}")
+
     def _install_dependencies(self) -> bool:
         """安装远程项目的依赖（在任务 venv 内安装，不污染系统环境）"""
         if not self.workspace:
@@ -362,6 +376,7 @@ class SshSpiderProcess:
         # 检查 requirements.txt
         if self.ssh.file_exists(f"{self.workspace}/requirements.txt"):
             logger.info(f"[{self.task_id}] 安装 Python 依赖...")
+            self._append_task_log("检测到 requirements.txt，正在安装 Python 依赖（可能耗时较长）...")
             out, err, code = self.ssh.exec_command(
                 f"cd {_q(self.workspace)} && {_q(python)} "
                 f"-m pip install -r requirements.txt -q",
@@ -369,13 +384,16 @@ class SshSpiderProcess:
             )
             if code != 0:
                 logger.warning(f"[{self.task_id}] 安装依赖失败: {err[:200]}")
+                self._append_task_log(f"依赖安装失败：{(err or out).strip()[:200] or '未知错误'}")
                 # 不阻塞继续执行
             else:
                 logger.info(f"[{self.task_id}] 依赖安装完成")
+                self._append_task_log("Python 依赖安装完成")
 
         # 检查 package.json (Node.js 项目)
         if self.ssh.file_exists(f"{self.workspace}/package.json"):
             logger.info(f"[{self.task_id}] 安装 Node.js 依赖...")
+            self._append_task_log("检测到 package.json，正在安装 Node.js 依赖...")
             self.ssh.exec_command(
                 f"cd {_q(self.workspace)} && npm install --production", timeout=120
             )
@@ -408,29 +426,39 @@ class SshSpiderProcess:
             # 2. 创建工作目录
             if not self._ensure_workspace():
                 raise RuntimeError("无法创建远程工作目录")
+            self._append_task_log("SSH 执行器已连接远程节点，开始准备执行环境")
 
             # 3. 上传代码
             logger.info(f"[{self.task_id}] 上传代码到 {self.workspace}...")
+            self._append_task_log("上传爬虫代码到远程节点...")
             success = self.ssh.upload_dir(config.code_dir, self.workspace)
             if not success:
                 raise RuntimeError("代码上传失败")
+            self._append_task_log("代码上传完成")
 
             # 4. 创建任务隔离 venv（避免污染节点系统 Python 环境）
             if not self._ensure_venv():
                 logger.warning(f"[{self.task_id}] 创建 venv 失败，回退使用系统 Python")
+                self._append_task_log("创建独立运行环境失败，将使用节点系统 Python")
+            else:
+                self._append_task_log("已创建任务独立运行环境 (venv)")
 
             # 5. 安装依赖（venv 内安装）
+            self._append_task_log("开始安装爬虫依赖...")
             self._install_dependencies()
             self._ensure_crawlo()
+            self._append_task_log("依赖安装完成")
 
-            # 5. 构建启动命令
+            # 6. 构建启动命令
+            self._append_task_log("准备启动爬虫...")
             start_cmd = self._build_start_command(config)
 
             # 6. 通过 nohup 启动（获取 PID）
             # 使用 setsid 确保进程独立于 SSH 会话
             run_cmd = (
                 f"cd {_q(self.workspace)} && "
-                f"setsid nohup bash -c {_q(start_cmd + ' > task.log 2>&1; echo $? > exit.code')} "
+                # 追加日志，保留启动阶段的进度信息（venv/依赖/crawlo 准备日志）
+                f"setsid nohup bash -c {_q(start_cmd + ' >> task.log 2>&1; echo $? > exit.code')} "
                 f"</dev/null >/dev/null 2>&1 & echo $!"
             )
             out, err, code = self.ssh.exec_command(run_cmd, timeout=10, get_pty=False)
@@ -457,11 +485,22 @@ class SshSpiderProcess:
                 self.ssh.exec_command(
                     f"echo {_q(str(self.remote_pid))} > {_q(self.workspace)}/spider.pid"
                 )
+                self._append_task_log(f"爬虫已启动 (PID: {self.remote_pid})，开始执行")
+            else:
+                self._append_task_log("爬虫进程已启动，但未获取到 PID")
 
             logger.info(
                 f"[{self.task_id}] 远程爬虫已启动: PID={self.remote_pid}, "
                 f"workspace={self.workspace}"
             )
+        except Exception as e:
+            # 把失败原因写入任务日志，便于用户定位
+            logger.exception(f"[{self.task_id}] SSH 任务启动失败: {e!r}")
+            try:
+                self._append_task_log(f"任务启动失败：{str(e)[:300]}")
+            except Exception:
+                pass
+            raise
         finally:
             self._lock.release()
 
@@ -508,6 +547,7 @@ class SshSpiderProcess:
             return
 
         logger.info(f"[{self.task_id}] 缺少 crawlo，自动安装中...")
+        self._append_task_log("检测到缺少 crawlo 框架，正在自动安装（可能耗时较长）...")
         # 使用 venv 内的 pip（venv 自带 pip）；仅在回退系统 python 时需 ensurepip 补
         if not getattr(self, '_venv_python', None):
             pip_out, pip_err, pip_code = self.ssh.exec_command(
@@ -536,8 +576,10 @@ class SshSpiderProcess:
         )
         if code != 0:
             logger.warning(f"[{self.task_id}] crawlo 自动安装失败: {(err or out)[:200]}")
+            self._append_task_log(f"crawlo 框架安装失败：{(err or out).strip()[:200]}")
         else:
             logger.info(f"[{self.task_id}] crawlo 安装完成")
+            self._append_task_log("crawlo 框架安装完成")
 
     def stop(self, timeout: int = 10) -> bool:
         """停止远程爬虫进程"""
