@@ -15,7 +15,7 @@ import queue
 import logging
 
 from app.core.database import SessionLocal
-from app.models import TaskInstance
+from app.models import TaskInstance, DeployMode
 from app.services.log_broadcaster import get_log_broadcaster
 
 logger = logging.getLogger(__name__)
@@ -160,17 +160,17 @@ async def task_websocket(websocket: WebSocket, task_id: str):
             db = SessionLocal()
             try:
                 task = _get_task(db, task_id)
-                deploy_mode = getattr(task, "deploy_mode", "local") if task else "local"
+                deploy_mode = getattr(task, "deploy_mode", None) or DeployMode.LOCAL
             finally:
                 db.close()
 
-            if deploy_mode == "ssh":
+            if deploy_mode == DeployMode.SSH:
                 from app.services.ssh_executor import get_ssh_executor
                 executor = get_ssh_executor()
-            elif deploy_mode == "docker":
+            elif deploy_mode == DeployMode.DOCKER:
                 from app.services.docker_executor import get_docker_executor
                 executor = get_docker_executor()
-            elif deploy_mode == "agent":
+            elif deploy_mode == DeployMode.AGENT:
                 from app.services.agent_service import get_agent_service
                 executor = get_agent_service()
             else:

@@ -126,8 +126,10 @@ cp .env.example .env
 |------|--------|------|
 | `MYSQL_HOST` / `MYSQL_PORT` | `127.0.0.1` / `3306` | MySQL 地址 |
 | `MYSQL_USER` / `MYSQL_PASSWORD` | `crawlopilot` / `crawlopilot123` | MySQL 账号 |
-| `MYSQL_DATABASE` | `crawlo_pilot` | 业务库名 |
-| `SECRET_KEY` | 示例值 | JWT 与凭据加密密钥，**生产必须更换**（`openssl rand -hex 32`） |
+| `MYSQL_DATABASE` | `crawlopilot` | 业务库名 |
+| `SECRET_KEY` | 示例值 | 全局 fallback 密钥，**生产必须更换**（`openssl rand -hex 32`） |
+| `JWT_SECRET_KEY` | 空（回退 `SECRET_KEY`） | JWT 签名专用密钥，**生产必须独立设置** |
+| `CREDENTIAL_ENCRYPTION_KEY` | 空（回退 `SECRET_KEY`） | Git/SSH 凭据对称加密专用密钥，**生产必须独立设置且长期固定** |
 | `ALLOW_OPEN_REGISTER` | `false` | 开放注册开关；`false` 时注册仅 admin 可用（内部平台建议保持关闭） |
 | `CRAWLOPILOT_ENV_FILE` | 空 | 显式指定 .env 路径（默认自动探测：仓库根 → CWD） |
 | `DEBUG` | `true` | 开发模式；生产改为 `false` |
@@ -136,7 +138,7 @@ cp .env.example .env
 | `UPLOAD_DIR` | `uploads`（相对 backend 工作目录） | 代码/上传/任务日志根目录，**生产必须改为绝对路径** |
 | `TASK_LOG_RETENTION_DAYS` | `30` | 任务日志保留天数，`0` 表示不清理 |
 
-> 注意：`SECRET_KEY` 同时用于派生 Git 凭据的对称加密密钥，更换后历史密文将无法解密。
+> 注意：`CREDENTIAL_ENCRYPTION_KEY` 用于 Git 凭据的对称加密，一旦启用后**不可变更**，更换会导致历史密文无法解密。建议首次部署时使用 `openssl rand -hex 32` 生成并固定。
 
 ### 4. 一键启动（推荐）
 

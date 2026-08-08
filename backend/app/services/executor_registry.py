@@ -10,6 +10,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _is_mode(deploy_mode, target: str) -> bool:
+    """兼容 Enum 与字符串两种 deploy_mode 表达（历史数据可能是字符串）。"""
+    if deploy_mode is None:
+        return False
+    lhs = deploy_mode.value if hasattr(deploy_mode, "value") else str(deploy_mode)
+    return lhs == target
+
+
 def get_executor_for_task(task: Any):
     """
     按任务的部署模式返回对应执行器
@@ -19,13 +27,13 @@ def get_executor_for_task(task: Any):
     - 其他: LocalExecutor（本地进程）
     """
     deploy_mode = getattr(task, 'deploy_mode', None)
-    if deploy_mode == 'ssh':
+    if _is_mode(deploy_mode, 'ssh'):
         from app.services.ssh_executor import get_ssh_executor
         return get_ssh_executor()
-    if deploy_mode == 'docker':
+    if _is_mode(deploy_mode, 'docker'):
         from app.services.docker_executor import get_docker_executor
         return get_docker_executor()
-    if deploy_mode == 'agent':
+    if _is_mode(deploy_mode, 'agent'):
         from app.services.agent_service import get_agent_service
         return get_agent_service()
     from app.services.local_executor import get_local_executor

@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, SessionLocal
-from app.models import Node, NodeStatus, TaskInstance, TaskStatus, Spider
+from app.models import Node, NodeStatus, TaskInstance, TaskStatus, Spider, DeployMode
 from app.services.upload_service import UploadService
 
 logger = logging.getLogger(__name__)
@@ -239,7 +239,7 @@ async def agent_get_tasks(
         task = (
             db.query(TaskInstance)
             .filter(
-                TaskInstance.deploy_mode == "agent",
+                TaskInstance.deploy_mode == DeployMode.AGENT,
                 TaskInstance.node_id == node.id,
                 TaskInstance.status == TaskStatus.PENDING,
             )
@@ -359,7 +359,7 @@ async def agent_report_task(
     task.pages_crawled = data.pages_crawled or 0
     task.items_scraped = data.items_scraped or 0
     task.errors_count = data.errors_count or 0
-    task.deploy_mode = "agent"
+    task.deploy_mode = DeployMode.AGENT
     if data.error_message:
         task.error_message = data.error_message
     if task.started_at:

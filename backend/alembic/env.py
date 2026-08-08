@@ -56,6 +56,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        render_as_batch=True,  # SQLite 不支持部分 ALTER，统一走 batch_alter_table (copy-and-move)
     )
 
     with context.begin_transaction():
@@ -76,8 +77,15 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # render_as_batch=True:
+        #   SQLite 不支持 ALTER COLUMN / ADD CONSTRAINT 等多种 ALTER 操作。
+        #   Alembic batch 模式会把它们转换为 "CREATE TABLE new (修改后的定义; INSERT INTO new SELECT; DROP old; RENAME"
+        #   old→new"，实现跨方言兼容；MySQL/PostgreSQL 的标准 ALTER 仍然走标准 DDL，
+        #   render_as_batch 不影响其他dialect (只有在需要时才触发 batch).
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
         )
 
         with context.begin_transaction():

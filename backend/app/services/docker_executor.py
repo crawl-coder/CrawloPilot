@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from threading import Thread
 
 from app.core.database import SessionLocal
-from app.models import TaskInstance, TaskStatus, Spider
+from app.models import TaskInstance, TaskStatus, Spider, DeployMode
 from app.services.docker_service import DockerService
 from app.core.config import settings
 
@@ -615,7 +615,7 @@ class DockerExecutor:
             task = db.query(TaskInstance).filter(TaskInstance.id == int(task_id)).first()
             if task:
                 task.status = TaskStatus.RUNNING
-                task.deploy_mode = "docker"
+                task.deploy_mode = DeployMode.DOCKER
                 task.container_id = container_id
                 task.started_at = task.started_at or datetime.utcnow()
                 db.commit()
@@ -659,7 +659,7 @@ class DockerExecutor:
             items_scraped=items_scraped,
             errors_count=errors_count,
             error_message=error_message,
-            deploy_mode="docker",
+            deploy_mode=DeployMode.DOCKER,
             container_id=container_id,
             logs=logs,
             log_dir=LOGS_DIR,

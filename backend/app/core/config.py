@@ -74,14 +74,30 @@ class Settings(BaseSettings):
         return self.CREDENTIAL_ENCRYPTION_KEY or self.SECRET_KEY
 
     def validate_secrets(self) -> None:
-        """启动时校验安全密钥：生产环境不得使用源码默认值"""
+        """启动时校验安全密钥。
+
+        生产环境（DEBUG=False）要求：
+        1. JWT 签名密钥与凭据加密密钥均不得为源码默认值；
+        2. 两者必须不同（密钥分离），避免 JWT 与凭据加密共用同一密钥。
+        """
         default = "your-secret-key-change-in-production"
         if self.DEBUG:
             return
-        if self.jwt_secret == default or self.credential_secret == default:
+
+        jwt_key = self.jwt_secret
+        cred_key = self.credential_secret
+
+        if jwt_key == default or cred_key == default:
             raise RuntimeError(
-                "检测到安全密钥仍为默认值，拒绝启动。生产环境必须设置 "
+                "安全密钥仍为默认值，拒绝启动。生产环境必须设置 "
                 "JWT_SECRET_KEY（JWT 签名）与 CREDENTIAL_ENCRYPTION_KEY（凭据加密），"
+                "生成方式：openssl rand -hex 32"
+            )
+
+        if jwt_key == cred_key:
+            raise RuntimeError(
+                "JWT 签名密钥与凭据加密密钥相同，拒绝启动（存在密钥共用风险）。"
+                "请为 JWT_SECRET_KEY 与 CREDENTIAL_ENCRYPTION_KEY 分别设置不同的随机值，"
                 "生成方式：openssl rand -hex 32"
             )
 

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models import TaskInstance, TaskStatus, Spider, User
+from app.models import TaskInstance, TaskStatus, Spider, User, DeployMode
 from app.schemas.task import TaskCreate, TaskResponse, TaskStatusResponse, TaskLogResponse
 
 router = APIRouter(prefix="/execution", tags=["execution"])
@@ -24,6 +24,19 @@ def _get_executor_for_task(task):
     """按任务的部署模式返回对应执行器（复用公共执行器注册表）"""
     from app.services.executor_registry import get_executor_for_task
     return get_executor_for_task(task)
+
+
+def _is_remote_mode(task) -> bool:
+    """deploy_mode 是 ssh/docker/agent 或有 process_id 时，需要通过执行器取运行态数据。
+    兼容 Enum 与字符串两种 deploy_mode（老数据是字符串）。
+    """
+    if getattr(task, 'process_id', None):
+        return True
+    dm = getattr(task, 'deploy_mode', None)
+    if dm is None:
+        return False
+    dm_val = dm.value if hasattr(dm, "value") else str(dm)
+    return dm_val in ('ssh', 'docker', 'agent')
 
 
 @router.post("/tasks", response_model=TaskResponse)
@@ -185,7 +198,7 @@ async def get_task_status(
     local_metrics = {}
     
     # 有进程（本地 PID / 远程 PID / 容器 ID）时从对应执行器获取实时状态
-    if getattr(task, 'process_id', None) or getattr(task, 'deploy_mode', None) in ('ssh', 'docker', 'agent'):
+    if _is_remote_mode(task):
         try:
             executor = _get_executor_for_task(task)
             status = executor.get_task_status(task_id)
@@ -233,7 +246,7 @@ async def get_task_logs(
     logs_text = ''
     
     # 有进程（本地 PID / 远程 PID / 容器 ID）时从对应执行器获取日志
-    if getattr(task, 'process_id', None) or getattr(task, 'deploy_mode', None) in ('ssh', 'docker', 'agent'):
+    if _is_remote_mode(task):
         try:
             executor = _get_executor_for_task(task)
             logs_text = executor.get_task_logs(task_id, tail=tail)
@@ -445,7 +458,7 @@ async def get_task_detail(
 
     # 附带实时进程状态（按部署模式取对应执行器）
     process_status = None
-    if task.process_id or getattr(task, 'deploy_mode', None) in ('ssh', 'docker', 'agent'):
+    if _is_remote_mode(task):
         try:
             executor = _get_executor_for_task(task)
             process_status = executor.get_task_status(str(task.id))

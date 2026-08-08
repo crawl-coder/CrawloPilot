@@ -27,7 +27,7 @@ import paramiko
 from paramiko import SSHClient, AutoAddPolicy, RejectPolicy, RSAKey, Ed25519Key
 
 from app.core.database import SessionLocal
-from app.models import TaskInstance, TaskStatus, Node, Spider
+from app.models import TaskInstance, TaskStatus, Node, Spider, DeployMode
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -291,6 +291,53 @@ class SshSpiderProcess:
         logger.info(f"[{self.task_id}] 远程 Python: {self._python_path}")
         return True
 
+    def _ensure_venv(self) -> bool:
+        """在远程工作目录创建独立 venv，隔离任务依赖，避免污染节点系统 Python。
+
+        成功后在 self._venv_python 记录 venv 内的 python 路径；
+        失败时 self._venv_python 为空，调用方回退系统 Python。
+        """
+        self._venv_python = None
+        if not self.workspace or not self._python_path:
+            return False
+        venv_dir = f"{self.workspace}/.venv"
+        try:
+            logger.info(f"[{self.task_id}] 创建任务 venv: {venv_dir}")
+            # 幂等：已存在则直接复用
+            out, _, code = self.ssh.exec_command(
+                f"[ -d {_q(venv_dir)} ] && echo exists || echo missing"
+            )
+            if 'exists' not in out:
+                # 优先 python -m venv；不支持时回退 virtualenv
+                out, err, code = self.ssh.exec_command(
+                    f"cd {_q(self.workspace)} && {_q(self._python_path)} -m venv {_q('.venv')}",
+                    timeout=120,
+                )
+                if code != 0:
+                    logger.warning(f"[{self.task_id}] python -m venv 失败，尝试 virtualenv: {err[:150]}")
+                    _, _, vcode = self.ssh.exec_command(
+                        f"cd {_q(self.workspace)} && {_q(self._python_path)} "
+                        f"-m pip install --quiet virtualenv "
+                        f"-i {os.environ.get('PIP_INDEX_URL', 'https://pypi.tuna.tsinghua.edu.cn/simple')}",
+                        timeout=180,
+                    )
+                    if vcode != 0:
+                        return False
+                    out, err, code = self.ssh.exec_command(
+                        f"cd {_q(self.workspace)} && virtualenv {_q('.venv')}", timeout=120
+                    )
+                    if code != 0:
+                        logger.warning(f"[{self.task_id}] virtualenv 创建失败: {(err or out)[:150]}")
+                        return False
+
+            # 记录 venv python 路径
+            self._venv_python = f"{venv_dir}/bin/python"
+            logger.info(f"[{self.task_id}] venv Python: {self._venv_python}")
+            return True
+        except Exception as e:
+            logger.warning(f"[{self.task_id}] venv 创建异常: {e}")
+            return False
+
     def _ensure_workspace(self) -> bool:
         """确保远程工作目录存在"""
         if not self.workspace:
@@ -301,16 +348,22 @@ class SshSpiderProcess:
             return False
         return True
 
+    def _use_python(self) -> str:
+        """返回实际使用的 Python：优先 venv 内 python，否则系统 python。"""
+        return getattr(self, '_venv_python', None) or self._python_path
+
     def _install_dependencies(self) -> bool:
-        """安装远程项目的依赖"""
+        """安装远程项目的依赖（在任务 venv 内安装，不污染系统环境）"""
         if not self.workspace:
             return False
+
+        python = self._use_python()
 
         # 检查 requirements.txt
         if self.ssh.file_exists(f"{self.workspace}/requirements.txt"):
             logger.info(f"[{self.task_id}] 安装 Python 依赖...")
             out, err, code = self.ssh.exec_command(
-                f"cd {_q(self.workspace)} && {_q(self._python_path)} "
+                f"cd {_q(self.workspace)} && {_q(python)} "
                 f"-m pip install -r requirements.txt -q",
                 timeout=120
             )
@@ -362,7 +415,11 @@ class SshSpiderProcess:
             if not success:
                 raise RuntimeError("代码上传失败")
 
-            # 4. 安装依赖
+            # 4. 创建任务隔离 venv（避免污染节点系统 Python 环境）
+            if not self._ensure_venv():
+                logger.warning(f"[{self.task_id}] 创建 venv 失败，回退使用系统 Python")
+
+            # 5. 安装依赖（venv 内安装）
             self._install_dependencies()
             self._ensure_crawlo()
 
@@ -409,63 +466,71 @@ class SshSpiderProcess:
             self._lock.release()
 
     def _build_start_command(self, config: SshTaskConfig) -> str:
-        """构建远程启动命令"""
+        """构建远程启动命令（统一使用任务 venv 的 Python）"""
         entry_file = config.entry_file
         spider_name_to_run = config.spider_name_to_run
+        python = self._use_python()
 
         # 优先使用指定的入口文件
         if entry_file:
             if self.ssh.file_exists(f"{self.workspace}/{entry_file}"):
-                return f"{_q(self._python_path)} {_q(entry_file)}"
+                return f"{_q(python)} {_q(entry_file)}"
 
-        # 尝试使用 crawlo 命令
+        # 尝试使用 crawlo（venv 内安装的 crawlo 不在 PATH，用 python -m crawlo）
         if spider_name_to_run:
-            has_crawlo, _, _ = self.ssh.exec_command("which crawlo")
-            if has_crawlo.strip():
-                return f"crawlo run {_q(spider_name_to_run)}"
+            has_crawlo, _, _ = self.ssh.exec_command(
+                f"{python} -m crawlo 2>/dev/null && echo ok || echo no"
+            )
+            if has_crawlo.strip() == 'ok':
+                return (
+                    f"cd {_q(self.workspace)} && {_q(python)} "
+                    f"-m crawlo.crawler run {_q(spider_name_to_run)}"
+                )
 
         # 尝试自动发现 run.py
         for candidate in ['run.py', 'main.py', 'crawl.py', 'start.py']:
             if self.ssh.file_exists(f"{self.workspace}/{candidate}"):
-                return f"{_q(self._python_path)} {_q(candidate)}"
+                return f"{_q(python)} {_q(candidate)}"
 
         # 最后尝试 crawlo (可能已通过 pip 安装但不在 PATH)
         return (
-            f"cd {_q(self.workspace)} && {_q(self._python_path)} "
+            f"cd {_q(self.workspace)} && {_q(python)} "
             f"-m crawlo.crawler run {_q(spider_name_to_run or config.spider_name)}"
         )
 
     def _ensure_crawlo(self):
-        """确保远程环境可导入 crawlo（缺失则自动 pip 安装）"""
+        """确保执行环境可导入 crawlo（缺失则自动 pip 安装；优先在 venv 内安装）"""
+        python = self._use_python()
         out, _, code = self.ssh.exec_command(
-            f"{self._python_path} -c 'import crawlo' 2>/dev/null && echo ok || echo no"
+            f"{python} -c 'import crawlo' 2>/dev/null && echo ok || echo no"
         )
         if code == 0 and out.strip() == 'ok':
             return
 
-        logger.info(f"[{self.task_id}] 远程缺少 crawlo，自动安装中...")
-        # 部分最小化系统没有 pip，先用 ensurepip 补
-        pip_out, pip_err, pip_code = self.ssh.exec_command(
-            f"{self._python_path} -m pip --version"
-        )
-        if pip_code != 0:
-            logger.info(f"[{self.task_id}] 远程缺少 pip，执行 ensurepip...")
-            self.ssh.exec_command(
-                f"{_q(self._python_path)} -m ensurepip --upgrade", timeout=120
+        logger.info(f"[{self.task_id}] 缺少 crawlo，自动安装中...")
+        # 使用 venv 内的 pip（venv 自带 pip）；仅在回退系统 python 时需 ensurepip 补
+        if not getattr(self, '_venv_python', None):
+            pip_out, pip_err, pip_code = self.ssh.exec_command(
+                f"{python} -m pip --version"
             )
-            pip_out, _, pip_code2 = self.ssh.exec_command(
-                f"{self._python_path} -m pip --version"
-            )
-            if pip_code2 != 0:
-                # 精简系统（无 ensurepip）用系统包管理器补 pip
-                logger.info(f"[{self.task_id}] ensurepip 不可用，尝试 apt 安装 python3-pip...")
+            if pip_code != 0:
+                logger.info(f"[{self.task_id}] 缺少 pip，执行 ensurepip...")
                 self.ssh.exec_command(
-                    "apt-get update -qq && apt-get install -y -qq python3-pip",
-                    timeout=600,
+                    f"{_q(python)} -m ensurepip --upgrade", timeout=120
                 )
+                pip_out, _, pip_code2 = self.ssh.exec_command(
+                    f"{python} -m pip --version"
+                )
+                if pip_code2 != 0:
+                    # 精简系统（无 ensurepip）用系统包管理器补 pip
+                    logger.info(f"[{self.task_id}] ensurepip 不可用，尝试 apt 安装 python3-pip...")
+                    self.ssh.exec_command(
+                        "apt-get update -qq && apt-get install -y -qq python3-pip",
+                        timeout=600,
+                    )
 
         out, err, code = self.ssh.exec_command(
-            f"{self._python_path} -m pip install --quiet crawlo aiomysql "
+            f"{python} -m pip install --quiet crawlo aiomysql "
             f"-i {os.environ.get('PIP_INDEX_URL', 'https://pypi.tuna.tsinghua.edu.cn/simple')}",
             timeout=600,
         )
@@ -892,7 +957,7 @@ class SshExecutor:
             task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
             if task:
                 task.status = status
-                task.deploy_mode = "ssh"
+                task.deploy_mode = DeployMode.SSH
                 if process_id is not None:
                     task.process_id = process_id
                 if workspace:
@@ -935,7 +1000,7 @@ class SshExecutor:
             items_scraped=items_scraped,
             errors_count=errors_count,
             error_message=error_message,
-            deploy_mode="ssh",
+            deploy_mode=DeployMode.SSH,
         )
         if updated:
             from app.core.database import SessionLocal as _SL

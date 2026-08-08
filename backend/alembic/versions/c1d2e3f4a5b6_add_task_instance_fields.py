@@ -11,42 +11,71 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
+
 # revision identifiers, used by Alembic.
-revision: str = 'c1d2e3f4a5b6'
-down_revision: Union[str, None] = '4a8c26e16402'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision = 'c1d2e3f4a5b6'
+down_revision = '4a8c26e16402'
+branch_labels = None
+depends_on = None
+
+
+def _dialect() -> str:
+    return op.get_bind().dialect.name.lower()
 
 
 def upgrade() -> None:
+    dialect = _dialect()
+
+    def _set_nullable(col: str, col_type, nullable: bool):
+        if dialect.startswith('sqlite'):
+            with op.batch_alter_table('task_instance') as batch_op:
+                batch_op.alter_column(col, existing_type=col_type, nullable=nullable)
+        else:
+            op.alter_column('task_instance', col, existing_type=col_type, nullable=nullable)
+
     # 修改 schedule_id 为可空（手动执行时无调度）
-    op.alter_column('task_instance', 'schedule_id',
-                    existing_type=mysql.BIGINT(display_width=20),
-                    nullable=True)
-    
+    _set_nullable('schedule_id', mysql.BIGINT(display_width=20), nullable=True)
+
     # 修改 spider_name 为可空
-    op.alter_column('task_instance', 'spider_name',
-                    existing_type=sa.String(128),
-                    nullable=True)
-    
-    # 添加新字段（pages_crawled/items_scraped/errors_count 已存在于数据库中）
-    op.add_column('task_instance', sa.Column('process_id', sa.Integer(), nullable=True))
-    op.add_column('task_instance', sa.Column('duration', sa.DECIMAL(10, 2), nullable=True))
-    op.add_column('task_instance', sa.Column('error_message', sa.Text(), nullable=True))
+    _set_nullable('spider_name', sa.String(128), nullable=True)
+
+    def _add_col_if_missing(col_name, col_def):
+        from sqlalchemy import inspect
+        insp = inspect(op.get_bind())
+        cols = {c['name'] for c in insp.get_columns('task_instance')}
+        if col_name in cols:
+            return
+        if dialect.startswith('sqlite'):
+            with op.batch_alter_table('task_instance') as batch_op:
+                batch_op.add_column(col_def)
+        else:
+            op.add_column('task_instance', col_def)
+
+    _add_col_if_missing('process_id', sa.Column('process_id', sa.Integer(), nullable=True))
+    _add_col_if_missing('duration', sa.Column('duration', sa.DECIMAL(10, 2), nullable=True))
+    _add_col_if_missing('error_message', sa.Column('error_message', sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
-    # 删除新字段
-    op.drop_column('task_instance', 'error_message')
-    op.drop_column('task_instance', 'duration')
-    op.drop_column('task_instance', 'process_id')
-    
-    # 恢复 schedule_id 为不可空
-    op.alter_column('task_instance', 'schedule_id',
-                    existing_type=mysql.BIGINT(display_width=20),
-                    nullable=False)
-    
-    # 恢复 spider_name 为不可空
-    op.alter_column('task_instance', 'spider_name',
-                    existing_type=sa.String(128),
-                    nullable=False)
+    dialect = _dialect()
+
+    def _drop_col(col_name):
+        if dialect.startswith('sqlite'):
+            with op.batch_alter_table('task_instance') as batch_op:
+                batch_op.drop_column(col_name)
+        else:
+            op.drop_column('task_instance', col_name)
+
+    _drop_col('error_message')
+    _drop_col('duration')
+    _drop_col('process_id')
+
+    def _set_nullable(col: str, col_type, nullable: bool):
+        if dialect.startswith('sqlite'):
+            with op.batch_alter_table('task_instance') as batch_op:
+                batch_op.alter_column(col, existing_type=col_type, nullable=nullable)
+        else:
+            op.alter_column('task_instance', col, existing_type=col_type, nullable=nullable)
+
+    _set_nullable('schedule_id', mysql.BIGINT(display_width=20), nullable=False)
+    _set_nullable('spider_name', sa.String(128), nullable=False)

@@ -276,6 +276,22 @@ class TaskStatus(str, enum.Enum):
     CANCELLED = "cancelled"  # 手动取消
 
 
+class DeployMode(str, enum.Enum):
+    """任务部署模式：控制面将爬虫代码发送到何处执行。"""
+    LOCAL = "local"
+    SSH = "ssh"
+    DOCKER = "docker"
+    AGENT = "agent"
+
+    @classmethod
+    def from_connect_type(cls, connect_type: str | None) -> "DeployMode":
+        """根据 Node.connect_type 映射到默认 DeployMode。"""
+        mapping = {"docker": cls.DOCKER, "ssh": cls.SSH, "agent": cls.AGENT}
+        if connect_type and connect_type in mapping:
+            return mapping[connect_type]
+        return cls.LOCAL
+
+
 class TaskInstance(Base):
     __tablename__ = "task_instance"
     __table_args__ = (
@@ -293,7 +309,7 @@ class TaskInstance(Base):
     worker_node = Column(String(64))
     container_id = Column(String(64))
     process_id = Column(Integer)  # 本地进程 PID (非Docker模式)
-    deploy_mode = Column(String(16), default="local")  # local / ssh / docker / agent
+    deploy_mode = Column(Enum(DeployMode), default=DeployMode.LOCAL)  # local / ssh / docker / agent
     memory_limit = Column(String(16), nullable=True)  # Docker 内存限制，如 "512m" / "1g"
     cpu_limit = Column(Float, nullable=True)  # Docker CPU 配额（核数）
     workspace = Column(String(512))  # SSH模式服务器工作目录

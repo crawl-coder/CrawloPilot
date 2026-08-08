@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 from threading import Thread
 
-from app.models import TaskInstance, TaskStatus, Spider, SpiderStatus, Node
+from app.models import TaskInstance, TaskStatus, Spider, SpiderStatus, Node, DeployMode
 from app.services.upload_service import UploadService
 
 logger = logging.getLogger(__name__)
@@ -82,14 +82,7 @@ def create_and_run_task(
             raise ValueError(f"节点 {node.name} 状态为 {node.status.value}，不可用")
 
     # 按节点类型确定部署模式，供 executor_registry 分发 stop/status/logs
-    if not node:
-        deploy_mode = "local"
-    elif node.connect_type == "docker":
-        deploy_mode = "docker"
-    elif node.connect_type == "agent":
-        deploy_mode = "agent"
-    else:
-        deploy_mode = "ssh"
+    deploy_mode = DeployMode.from_connect_type(node.connect_type if node else None)
     task = TaskInstance(
         spider_id=spider.id,
         spider_name=spider.spider_name or spider.name,
@@ -231,7 +224,7 @@ def _dispatch_docker(spider, task, node, code_dir, spider_name, background_tasks
 
 def _dispatch_agent(spider, task, node, db):
     """Agent 模式：任务保持 PENDING，由节点 agent 领取执行"""
-    task.deploy_mode = "agent"
+    task.deploy_mode = DeployMode.AGENT
     task.node_id = node.id
     db.commit()
 

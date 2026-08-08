@@ -1,10 +1,11 @@
 # CrawloPilot V2 设计方案
 
-> 版本：V2.0（草案）
+> 版本：V2.0（基于 Crawlo 框架认知修正版）
 > 日期：2026-08-07
 > 作者：架构评审
 > 状态：待评审
 > 关联文档：[DESIGN-ISSUES.md](../DESIGN-ISSUES.md)、[docs/design-philosophy.md](design-philosophy.md)
+> 关键修正：基于对 Crawlo 框架分布式能力的认知，重新界定 CrawloPilot 与 Crawlo 的职责边界
 
 ---
 
@@ -12,11 +13,43 @@
 
 ### 1.1 V2 定位
 
-**分布式爬虫编排平台**（Distributed Crawler Orchestration Platform）。
+**面向 Crawlo 框架的分布式爬虫编排平台**（Orchestration Platform for Crawlo Framework）。
 
-V1 自称"Crawlo 爬虫框架的管理部署平台"，实际代码已支持 Crawlo / Scrapy / Selenium / Playwright / Requests / Custom 六种类型，定位与实现脱节。V2 明确定位为**框架无关的分布式爬虫编排平台**，Crawlo 仅作为推荐默认引擎。
+V1 自称"Crawlo 爬虫框架的管理部署平台"，但实际代码支持 6 种爬虫类型（Crawlo/Scrapy/Selenium/Playwright/Requests/Custom），定位与实现脱节。
 
-### 1.2 目标用户
+V2 明确：**Crawlo 是默认推荐引擎**，其他框架作为兼容执行目标保留但不再投入。平台的核心价值是让 Crawlo 的分布式能力在多爬虫、多节点场景下被有效编排。
+
+### 1.2 关键认知：两层分布式
+
+Crawlo 框架本身已具备完整的分布式能力：
+
+| Crawlo 已实现 | 说明 |
+|---|---|
+| Redis Stream Queue | 请求级分发，XREADGROUP 消费 |
+| Consumer Group + XACK | 请求级 ACK，崩溃任务不丢 |
+| XAUTOCLAIM | 120s 内回收崩溃 Worker 的 pending |
+| FailoverManager | 两阶段故障检测（90s 超时 + 30s 确认） |
+| WorkerRegistry + Heartbeat | Worker 注册与心跳（15s ±20% jitter） |
+| DistributedLock | 基于 SET NX PX + Lua 防误删 |
+| Leader 选举 | 协调退出时的临时 Leader（SETNX） |
+| 分布式限速 | Lua 令牌桶，按域名 |
+| 动态配置 | Pub/Sub + Redis Key 双通道 |
+| 死信队列 | retry_count 超限转入 stream:failed |
+| 种子去重 | SETNX 互斥种子生成器 |
+| 优雅退出 | drain + STATUS_STOPPING 豁免 |
+
+**CrawloPilot 的分布式是另一层**：
+
+| CrawloPilot 负责 | Crawlo 负责 |
+|---|---|
+| M 个爬虫项目部署到 N 个节点 | 单个爬虫在 N 个 Worker 上分发请求 |
+| 代码版本管理、调度、凭据 | 请求级 Stream/ACK/Failover |
+| 任务级状态机（running/done/failed） | 请求级状态机（pending/processing/acked） |
+| 节点级故障检测 + 告警 | Worker 级故障检测 + 任务回收 |
+
+**V2 核心原则**：CrawloPilot 不重复实现请求级 Stream/ACK/Failover。在需要深爬场景下，CrawloPilot 通过 `CrawloDistributedAdapter` 调度 Crawlo 的 distributed 模式。
+
+### 1.3 目标用户
 
 5-20 人中型爬虫团队，典型场景：
 
@@ -24,26 +57,29 @@ V1 自称"Crawlo 爬虫框架的管理部署平台"，实际代码已支持 Craw
 - 部署在 3-10 台节点
 - 需要告警、代理池、日志聚合、审计
 - 需要多成员协作 + 操作可追溯
+- 部分爬虫需要深爬（单 spider 数十万页以上）
 
-### 1.3 V2 核心目标
+### 1.4 V2 核心目标
 
 | 目标 | V1 现状 | V2 目标 |
 |---|---|---|
-| 状态管理 | 执行器直写 DB + 内存 active_tasks | TaskStateStore 统一中间层 |
-| 多实例 | 单实例硬约束 | 水平扩展 |
+| 编排与执行边界 | 执行器越层直写 DB | TaskStateStore 收敛任务级状态 |
+| 多实例部署 | 单实例硬约束 | 水平扩展 |
 | 执行器契约 | 口头约定 | Protocol + ABC |
-| Agent 通信 | HTTP 轮询 5s | MessageBus 长连接推送 |
+| Agent 通信 | HTTP 5s 轮询 | HTTP 长轮询（30s hold） |
+| Crawlo 分布式调度 | 不支持 | CrawloDistributedAdapter |
 | 可观测性 | 无 | 告警 + 日志聚合 + 指标 |
 | 安全 | 单密钥 + token in URL | 双密钥 + Bearer + 审计 |
 | 生态扩展 | 无 | 代理池 + Webhook |
 
-### 1.4 非目标
+### 1.5 非目标
 
-V2 **不做**以下事项，留给 V3：
+V2 **不做**以下事项：
 
-- 多租户 / 工作空间隔离
+- 请求级 ACK / Stream / Failover（这是 Crawlo 的职责）
+- 多租户 / 工作空间隔离（V3）
 - 数据质量监控（V1 已取消，V2 不恢复）
-- 可视化爬虫编排（DAG 拖拽）
+- 可视化爬虫编排 DAG 拖拽（V3）
 - 爬虫代码在线 IDE
 
 ---
@@ -54,74 +90,192 @@ V2 **不做**以下事项，留给 V3：
 
 | 维度 | V1 | V2 |
 |---|---|---|
-| 状态写入 | 执行器直写 DB | 经 TaskStateStore |
-| 任务状态机 | 应用层终态保护 | DB 条件 UPDATE 原子 |
-| 调度器 | APScheduler 进程内 | Celery Beat 独立服务 + DB 锁 |
-| Agent 通信 | HTTP 轮询 | Redis Streams 推送 |
+| 状态写入 | 执行器直写 DB + 内存 active_tasks | 经 TaskStateStore（任务级） |
+| 调度器 | APScheduler 进程内 | 独立服务 + DB advisory lock |
+| Agent 通信 | HTTP 轮询 5s | HTTP 长轮询 30s（不引入 MQ） |
 | 日志存储 | 文件 + 容器卷 | Loki 聚合 |
 | 告警 | 无 | AlertManager + Webhook |
 | 代理池 | 无 | ProxyPool 微服务 |
 | 密钥管理 | 单 SECRET_KEY 共用 | JWT / 凭据加密分离 |
 | 审计 | 无 | AuditLog 模块 |
+| Crawlo 分布式 | 不支持 | CrawloDistributedAdapter |
 
-### 2.2 兼容性策略
+### 2.2 与 Crawlo 的职责边界（新增）
+
+V2 明确以下分工，避免重复造轮子：
+
+| 职责 | CrawloPilot 做 | Crawlo 做 |
+|---|---|---|
+| 爬虫代码版本管理 | ✓ Git 工作流 | ✗ |
+| 调度（cron/interval） | ✓ | ✗ |
+| 多爬虫项目管理 | ✓ | ✗ |
+| 节点资源管理 | ✓ 节点池 | ✗ |
+| 凭据管理 | ✓ 加密 | ✗ |
+| 任务级状态机 | ✓ spider running/done | ✗ |
+| **请求级分发** | ✗ | ✓ Stream Queue |
+| **请求级 ACK** | ✗ | ✓ XACK/NACK |
+| **请求级去重** | ✗ | ✓ Redis Set |
+| **Worker 故障检测** | ✗ | ✓ Heartbeat + Failover |
+| **请求级重试** | ✗ | ✓ retry_count + 死信 |
+| **分布式限速** | ✗ | ✓ Lua 令牌桶 |
+| **协调退出** | ✗ | ✓ Leader 选举 |
+| 节点故障告警 | ✓ AlertManager | ✗ |
+| 日志聚合 | ✓ Loki | ✗ |
+| 代理池 | ✓ ProxyPool | ✗ |
+
+### 2.3 兼容性策略
 
 V2 采用**演进式重构**，不重写：
 
-- API 路径保持 `/api/v1/*`（不升 v2，避免前端破坏）
-- 数据库 schema 增量迁移，不重建
+- API 路径保持 `/api/v1/*`
+- 数据库 schema 增量迁移
 - V1 的 4 个执行器全部保留，逐步适配 Protocol
-- Agent 协议升级走版本协商（V1 agent 仍可连接，但功能降级）
+- V1 Agent 可连接 V2 控制面（降级 HTTP 轮询）
+- V1 standalone 模式任务完全兼容
 
 ---
 
-## 三、整体架构
+## 三、三种部署模式（核心）
 
-### 3.1 分层视图
+V2 根据爬虫规模与可用节点数，提供三种部署模式。**这是 V2 最重要的设计决策**，让用户按需选择 Crawlo 的运行模式。
+
+### 3.1 模式 A：项目隔离（standalone）
+
+**适用**：80% 场景，50+ 独立小爬虫，每个 10-1000 页
+
+```
+CrawloPilot → 调度 Spider A 到 Node 1 (crawlo run spider_a)
+CrawloPilot → 调度 Spider B 到 Node 2 (crawlo run spider_b)
+每个 spider 用 RUN_MODE=standalone，不依赖 Redis
+```
+
+- 节点之间不共享 Redis
+- 节点故障 = 任务失败，CrawloPilot 标记失败，下次调度重试
+- 简单可靠，无外部依赖
+- 不支持单 spider 跨机扩展
+
+### 3.2 模式 B：单机深爬（single_node_distributed）
+
+**适用**：15% 场景，单个 spider 数万到数十万页，榨干单机性能
+
+```
+CrawloPilot → 调度深爬任务到 Node 1
+Node 1 启动 N 个 Crawlo Worker 进程（distributed 模式）
+Worker 共享本机 Redis（或同机房 Redis）
+```
+
+- 一个节点跑多个 Worker，Consumer Group 自动负载均衡
+- Worker 崩溃由 Crawlo FailoverManager 回收（120s XAUTOCLAIM）
+- 请求级 ACK，不丢数据
+- 不跨机扩展
+
+### 3.3 模式 C：多机联合深爬（multi_node_distributed）
+
+**适用**：5% 场景，超大规模爬取（50 万+ 页），需要跨机扩展 + 高可用
+
+```
+CrawloPilot → 调度深爬任务 → 同时部署到 Node 1/2/3
+所有节点共享同一个 Redis（Sentinel 高可用）
+每个节点跑 1 个 Crawlo Worker，distributed 模式
+Crawlo 的 Consumer Group 自动负载均衡
+```
+
+- 节点崩溃 → Crawlo FailoverManager 90s 检测 → XAUTOCLAIM 回收 pending
+- 请求级不丢数据（ACK 至少一次语义）
+- CrawloPilot 层面看到任务仍在运行（其他节点还活着）
+- 需要 Redis HA（Sentinel 或 Cluster）
+
+### 3.4 模式选择决策树
+
+```
+单 spider 总页数 < 1000？
+  └─ 是 → 模式 A (standalone)
+  └─ 否 → 单机 N 核够用？
+            └─ 是 → 模式 B (single_node_distributed)
+            └─ 否 → 模式 C (multi_node_distributed)
+```
+
+### 3.5 模式在数据模型中的表达
+
+新增字段 `distribution_mode`：
+
+```sql
+ALTER TABLE task_instance ADD COLUMN distribution_mode
+    ENUM('standalone', 'single_node_distributed', 'multi_node_distributed')
+    DEFAULT 'standalone';
+
+ALTER TABLE task_instance ADD COLUMN shared_redis_url VARCHAR(256)
+    COMMENT '模式 C 共享 Redis 地址（Sentinel 格式：redis+sentinel://host:26379/0）';
+
+ALTER TABLE task_instance ADD COLUMN worker_count INT DEFAULT 1
+    COMMENT '模式 B/C 每节点启动的 Worker 进程数';
+```
+
+---
+
+## 四、整体架构
+
+### 4.1 分层视图
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │  用户 / Agent / Webhook                             │
 └─────────────────────────────────────────────────────┘
                          │
-┌──────────────────────────────┬──────────────────────┐
-│ 控制面 Control Plane         │ 执行面 Execution      │
-│  ┌─────────┐ ┌─────────┐    │  ┌Executor Protocol┐ │
-│  │ API网关 │ │ 调度器  │    │  │ Local/SSH/Docker│ │
-│  └─────────┘ └─────────┘    │  │ Agent(MQ驱动)   │ │
-│  ┌────────────────────────┐ │  └─────────────────┘ │
-│  │ TaskStateStore (核心)  │◄┼──────────────────────┤
-│  │ 条件UPDATE·原子状态机  │ │                       │
-│  └────────────────────────┘ │                       │
-└──────────────┬───────────────┴───────────────────────┘
-               │
-┌──────────────┴──────────────────────────────────────┐
-│ 数据面                │ 可观测 + 生态                │
-│  MySQL · Redis · Loki │  AlertManager · ProxyPool    │
+┌──────────────────────────────────────────────────────┐
+│ 控制面 Control Plane (CrawloPilot)                  │
+│   ┌─────────┐ ┌─────────┐ ┌────────────────────┐    │
+│   │ API网关 │ │ 调度器  │ │ TaskStateStore     │    │
+│   └─────────┘ └─────────┘ │ (任务级状态)        │    │
+│                            └────────────────────┘    │
+│   ┌─────────────────────────────────────────────┐   │
+│   │ CrawloDistributedAdapter (新增)              │   │
+│   │ 选择 standalone / single_node / multi_node  │   │
+│   └─────────────────────────────────────────────┘   │
+└──────────────────────┬───────────────────────────────┘
+                       │ 调度任务到节点
+┌──────────────────────┴───────────────────────────────┐
+│ 执行面 Execution Plane                              │
+│   Executor Protocol:                                │
+│   ┌──────────┬──────────┬──────────┬─────────────┐ │
+│   │ Local    │ SSH      │ Docker   │ Agent       │ │
+│   │ (4模式) │ (4模式) │ (4模式) │ (4模式)     │ │
+│   └──────────┴──────────┴──────────┴─────────────┘ │
+└──────────────────────┬───────────────────────────────┘
+                       │ 启动 Crawlo
+┌──────────────────────┴───────────────────────────────┐
+│ Crawlo 框架（已有能力，不重做）                      │
+│   standalone: 内存队列                              │
+│   distributed: Redis Stream + ACK + Failover       │
 └──────────────────────────────────────────────────────┘
-               │
-┌──────────────┴──────────────────────────────────────┐
-│ 横切：Auth(双密钥) · AuditLog · Prometheus · Webhook│
-└─────────────────────────────────────────────────────┘
+                       │
+┌──────────────────────┴───────────────────────────────┐
+│ 数据面 / 可观测 / 生态                              │
+│   MySQL · Loki · AlertManager · ProxyPool           │
+└──────────────────────────────────────────────────────┘
 ```
 
-### 3.2 核心改进点
+### 4.2 核心改进点
 
-1. **TaskStateStore**：所有任务状态变更的唯一入口，执行器不再持有 DB session
-2. **Executor Protocol**：定义抽象基类，编译期检查契约
-3. **MessageBus**：基于 Redis Streams，替代 Agent HTTP 轮询
-4. **AlertManager**：规则引擎 + 多通道告警（Webhook / 飞书 / 邮件）
-5. **ProxyPool**：独立微服务，提供代理获取 / 健康检查 / 计费
-6. **LogAggregator**：基于 Loki + Promtail，统一日志查询
-7. **AuditLog**：所有写操作记录操作者 / 时间 / 变更前后值
+1. **TaskStateStore**：任务级状态变更的唯一入口（不碰请求级）
+2. **Executor Protocol**：抽象基类 + 编译期契约检查
+3. **CrawloDistributedAdapter**：把任务转换为 Crawlo distributed 部署
+4. **AlertManager**：规则引擎 + 多通道告警
+5. **ProxyPool**：独立微服务
+6. **LogAggregator**：Loki + Promtail
+7. **AuditLog**：操作审计
+
+**取消的 V1 设计**：
+- ~~MessageBus（Redis Streams 替代 HTTP 轮询）~~ —— Crawlo 已有 Stream，不重复
+- Agent 保持 HTTP 长轮询（hold 30s），简单可靠
 
 ---
 
-## 四、核心模块设计
+## 五、核心模块设计
 
-### 4.1 TaskStateStore（状态中间层）
+### 5.1 TaskStateStore（任务级状态中间层）
 
-**职责**：任务状态变更的唯一入口，保证原子性 + 多实例安全。
+**职责**：任务（spider 实例）整体状态变更的唯一入口。**不处理请求级状态**。
 
 **接口**：
 
@@ -135,32 +289,32 @@ class TaskStateStore(Protocol):
         payload: dict | None = None,
     ) -> bool:
         """原子状态转换。仅当当前状态在 from_statuses 中时才转换。
-        返回 True 表示转换成功，False 表示状态已变（被其他实例抢先）。"""
+        返回 True 表示转换成功，False 表示状态已变。"""
 
     async def heartbeat(self, task_id: int, metrics: dict) -> None:
-        """执行器心跳上报。Redis TTL 30s，过期由 reaper 回收。"""
+        """执行器心跳上报。Redis TTL 30s，过期由 reaper 标记任务 failed。"""
 
     async def append_log(self, task_id: int, line: str, level: str) -> None:
         """日志写入 Loki + Redis 缓冲。"""
 
     async def update_stats(self, task_id: int, stats: dict) -> None:
-        """更新爬虫统计（items_count / pages_count 等）。"""
+        """更新爬虫统计（items_count / pages_count 等，来自 Crawlo ProgressAggregator）。"""
 ```
 
 **实现要点**：
 
-- DB 层：`UPDATE task_instance SET status=:to WHERE id=:id AND status IN (:from)` 让数据库保证原子性
-- 心跳：Redis `task:heartbeat:{task_id}` TTL 30s，过期触发 reaper 任务回收
+- DB 层：`UPDATE task_instance SET status=:to WHERE id=:id AND status IN (:from)` 原子性
+- 心跳：Redis `task:heartbeat:{task_id}` TTL 30s
 - 多实例：状态机无共享，多个控制面实例可同时写不冲突
 - 审计：每次 transition 记录到 AuditLog
 
-**消除 V1 痛点**：
+**与 Crawlo 的协作**：
 
-- 不再有 `active_tasks` 内存字典（重启丢失问题）
-- 不再有应用层 TOCTOU 竞态
-- 4 个执行器的 `_update_task_completion` 复制粘贴统一到这里
+- Crawlo 的 `ProgressAggregator` 把统计写入 Redis `progress:stats` HASH
+- CrawloPilot 的 `TaskStateStore.update_stats` 从 Redis 读取并同步到 MySQL
+- Crawlo 的 `control:state` 变为 `shutdown` 时，CrawloPilot 监听到后调用 `transition(task_id, [...], COMPLETED)`
 
-### 4.2 Executor Protocol（执行器契约）
+### 5.2 Executor Protocol（执行器契约）
 
 ```python
 class Executor(Protocol):
@@ -173,10 +327,10 @@ class Executor(Protocol):
         """启动任务（异步，立即返回）。状态变更走 TaskStateStore。"""
 
     def get_task_status(self, task_id: int) -> TaskStatus:
-        """同步查询任务当前状态（从 TaskStateStore 读，不直接读 DB）。"""
+        """同步查询任务当前状态（从 TaskStateStore 读）。"""
 
     def get_task_logs(self, task_id: int, tail: int = 200) -> list[LogEntry]:
-        """获取日志。统一返回 LogEntry 列表，不再返回字符串错误。"""
+        """获取日志。统一返回 LogEntry 列表。"""
 
     async def stop_task(self, task_id: int, force: bool = False) -> None:
         """停止任务。force=True 时强制 kill。"""
@@ -193,53 +347,144 @@ class PausableExecutor(Executor, Protocol):
 
 | 执行器 | execute | status | logs | stop | pause |
 |---|---|---|---|---|---|
-| LocalExecutor | ✓ | ✓ | ✓ | ✓ | ✓（改用 SIGSTOP + 子进程组） |
-| SshExecutor | ✓ | ✓ | ✓ | ✓ | ✗（不实现，路由层拒绝） |
+| LocalExecutor | ✓ | ✓ | ✓ | ✓ | ✓（进程组 SIGSTOP） |
+| SshExecutor | ✓ | ✓ | ✓ | ✓ | ✗ |
 | DockerExecutor | ✓ | ✓ | ✓ | ✓ | ✗ |
 | AgentExecutor | ✓（push 模式） | ✓ | ✓ | ✓ | ✗ |
 
-**LocalExecutor 暂停修复**：V1 用 `os.kill(pid, SIGSTOP)` 只暂停主进程，子线程仍占用资源。V2 改为暂停整个进程组 `os.killpg(os.getpgid(pid), SIGSTOP)`，并通过 TaskStateStore 标记状态而非本地字典。
+### 5.3 CrawloDistributedAdapter（新增 · 核心模块）
 
-### 4.3 MessageBus（替代 HTTP 轮询）
-
-**V1 问题**：Agent 每 5s `GET /tasks`，N 个 agent = 0.2N 次/秒 DB 查询，规模化时 DB 压力线性增长。
-
-**V2 方案**：基于 Redis Streams。
-
-```
-控制面 → Redis Stream "task:dispatch:{node_id}" → Agent 长阻塞读取（XREADGROUP BLOCK 30000）
-Agent  → Redis Stream "task:report:{node_id}"    → 控制面消费组读取
-```
-
-**协议**：
+**职责**：把 CrawloPilot 的任务转换为 Crawlo distributed 部署，对接三种模式。
 
 ```python
-# 控制面下发任务
-await redis.xadd(
-    f"task:dispatch:{node_id}",
-    {"task_id": task_id, "action": "execute", "code_url": "..."},
-)
+class CrawloDistributedAdapter:
+    """把 CrawloPilot 任务转换为 Crawlo distributed 部署。
+    
+    不重复实现 Crawlo 的 Stream/ACK/Failover，
+    只负责选择模式、生成启动脚本、监听完成。
+    """
 
-# Agent 阻塞读取（最长 30s）
-messages = await redis.xreadgroup(
-    groupname="agents",
-    consumername=node_id,
-    streams={f"task:dispatch:{node_id}": ">"},
-    block=30000,  # 长轮询
-    count=1,
-)
+    async def deploy(
+        self,
+        task: TaskInstance,
+        nodes: list[Node],
+    ) -> None:
+        """根据 task.distribution_mode 选择部署方式。"""
+        mode = task.distribution_mode
+        
+        if mode == "standalone":
+            # 模式 A：每个节点独立 spider，不共享 Redis
+            await self._deploy_standalone(task, nodes)
+        
+        elif mode == "single_node_distributed":
+            # 模式 B：单节点 N Worker，本机 Redis
+            await self._deploy_single_node_distributed(task, nodes[0])
+        
+        elif mode == "multi_node_distributed":
+            # 模式 C：多节点共享 Redis
+            await self._deploy_multi_node_distributed(task, nodes)
+    
+    async def _deploy_standalone(self, task, nodes):
+        """模式 A：标准 standalone 部署。
+        
+        每个 Agent 收到任务后执行：
+            crawlo run spider_name
+        不需要 Redis。节点故障 = 任务失败。
+        """
+        for node in nodes[:1]:  # standalone 只调度到一个节点
+            await self.agent_service.dispatch(
+                node_id=node.id,
+                entry_file=task.entry_file or "crawlo run",
+                env={
+                    "RUN_MODE": "standalone",
+                    "SPIDER_NAME": task.spider_name,
+                },
+            )
+    
+    async def _deploy_single_node_distributed(self, task, node):
+        """模式 B：单节点多 Worker，本机 Redis。
+        
+        Agent 收到任务后执行启动脚本，启动 N 个 Worker：
+            for i in range(N): crawlo run spider_name
+        
+        所有 Worker 共享本机 Redis，Crawlo Consumer Group 自动负载均衡。
+        """
+        worker_script = self._generate_worker_script(
+            spider_name=task.spider_name,
+            worker_count=task.worker_count or 4,
+            redis_url="redis://localhost:6379/0",
+        )
+        await self.agent_service.dispatch(
+            node_id=node.id,
+            entry_file=worker_script,
+            env={
+                "RUN_MODE": "distributed",
+                "QUEUE_TYPE": "redis_stream",
+                "REDIS_URL": "redis://localhost:6379/0",
+                "SPIDER_NAME": task.spider_name,
+            },
+        )
+        # 订阅 Crawlo 的 control:state 变化
+        await self._subscribe_crawlo_completion(task.id, "redis://localhost:6379/0")
+    
+    async def _deploy_multi_node_distributed(self, task, nodes):
+        """模式 C：多节点共享 Redis。
+        
+        所有 Agent 收到相同任务，连接同一个 Redis（Sentinel HA）。
+        Crawlo 的 Consumer Group 自动跨节点负载均衡。
+        """
+        redis_url = task.shared_redis_url
+        for node in nodes:
+            await self.agent_service.dispatch(
+                node_id=node.id,
+                entry_file="crawlo run",
+                env={
+                    "RUN_MODE": "distributed",
+                    "QUEUE_TYPE": "redis_stream",
+                    "REDIS_URL": redis_url,
+                    "SPIDER_NAME": task.spider_name,
+                    "PROJECT_NAME": task.project_name,
+                },
+            )
+        # 订阅 Crawlo 协调退出信号
+        await self._subscribe_crawlo_completion(task.id, redis_url)
+    
+    async def _subscribe_crawlo_completion(self, task_id: int, redis_url: str):
+        """监听 Crawlo 的 control:state，任务完成时通知 TaskStateStore。
+        
+        Crawlo Leader Worker 检测到全部完成时，会：
+            SET control:state = "shutdown" + PUBLISH channel:control "shutdown"
+        
+        本方法订阅该 Pub/Sub 频道，收到 shutdown 时调用 TaskStateStore.transition(COMPLETED)。
+        """
+        # 后台任务：订阅 channel:control
+        # 收到 action=shutdown 时：
+        #   await self.task_state_store.transition(task_id, [RUNNING], COMPLETED)
+        pass
+    
+    def _generate_worker_script(self, spider_name, worker_count, redis_url):
+        """生成启动脚本（启动 N 个 Worker 进程）。"""
+        return f"""
+import subprocess, sys, time
+for i in range({worker_count}):
+    subprocess.Popen([sys.executable, "-m", "crawlo", "run", "{spider_name}"])
+    time.sleep(2)  # 间隔启动，避免心跳风暴
+# 等待所有子进程
+import os
+os.wait()
+"""
 ```
 
-**优势**：
+**关键设计点**：
 
-- 空载 Agent 30s 才发一次请求，DB 压力降 99%
-- 任务下发延迟从 5s 降到 <100ms
-- 天然支持多 Agent 负载均衡（消费组）
-- Redis 已是 V2 必备组件（TaskStateStore 心跳），无新增依赖
+1. **不重复造 Stream**：Crawlo 已经有 Redis Stream，CrawloPilot 只负责启动参数传递
+2. **订阅完成信号**：通过 Crawlo 的 `control:state = "shutdown"` 感知任务完成
+3. **节点故障处理**：
+   - 模式 A：节点故障 = 任务失败，CrawloPilot 重试
+   - 模式 B：Worker 故障由 Crawlo FailoverManager 处理，CrawloPilot 不感知
+   - 模式 C：节点故障由 Crawlo XAUTOCLAIM 回收其 pending，CrawloPilot 看任务仍 running
 
-**降级策略**：Agent 启动时若 Redis 不可达，回退到 HTTP 轮询模式（兼容 V1）。
-
-### 4.4 AlertManager（告警引擎）
+### 5.4 AlertManager（告警引擎）
 
 **规则模型**：
 
@@ -248,76 +493,57 @@ class AlertRule(BaseModel):
     id: int
     name: str
     enabled: bool
-    # 触发条件
-    metric: str  # "task_failed_count" / "task_duration" / "spider_error_rate"
-    operator: str  # ">" / "<" / "==" 
+    metric: str  # "task_failed_count" / "node_offline" / "spider_error_rate"
+    operator: str
     threshold: float
-    window_minutes: int  # 时间窗口
-    # 通知配置
+    window_minutes: int
     channels: list[str]  # ["webhook", "feishu", "email"]
-    cooldown_minutes: int  # 告警冷却，避免轰炸
-    # 目标范围
-    spider_id: int | None  # None = 全局
+    cooldown_minutes: int
+    spider_id: int | None
     node_id: int | None
 ```
 
 **内置规则**：
 
-| 规则 | 默认阈值 | 窗口 |
-|---|---|---|
-| 任务失败 | 连续 3 次 | 1h |
-| 任务超时 | > 30 分钟 | 实时 |
-| 节点离线 | 心跳超 60s | 实时 |
-| 爬虫错误率 | > 10% | 5min |
-| 代理池告罄 | < 10 个可用 | 实时 |
+| 规则 | 默认阈值 | 窗口 | 说明 |
+|---|---|---|---|
+| 任务失败 | 连续 3 次 | 1h | CrawloPilot 任务级 |
+| 节点离线 | 心跳超 60s | 实时 | CrawloPilot 节点级 |
+| 任务超时 | > 30 分钟 | 实时 | CrawloPilot 任务级 |
+| 死信队列增长 | > 0 | 5min | 来自 Crawlo `stream:failed` |
+| Worker 故障 | Worker 数下降 | 5min | 来自 Crawlo `registry:workers` |
 
-**通道**：
+**与 Crawlo 集成**：AlertManager 后台任务从 Crawlo 的 Redis 读取 `XLEN stream:failed`、`HLEN registry:workers`，作为指标来源。
 
-- Webhook（通用，用户自定义）
-- 飞书（lark-im 集成）
-- 邮件（SMTP）
+### 5.5 ProxyPool（代理池服务）
 
-### 4.5 ProxyPool（代理池服务）
-
-**独立微服务**，与控制面解耦，通过 HTTP API 交互。
+**独立微服务**，与控制面解耦。
 
 **核心接口**：
 
 ```
-GET  /proxies/acquire?spider_id=X&count=1   # 获取代理
-POST /proxies/release                        # 释放代理
-POST /proxies/report                         # 上报代理质量
-GET  /proxies/stats                          # 代理池统计
+GET  /proxies/acquire?spider_id=X&count=1
+POST /proxies/release
+POST /proxies/report
+GET  /proxies/stats
 ```
 
-**代理来源**：
+**与 Crawlo 集成**：
 
-1. 自有代理（用户上传）
-2. 第三方 API（芝麻代理 / 快代理等，配置化接入）
-3. 自建代理（爬取免费代理 + 健康检查，质量低但免费）
+- Crawlo 通过 `PROXY_POOL_URL` 环境变量调用
+- Crawlo 的 `ProxyMiddleware` 自动从 ProxyPool 获取代理
+- 代理失败时 Crawlo 上报，ProxyPool 标记不可用
 
-**健康检查**：后台任务每 5 分钟检测所有代理可用性，淘汰失效代理。
+### 5.6 LogAggregator（日志聚合）
 
-**与爬虫集成**：
-
-- Crawlo 框架：通过 `PROXY_POOL_URL` 环境变量注入
-- Scrapy：通过 middlewares 接入
-- 自定义：HTTP API 调用
-
-### 4.6 LogAggregator（日志聚合）
-
-**V1 问题**：多节点部署后，日志散落在各节点文件，排查需 SSH 登录。
+**V1 问题**：多节点部署后，日志散落各节点文件。
 
 **V2 方案**：Loki + Promtail。
 
-```
-Agent/Executor → stdout → Promtail 采集 → Loki 存储 → API 网关查询
-```
-
-- 容器化部署：Docker Executor 直接走 stdout，Promtail 采集 docker logs
-- 本地部署：LocalExecutor 日志写文件，Promtail tail 采集
-- SSH 部署：在节点部署 Promtail，采集远程日志
-- Agent 模式：Agent 上报日志走 MessageBus，控制面写入 Loki
+- 容器化：Docker Executor 直接 stdout，Promtail 采集 docker logs
+- 本地部署：LocalExecutor 日志写文件，Promtail tail
+- SSH 部署：节点部署 Promtail
+- Agent 模式：Agent 上报日志走 HTTP，控制面写入 Loki
 
 **查询接口**：
 
@@ -325,56 +551,51 @@ Agent/Executor → stdout → Promtail 采集 → Loki 存储 → API 网关查�
 GET /api/v1/tasks/{task_id}/logs?tail=200&level=ERROR&since=1h
 ```
 
-后端转发到 Loki LogQL 查询。
+### 5.7 AuditLog（审计日志）
 
-### 4.7 AuditLog（审计日志）
-
-**记录范围**：所有写操作（创建/更新/删除/启停）。
+**记录范围**：所有写操作。
 
 ```python
 class AuditLog(BaseModel):
     id: int
-    user_id: int | None  # None 表示系统操作
+    user_id: int | None
     action: str  # "task.create" / "spider.update" / "credential.delete"
-    resource_type: str  # "task" / "spider" / "node"
+    resource_type: str
     resource_id: int
-    before: dict | None  # 变更前快照
-    after: dict | None   # 变更后快照
+    before: dict | None
+    after: dict | None
     ip: str
     user_agent: str
     created_at: datetime
 ```
 
-**存储**：单独 `audit_logs` 表，按月分区，保留 1 年（可配置）。
-
-**查询接口**：`GET /api/v1/audit-logs?user_id=&action=&resource_type=&since=`
+**存储**：单独 `audit_logs` 表，按月分区，保留 1 年。
 
 ---
 
-## 五、关键技术选型
+## 六、关键技术选型
 
 | 模块 | 选型 | 理由 |
 |---|---|---|
-| 消息队列 | Redis Streams | 已依赖 Redis，无新增；长轮询 + 消费组 |
-| 调度器 | Celery Beat 独立服务 | 多实例安全（DB 锁）；任务编排能力强 |
-| 日志聚合 | Loki + Promtail | 比 ELK 轻 10 倍；与 Grafana 原生集成 |
-| 指标 | Prometheus + Grafana | 行业标准；社区 dashboard 丰富 |
-| 告警 | 自研 AlertManager + Alertmanager 兼容 | 业务规则复杂，复用 Prometheus 告警通道 |
-| 代理池 | 独立 FastAPI 微服务 | 解耦；可独立部署/扩展 |
+| 消息队列 | **不引入** | Crawlo 已用 Redis Stream；CrawloPilot 不需要 MQ |
+| 调度器 | Celery Beat 独立服务 | 多实例安全（DB 锁） |
+| 日志聚合 | Loki + Promtail | 比 ELK 轻 10 倍 |
+| 指标 | Prometheus + Grafana | 行业标准 |
+| 告警 | 自研 AlertManager | 业务规则复杂 |
+| 代理池 | 独立 FastAPI 微服务 | 解耦 |
 | 分布式锁 | Redis Redlock | 多实例调度器幂等 |
-| 任务编排 | Celery Canvas（chain/group/chord） | 替代 APScheduler，支持任务依赖 |
+| Agent 通信 | HTTP 长轮询 | 简单可靠，hold 30s |
 
 **未选型说明**：
 
-- **Kafka/NATS**：体量未到，Redis Streams 足够；未来流量 >10k msg/s 再迁移
+- **Kafka/NATS**：Crawlo 已用 Redis Stream，CrawloPilot 不需要自己的 MQ
 - **Temporal/Airflow**：太重，爬虫编排不需要复杂 DAG
-- **Elasticsearch**：日志量未到 ELK 级别，Loki 更轻
 
 ---
 
-## 六、数据模型变更
+## 七、数据模型变更
 
-### 6.1 新增表
+### 7.1 新增表
 
 ```sql
 -- 审计日志
@@ -426,7 +647,7 @@ CREATE TABLE alert_events (
 CREATE TABLE proxies (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     url VARCHAR(256) NOT NULL,
-    source VARCHAR(32) NOT NULL,  # "self" / "thirdparty" / "free"
+    source VARCHAR(32) NOT NULL,
     region VARCHAR(32),
     is_available BOOLEAN DEFAULT TRUE,
     last_check_at DATETIME,
@@ -437,7 +658,7 @@ CREATE TABLE proxies (
 );
 ```
 
-### 6.2 修改表
+### 7.2 修改表
 
 ```sql
 -- task_instance: deploy_mode 改为 ENUM
@@ -445,31 +666,43 @@ ALTER TABLE task_instance
     MODIFY COLUMN deploy_mode 
     ENUM('local','ssh','docker','agent') NOT NULL;
 
+-- task_instance: 新增 distribution_mode（核心）
+ALTER TABLE task_instance 
+    ADD COLUMN distribution_mode
+    ENUM('standalone', 'single_node_distributed', 'multi_node_distributed')
+    DEFAULT 'standalone';
+
+-- task_instance: 新增 shared_redis_url（模式 C 用）
+ALTER TABLE task_instance 
+    ADD COLUMN shared_redis_url VARCHAR(256)
+    COMMENT '模式 C 共享 Redis 地址';
+
+-- task_instance: 新增 worker_count
+ALTER TABLE task_instance 
+    ADD COLUMN worker_count INT DEFAULT 1
+    COMMENT '模式 B/C 每节点 Worker 进程数';
+
 -- task_instance: 新增 heartbeat_at
 ALTER TABLE task_instance 
-    ADD COLUMN heartbeat_at DATETIME COMMENT '最后心跳时间，用于离线检测';
+    ADD COLUMN heartbeat_at DATETIME;
 
 -- nodes: 新增 last_seen_at
 ALTER TABLE nodes 
-    ADD COLUMN last_seen_at DATETIME COMMENT 'Agent 最后在线时间';
-
--- spiders: 新增 alert_enabled
-ALTER TABLE spiders 
-    ADD COLUMN alert_enabled BOOLEAN DEFAULT TRUE;
+    ADD COLUMN last_seen_at DATETIME;
 ```
 
-### 6.3 迁移策略
+### 7.3 迁移策略
 
 - 新增表：直接创建，不影响 V1
-- 修改表：`deploy_mode` 改 ENUM 需要先清理脏数据
+- 修改表：`deploy_mode` 改 ENUM 需先清理脏数据
+- `distribution_mode` 默认 `standalone`，V1 任务自动兼容
 - 提供 `alembic upgrade head` 一次性迁移脚本
-- V1 → V2 升级需停机一次（约 10 分钟）
 
 ---
 
-## 七、API 变更
+## 八、API 变更
 
-### 7.1 新增 API
+### 8.1 新增 API
 
 ```
 # 告警
@@ -490,12 +723,11 @@ GET    /api/v1/proxies/stats
 # 审计
 GET    /api/v1/audit-logs
 
-# Agent（V2 协议）
-GET    /api/v1/agent/stream    # SSE 或 WebSocket 长连接（替代轮询）
-POST   /api/v1/agent/heartbeat
+# 任务创建增强
+POST   /api/v1/tasks  # 新增 distribution_mode / shared_redis_url / worker_count 字段
 ```
 
-### 7.2 修改 API
+### 8.2 修改 API
 
 **Agent 鉴权统一改 Bearer**：
 
@@ -505,6 +737,13 @@ POST   /api/v1/agent/heartbeat
 + Authorization: Bearer xxx
 ```
 
+**Agent 长轮询**：
+
+```diff
+- GET /api/v1/nodes/agent/tasks  # 立即返回，5s 后再请求
++ GET /api/v1/nodes/agent/tasks?wait=30  # hold 30s，有任务立即返回
+```
+
 **日志查询增强**：
 
 ```diff
@@ -512,16 +751,16 @@ POST   /api/v1/agent/heartbeat
 + GET /api/v1/tasks/{id}/logs?tail=200&level=ERROR&since=1h
 ```
 
-### 7.3 废弃 API
+### 8.3 废弃 API
 
 ```
 # V2 仍保留但标记 deprecated，V3 移除
-GET /api/v1/nodes/agent/tasks  # 轮询模式（降级兼容）
+GET /api/v1/nodes/agent/tasks?wait=0  # 立即返回模式（兼容 V1 Agent）
 ```
 
 ---
 
-## 八、演进路线
+## 九、演进路线
 
 ### Phase 1：止血修复（2 周，无架构变更）
 
@@ -536,27 +775,28 @@ GET /api/v1/nodes/agent/tasks  # 轮询模式（降级兼容）
 | SSH 命令注入 + host key | 4h | P0 |
 | CRAWLO_WHEEL_PATH 默认改 None | 0.5h | P0 |
 
-**交付**：V1.1 版本，安全可上生产。
+**交付**：V1.1 安全版本。
 
 ### Phase 2：架构收敛（1-2 个月）
 
-**目标**：解决状态散落 + 单实例约束。
+**目标**：解决状态散落 + 单实例约束 + Crawlo 分布式调度。
 
 | 任务 | 工作量 | 依赖 |
 |---|---|---|
 | 引入 Redis 基础设施 | 2h | - |
 | 实现 TaskStateStore | 16h | Redis |
 | 定义 Executor Protocol + 适配 4 执行器 | 24h | TaskStateStore |
-| Agent 改 MessageBus（长轮询降级） | 16h | Redis Streams |
-| 调度器拆分 Celery Beat + DB 锁 | 16h | - |
+| **实现 CrawloDistributedAdapter** | 24h | TaskStateStore |
+| Agent 改长轮询（hold 30s） | 8h | - |
+| 调度器拆分 + DB 锁 | 16h | - |
 | 状态更新改 DB 条件 UPDATE | 8h | TaskStateStore |
-| 迁移历史清理 + alembic 整合 | 8h | - |
+| 迁移历史清理 | 8h | - |
 
-**交付**：V2.0 版本，多实例可部署。
+**交付**：V2.0，多实例可部署，支持三种 Crawlo 分布式模式。
 
 ### Phase 3：平台化（3-6 个月）
 
-**目标**：补齐分布式平台能力。
+**目标**：补齐可观测与生态能力。
 
 | 任务 | 工作量 | 优先级 |
 |---|---|---|
@@ -568,81 +808,182 @@ GET /api/v1/nodes/agent/tasks  # 轮询模式（降级兼容）
 | Grafana Dashboard 模板 | 8h | P2 |
 | 飞书告警通道集成 | 8h | P2 |
 
-**交付**：V2.1 版本，完整分布式平台。
+**交付**：V2.1 完整平台。
 
 ---
 
-## 九、风险与对策
+## 十、三种模式实战示例
+
+### 10.1 模式 A：项目隔离（典型用户）
+
+**场景**：维护 50 个新闻爬虫，每个爬 100 页/天。
+
+**配置**：
+```json
+POST /api/v1/tasks
+{
+    "spider_id": 123,
+    "node_id": 1,
+    "deploy_mode": "agent",
+    "distribution_mode": "standalone",
+    "schedule": "0 8 * * *"
+}
+```
+
+**执行流程**：
+1. CrawloPilot 调度器触发任务
+2. Agent 收到任务，下载代码
+3. Agent 执行 `crawlo run news_spider`
+4. Crawlo standalone 模式运行，内存队列
+5. 完成后 Agent 上报 `COMPLETED`
+6. CrawloPilot TaskStateStore 更新状态
+
+### 10.2 模式 B：单机深爬
+
+**场景**：爬取电商全站 18 万商品页，单机 8 核。
+
+**配置**：
+```json
+POST /api/v1/tasks
+{
+    "spider_id": 456,
+    "node_id": 1,
+    "deploy_mode": "agent",
+    "distribution_mode": "single_node_distributed",
+    "worker_count": 8,
+    "schedule": "manual"
+}
+```
+
+**执行流程**：
+1. CrawloPilot 调度任务到 Node 1
+2. Agent 收到任务，CrawloDistributedAdapter 生成启动脚本
+3. Agent 执行脚本，启动 8 个 Crawlo Worker（distributed 模式）
+4. 8 个 Worker 共享本机 Redis，Consumer Group 自动负载均衡
+5. 单个 Worker 崩溃 → Crawlo FailoverManager 120s 回收其 pending
+6. 全部完成 → Crawlo Leader 广播 shutdown → CrawloPilot 监听到 → 标记 COMPLETED
+
+### 10.3 模式 C：多机联合深爬
+
+**场景**：爬取 50 万页政府数据，3 台节点。
+
+**配置**：
+```json
+POST /api/v1/tasks
+{
+    "spider_id": 789,
+    "node_ids": [1, 2, 3],
+    "deploy_mode": "agent",
+    "distribution_mode": "multi_node_distributed",
+    "shared_redis_url": "redis+sentinel://sentinel:26379/0",
+    "worker_count": 4,
+    "schedule": "manual"
+}
+```
+
+**执行流程**：
+1. CrawloPilot 调度任务到 Node 1/2/3
+2. 3 个 Agent 同时收到任务
+3. 每个 Agent 启动 4 个 Crawlo Worker，全部连接共享 Redis
+4. 12 个 Worker 共享一个 Consumer Group，自动负载均衡
+5. Node 2 崩溃 → Crawlo FailoverManager 90s 检测 → XAUTOCLAIM 回收 Node 2 的 pending 到 Node 1/3
+6. CrawloPilot 通过 Redis 监控到 Worker 数从 12 降到 8，触发告警
+7. 全部完成 → Crawlo Leader 广播 shutdown → CrawloPilot 标记 COMPLETED
+
+---
+
+## 十一、风险与对策
 
 | 风险 | 概率 | 影响 | 对策 |
 |---|---|---|---|
-| Redis 单点故障 | 中 | 高（任务下发中断） | Redis Sentinel 主从；Agent 降级 HTTP 轮询 |
-| Celery Beat 多实例触发 | 低 | 中 | DB advisory lock 兜底；唯一索引幂等 |
+| Redis 单点故障（模式 B/C） | 中 | 高 | Sentinel 主从；Agent 降级 standalone |
+| Crawlo 与 CrawloPilot 版本不匹配 | 中 | 中 | Adapter 版本协商；兼容性测试 |
+| 调度器多实例触发 | 低 | 中 | DB advisory lock；唯一索引 |
 | Loki 日志查询慢 | 低 | 中 | 索引 label 精简；保留期 30 天 |
 | V1 升级 V2 数据迁移失败 | 中 | 高 | 全量备份 + 灰度升级 + 回滚脚本 |
-| Agent 协议升级兼容性 | 中 | 中 | 版本协商；V1 agent 仍可连接但功能降级 |
+| Agent 协议升级兼容性 | 中 | 中 | 版本协商；V1 Agent 仍可连接 |
 | 代理池质量不稳 | 高 | 低 | 多源混合；健康检查；降级直连 |
-| 团队学习成本 | 中 | 中 | 文档 + 示例 + 渐进式接入 |
+| 共享 Redis 多 spider 资源竞争 | 中 | 中 | `{project}:{spider}` hash tag 隔离 |
 
 ---
 
-## 十、验收标准
+## 十二、验收标准
 
-### 10.1 功能验收
+### 12.1 功能验收
 
-- [ ] 4 个执行器全部适配 Executor Protocol，无契约违反
-- [ ] TaskStateStore 成为唯一状态入口，执行器无 DB session
-- [ ] Agent 通过 MessageBus 接收任务，延迟 < 1s
+- [ ] 4 个执行器全部适配 Executor Protocol
+- [ ] TaskStateStore 成为任务级状态唯一入口
+- [ ] **三种 distribution_mode 全部可用**
+  - [ ] 模式 A：standalone 任务正常调度
+  - [ ] 模式 B：单节点 N Worker，任务完成正确感知
+  - [ ] 模式 C：多节点共享 Redis，节点故障任务不丢
+- [ ] Agent 长轮询（hold 30s）正常工作
 - [ ] 多实例部署（2 个控制面）任务不重复执行
-- [ ] AlertManager 5 条内置规则全部触发验证通过
-- [ ] Loki 日志查询响应 < 2s（10 万条日志）
-- [ ] AuditLog 记录所有写操作，可按用户/资源/时间查询
-- [ ] ProxyPool 可获取/释放代理，健康检查正常
+- [ ] AlertManager 5 条内置规则触发验证通过
+- [ ] Loki 日志查询响应 < 2s
+- [ ] AuditLog 记录所有写操作
+- [ ] ProxyPool 可获取/释放代理
 
-### 10.2 非功能验收
+### 12.2 非功能验收
 
 - [ ] 安全：无默认密钥、无 token in URL、无命令注入、无路径穿越
 - [ ] 性能：单实例支持 100 并发任务、50 个 Agent 在线
 - [ ] 可用性：单节点故障不影响整体服务
-- [ ] 可观测：所有关键指标暴露 Prometheus，有 Grafana Dashboard
-- [ ] 文档：API 文档、部署文档、迁移文档齐全
+- [ ] 可观测：所有关键指标暴露 Prometheus
+- [ ] 兼容：V1 前端无需改动即可连接 V2 后端
 
-### 10.3 兼容性验收
+### 12.3 兼容性验收
 
 - [ ] V1 前端无需改动即可连接 V2 后端
-- [ ] V1 Agent 可连接 V2 控制面（功能降级到 HTTP 轮询）
+- [ ] V1 Agent 可连接 V2 控制面（降级 HTTP 轮询）
 - [ ] V1 数据库可平滑迁移到 V2 schema
+- [ ] V1 standalone 任务在 V2 默认 `distribution_mode=standalone` 正常运行
 
 ---
 
-## 十一、里程碑
+## 十三、里程碑
 
 | 里程碑 | 时间 | 交付物 |
 |---|---|---|
 | M1: 止血完成 | +2 周 | V1.1 安全版本 |
-| M2: 架构收敛 | +2 月 | V2.0 多实例版本 |
+| M2: 架构收敛 + Crawlo 适配 | +2 月 | V2.0（三种模式可用） |
 | M3: 可观测就绪 | +3 月 | V2.0.1 告警 + 日志聚合 |
 | M4: 生态完整 | +6 月 | V2.1 完整平台 |
 
 ---
 
-## 十二、附录
+## 十四、附录
 
-### 12.1 术语表
+### 14.1 术语表
 
 | 术语 | 含义 |
 |---|---|
-| 控制面 | 接收用户请求、调度任务、管理状态 |
-| 执行面 | 实际运行爬虫的执行器集合 |
-| 数据面 | 持久化存储（MySQL/Redis/Loki） |
-| TaskStateStore | 任务状态中间层，唯一状态入口 |
-| MessageBus | 基于 Redis Streams 的任务下发通道 |
-| Agent | 部署在远程节点的代理进程 |
+| 编排面 | CrawloPilot，负责多爬虫调度、节点管理、状态管理 |
+| 执行面 | Crawlo 框架，负责单爬虫内的请求分发、ACK、Failover |
+| TaskStateStore | 任务级状态中间层（spider 整体 running/done） |
+| CrawloDistributedAdapter | 把任务转换为 Crawlo distributed 部署的适配器 |
+| distribution_mode | 任务部署模式：standalone / single_node_distributed / multi_node_distributed |
+| standalone | Crawlo 内存队列模式，不依赖 Redis |
+| distributed | Crawlo Redis Stream 模式，支持多 Worker |
+| Consumer Group | Crawlo 的 Worker 消费组，自动负载均衡 |
+| XACK/XAUTOCLAIM | Crawlo 的请求级确认/故障回收机制 |
 
-### 12.2 参考资料
+### 14.2 关键修正记录
+
+相比 V2 初版方案，本版的修正：
+
+| 项 | 初版 | 本版 | 理由 |
+|---|---|---|---|
+| Agent 通信 | Redis Streams MessageBus | HTTP 长轮询 | Crawlo 已有 Stream，不重复 |
+| 任务级 vs 请求级 | 混在一起 | 明确分离 | Crawlo 管请求级，CrawloPilot 管任务级 |
+| Crawlo 分布式 | 不支持 | CrawloDistributedAdapter | 核心新增能力 |
+| 部署模式 | 单一 | 三种 distribution_mode | 按需选择 |
+| MessageBus 模块 | 保留 | **取消** | 重复造轮子 |
+
+### 14.3 参考资料
 
 - [DESIGN-ISSUES.md](../DESIGN-ISSUES.md)：V1 问题清单
 - [docs/design-philosophy.md](design-philosophy.md)：V1 设计哲学
-- Crawlab 架构：https://docs.crawlab.cn/
-- Celery Beat 文档：https://docs.celeryq.dev/
-- Loki 文档：https://grafana.com/docs/loki/
+- Crawlo 分布式架构：`/Users/oscar/projects/Crawlo/docs/distributed_architecture.md`
+- Crawlo cluster 模块：`/Users/oscar/projects/Crawlo/crawlo/cluster/`
+- Crawlo RedisStreamQueue：`/Users/oscar/projects/Crawlo/crawlo/queue/redis_stream_queue.py`
