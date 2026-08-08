@@ -56,8 +56,8 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 - [x] Docker 模式真机验证（2026-08-07 本机 Docker Desktop）：unix socket 节点激活 →
       基础镜像构建 → 任务容器运行 SUCCESS → 日志落盘/接口可读；二次运行镜像 digest 命中 6.1s 复用
 - [x] 测试债清理：`test_02_projects.py` 7/7（分页/删除断言兼容 + put 参数修正 +
-      注册开关回退）；**全库明文凭据脱敏**（conftest.py、run_all_tests.py、_fix_db.py、
-      note.txt、Nodes.vue 占位 IP、server-management.md）
+      注册开关回退）；**全库明文凭据脱敏**（conftest.py、run_all_tests.py、
+      Nodes.vue 占位 IP、server-management.md，临时脚本 `_fix_db.py`/`note.txt` 已清理）
 
 ## V2 计划（分波次，按价值 × 依赖排序）
 

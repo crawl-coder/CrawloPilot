@@ -383,8 +383,13 @@ async def list_tasks(
 
     result = []
     for task in tasks:
-        spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
-        result.append(_serialize_task(task, spider))
+        try:
+            spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
+            result.append(_serialize_task(task, spider))
+        except Exception:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("Failed to serialize task %s, skipping", task.id, exc_info=True)
 
     return {
         "total": total,
@@ -505,13 +510,13 @@ def _serialize_task(task: TaskInstance, spider: Optional[Spider] = None) -> dict
         "container_id": task.container_id,
         "node_id": task.node_id,
         "node_name": task.node.name if task.node else None,
-        "deploy_mode": task.deploy_mode,
+        "deploy_mode": task.deploy_mode.value if hasattr(task.deploy_mode, "value") else task.deploy_mode,
         "memory_limit": task.memory_limit,
         "cpu_limit": task.cpu_limit,
         "process_id": task.process_id,
-        "created_at": task.created_at,
-        "started_at": task.started_at,
-        "finished_at": task.finished_at,
+        "created_at": task.created_at.isoformat() if task.created_at else None,
+        "started_at": task.started_at.isoformat() if task.started_at else None,
+        "finished_at": task.finished_at.isoformat() if task.finished_at else None,
         "duration": float(task.duration) if task.duration is not None else None,
         "error_message": task.error_message,
         "pages_crawled": task.pages_crawled or 0,

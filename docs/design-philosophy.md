@@ -12,7 +12,7 @@ V1 只承诺一件事：**从"创建项目"到"看到爬虫日志"的完整链�
 
 因此 V1 初期裁剪掉了 Git 管理、调度系统、监控告警、数据质量、代理池、API 管理、
 操作审计等"锦上添花"的功能——它们大多依赖外部组件（Celery Worker、Prometheus、通知渠道）
-或本身就是半成品。裁剪不是否定这些功能，而是**让第一版可被完整验证**。数据库表保留，可平滑恢复。
+或本身就是半成品。裁剪不是否定这些功能，而是**让第一版可被完整验证**。数据库表 DDL 定义保留在 alembic 迁移历史中，V2 可恢复（当前模型代码中已移除）。
 
 > 后续进展（2026-08-07）：Git 工作流与定时调度已以更轻的形态回归 V1
 > （完整仓库 + 凭据单次注入；进程内 APScheduler 替代 Celery 依赖），
@@ -58,6 +58,10 @@ stop_task(id)         停止
 体现在 Agent 模式上最明显：**节点上的 agent 反向连接控制端**，
 控制端不持有节点的 SSH 凭据，节点可以位于 NAT 之后，加机器 = 部署 agent。
 
+**Agent 鉴权**：节点持 `agent_token`（UUID），通过 `Authorization: Bearer` header
+携带，不再走 query string（避免 token 在 URL 中泄露）。任务领取采用 DB 条件 UPDATE
+原子抢占，避免多 agent 重复领取同一任务；回报终态经终态保护，停止后不被改写。
+
 ### 1.5 代码即配置：上传即部署
 
 爬虫项目遵循固定的目录规范。执行入口由 `entry_file` 决定（如 `run.py`），
@@ -86,6 +90,8 @@ project_1/spider_2/
 
 - 状态机：`pending → running → success / failed / timeout / cancelled`（含 paused）
 - 日志：执行器统一落盘到 `uploads/_task_logs/task_{id}.log`，API 按模式读取
+  - SSH 任务在准备阶段（连接/上传/venv/依赖/crawlo/启动）也写入 task.log，用户可见完整进度
+  - 日志查询支持 `level`（ERROR/WARN/INFO）与 `since`（时间窗口）过滤，不依赖日志系统
 - 实时性：WebSocket 推送日志行与状态增量；前端轮询兜底
 - 指标：从日志解析 `pages / items / errors`（兼容 crawlo 1.6/1.7 两种统计格式）
 - 归属：任务关联爬虫，任务结束后回写爬虫运行统计（last_run / 成功失败计数）
@@ -144,11 +150,18 @@ flowchart TB
 | 状态/日志/停止按 deploy_mode 分发 | 执行器契约统一，业务层与执行方式解耦 |
 | 日志统一落盘 `uploads/_task_logs` | 四种执行器日志同一读取路径；容器/agent 清理后日志仍在 |
 | 任务结束后回写爬虫统计 | 列表页/详情页的运行统计不需要额外聚合查询 |
-| 裁剪功能但保留数据库表 | V2 恢复成本低，避免破坏性删除 |
+| 裁剪功能，DDL 保留在迁移历史 | V2 恢复成本低，避免破坏性删除（模型代码中已移除） |
+| SSH 任务用独立 venv 执行 | 每个任务在节点创建 `.venv`，依赖安装/运行都在 venv 内，避免污染节点系统 Python |
+| SSH 准备阶段日志写入 task.log | 连接/上传/venv/依赖/启动过程对用户可见，失败原因也入日志 |
+| 密钥分离（JWT 与凭据加密） | 生产环境强制 `JWT_SECRET_KEY` 与 `CREDENTIAL_ENCRYPTION_KEY` 不同且非默认，拒绝启动 |
+| Agent token 走 Bearer header | 避免 token-in-URL 泄露；任务领取原子抢占，回报终态保护 |
+| Agent 长轮询领取任务 | 无任务时服务端 hold 最多 25s，有任务立即返回；减少无效轮询开销，保持 HTTP 简单可靠 |
+| 日志查询支持 level/since 过滤 | 按级别（ERROR/WARN/INFO）和时间窗口（1h/30m/1d）过滤，本地文件实现，不依赖日志系统 |
+| 执行器契约 Protocol | 四个执行器统一 `execute_task/get_task_status/get_task_logs/stop_task` 接口，业务层与执行方式解耦 |
 
 ## 4. 演进原则
 
 1. **新功能必须能在本地模式跑通**，再谈分布式形态
 2. **先契约后实现**：执行器接口不变，新增部署方式只加一个实现
 3. **可观测性随执行器走**：任何执行方式都要有状态、日志、停止
-4. **V2 顺序**（2026-08-07 更新）：调度增强（全局视图/终态统计）→ 监控告警 → 平台化（代理池/API 管理/审计/生产化）；Git 管理与调度本体已在 V1 交付
+4. **V2 顺序**（2026-08-08 更新）：三种 Crawlo 分布式部署模式（CrawloDistributedAdapter）→ TaskStateStore 全量状态收敛 → 多实例部署 → 监控告警 → 平台化（代理池/审计/日志聚合）。V1 已交付：Git 管理、进程内调度、四执行器、Agent 安全（Bearer + 长轮询）、SSH venv 隔离、密钥分离、日志过滤、执行器契约。V2 完整方案见 [v2-design.md](v2-design.md)。

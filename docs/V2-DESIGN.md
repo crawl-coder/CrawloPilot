@@ -9,44 +9,30 @@
 
 ---
 
-## 〇、版本边界调整（V1 / V2 职责划分）
+## 〇、版本边界说明
 
-> 本文是 V2 方案，但其中**部分内容属于 V1 应有能力或 V1 现存缺陷**，
-> 应提前到 V1（V1.1）实现；纯 V2 新增能力保留在 V2。
-> 依据：对当前 V1 代码的逐一核实（2026-08-08）。
-
-### 0.1 应提前到 V1 实现的项（标记：🔴 V1 必须做）
-
-这些不是 V2 新增功能，而是 V1 本就应有的能力或缺陷修复，必须在 V1.1 完成：
-
-| 项 | 出处 | V1 现状 | 提前理由 |
-|---|---|---|---|
-| **TaskStateStore（任务级状态中间层）** | §5.1 | 未实现，状态散落（agent.py 直写 DB、log_collector 直改状态） | 状态写入混乱是 V1 现存架构缺陷，非 V2 新增；且是 V2 所有模块的前置 |
-| **状态更新统一走 DB 条件 UPDATE** | §5.1 | 雏形（task_updater 仅覆盖 3 个执行器终态，Agent 仍直写） | 并发安全在 V1 单实例也会发生，必须先收敛 |
-| **Executor Protocol 契约收敛** | §5.2 | 雏形（旧契约，Agent 缺 execute_task） | 四个执行器契约不完整是 V1 接口设计缺陷 |
-| **彻底移除 Agent token-in-URL** | §8.2 | 雏形（Bearer 优先，query 仍兼容） | 安全漏洞，V1 就该修（DESIGN-ISSUES #3） |
-
-### 0.2 有问题的项（标记：⚠️ V1 需修正）
-
-| 项 | 问题 | 修正方向 |
-|---|---|---|
-| **Agent 长轮询参数命名不一致** | V1 用 `long_poll`，本文 §8.2 用 `wait=30` | V1 统一参数语义，V2 沿用 |
-| **日志查询无过滤** | V1 `/logs` 仅支持 tail，无 level/since | V1 补 `level`/`since` 参数（不引入 Loki，读本地文件） |
-
-### 0.3 保留在 V2 的项（标记：🟢 V2 专属）
-
-| 项 | 出处 | 保留理由 |
-|---|---|---|
-| 三种 distribution_mode（standalone/single/multi） | §3 | 依赖 Crawlo 框架 Redis 分布式能力，是 V2 核心新增 |
-| CrawloDistributedAdapter | §5.3 | V2 核心新模块 |
-| 告警 AlertManager | §5.4 | 运维增强，V1 有基础指标即可 |
-| 代理池 ProxyPool | §5.5 | 独立微服务，V2 生态 |
-| Loki 日志聚合 | §5.6 | 运维增强，V1 本地文件可用 |
-| AuditLog 完整版 | §5.7 | V1 可只记录关键操作，完整审计 V2 |
-| 多实例部署 | §2.1 | V1 单实例已够，水平扩展 V2 |
-
-> **说明**：本文其余章节（§三~§十四）的完整方案仍属 V2 范畴，但 0.1/0.2 标记的
-> 部分已在 V1.1 实现，V2 在收敛后的基础上演进。
+> 本文是 V2 方案。以下能力已在 V1 交付，V2 在其基础上演进：
+>
+> **V1 已交付（不再属于 V2 范围）**：
+> - Agent token-in-URL 彻底移除（纯 Bearer header）
+> - 日志查询 `level`/`since` 过滤参数
+> - Executor Protocol 契约定义 + 四个执行器适配（含 Agent `execute_task`）
+> - Agent 长轮询（`long_poll` 参数）
+> - 密钥分离（JWT 与凭据加密双密钥）
+> - task_updater 终态原子更新
+> - Git 工作流 + 凭据体系
+> - 进程内 APScheduler 定时调度
+>
+> **V2 新增（本文核心内容）**：
+> - 三种 distribution_mode + CrawloDistributedAdapter（§三、§5.3）
+> - 多实例部署（§2.1）
+> - TaskStateStore 全量状态收敛（§5.1）
+> - AlertManager 告警引擎（§5.4）
+> - ProxyPool 代理池（§5.5）
+> - Loki 日志聚合（§5.6）
+> - AuditLog 完整审计（§5.7）
+>
+> 详见 [design-philosophy.md](design-philosophy.md) 和 [remaining-work.md](remaining-work.md) 了解 V1 已交付能力。
 
 ---
 
@@ -104,13 +90,13 @@ Crawlo 框架本身已具备完整的分布式能力：
 
 | 目标 | V1 现状 | V2 目标 |
 |---|---|---|
-| 编排与执行边界 | 执行器越层直写 DB | TaskStateStore 收敛任务级状态 |
+| 编排与执行边界 | 部分原子更新，未全量收敛 | TaskStateStore 全量收敛任务级状态 |
 | 多实例部署 | 单实例硬约束 | 水平扩展 |
-| 执行器契约 | 口头约定 | Protocol + ABC |
-| Agent 通信 | HTTP 5s 轮询 | HTTP 长轮询（30s hold） |
+| 执行器契约 | ✅ 已实现 Protocol | 保持，状态经 TaskStateStore |
+| Agent 通信 | ✅ 已实现长轮询 | 保持，接入分布式模式 |
 | Crawlo 分布式调度 | 不支持 | CrawloDistributedAdapter |
-| 可观测性 | 无 | 告警 + 日志聚合 + 指标 |
-| 安全 | 单密钥 + token in URL | 双密钥 + Bearer + 审计 |
+| 可观测性 | 基础指标 + 日志过滤 | 告警 + 日志聚合 |
+| 安全 | ✅ 已实现双密钥 + Bearer | 保持 + 审计 |
 | 生态扩展 | 无 | 代理池 + Webhook |
 
 ### 1.5 非目标
@@ -131,13 +117,13 @@ V2 **不做**以下事项：
 
 | 维度 | V1 | V2 |
 |---|---|---|
-| 状态写入 | 执行器直写 DB + 内存 active_tasks | 经 TaskStateStore（任务级） |
+| 状态写入 | 部分原子更新，未全量收敛 | 全量经 TaskStateStore（任务级） |
 | 调度器 | APScheduler 进程内 | 独立服务 + DB advisory lock |
-| Agent 通信 | HTTP 轮询 5s | HTTP 长轮询 30s（不引入 MQ） |
-| 日志存储 | 文件 + 容器卷 | Loki 聚合 |
+| Agent 通信 | ✅ 长轮询已实现 | 接入分布式模式 |
+| 日志存储 | 文件 + 容器卷 + 过滤查询 | Loki 聚合 |
 | 告警 | 无 | AlertManager + Webhook |
 | 代理池 | 无 | ProxyPool 微服务 |
-| 密钥管理 | 单 SECRET_KEY 共用 | JWT / 凭据加密分离 |
+| 密钥管理 | ✅ JWT / 凭据加密分离已实现 | 保持 + 审计 |
 | 审计 | 无 | AuditLog 模块 |
 | Crawlo 分布式 | 不支持 | CrawloDistributedAdapter |
 
@@ -357,41 +343,10 @@ class TaskStateStore(Protocol):
 
 ### 5.2 Executor Protocol（执行器契约）
 
-```python
-class Executor(Protocol):
-    """所有执行器必须实现的契约。编译期检查。"""
-
-    @property
-    def mode(self) -> DeployMode: ...
-
-    async def execute_task(self, task: TaskInstance) -> None:
-        """启动任务（异步，立即返回）。状态变更走 TaskStateStore。"""
-
-    def get_task_status(self, task_id: int) -> TaskStatus:
-        """同步查询任务当前状态（从 TaskStateStore 读）。"""
-
-    def get_task_logs(self, task_id: int, tail: int = 200) -> list[LogEntry]:
-        """获取日志。统一返回 LogEntry 列表。"""
-
-    async def stop_task(self, task_id: int, force: bool = False) -> None:
-        """停止任务。force=True 时强制 kill。"""
-
-
-class PausableExecutor(Executor, Protocol):
-    """可选：支持暂停/恢复的执行器。"""
-
-    async def pause_task(self, task_id: int) -> None: ...
-    async def resume_task(self, task_id: int) -> None: ...
-```
-
-**适配情况**：
-
-| 执行器 | execute | status | logs | stop | pause |
-|---|---|---|---|---|---|
-| LocalExecutor | ✓ | ✓ | ✓ | ✓ | ✓（进程组 SIGSTOP） |
-| SshExecutor | ✓ | ✓ | ✓ | ✓ | ✗ |
-| DockerExecutor | ✓ | ✓ | ✓ | ✓ | ✗ |
-| AgentExecutor | ✓（push 模式） | ✓ | ✓ | ✓ | ✗ |
+> Executor Protocol 已在 V1 完整定义并实现（四个执行器均适配）。
+>
+> **V2 新增点**：执行器状态变更统一改经 `TaskStateStore.transition`（见 §5.1），
+> 并将 `CrawloDistributedAdapter` 作为 Agent 执行器的 V2 扩展接入三种部署模式。
 
 ### 5.3 CrawloDistributedAdapter（新增 · 核心模块）
 
@@ -770,7 +725,9 @@ POST   /api/v1/tasks  # 新增 distribution_mode / shared_redis_url / worker_cou
 
 ### 8.2 修改 API
 
-**Agent 鉴权统一改 Bearer**：
+> 以下能力已在 V1 实现，V2 在其基础上扩展。
+
+**Agent 鉴权**（V1 已实现纯 Bearer，query token 已彻底移除）：
 
 ```diff
 - GET /api/v1/nodes/agent/tasks?node_id=1&token=xxx
@@ -778,14 +735,14 @@ POST   /api/v1/tasks  # 新增 distribution_mode / shared_redis_url / worker_cou
 + Authorization: Bearer xxx
 ```
 
-**Agent 长轮询**：
+**Agent 长轮询**（V1 已实现 `long_poll=1`，V2 保持兼容）：
 
 ```diff
 - GET /api/v1/nodes/agent/tasks  # 立即返回，5s 后再请求
-+ GET /api/v1/nodes/agent/tasks?wait=30  # hold 30s，有任务立即返回
++ GET /api/v1/nodes/agent/tasks?long_poll=1  # hold 最多 25s，有任务立即返回
 ```
 
-**日志查询增强**：
+**日志查询增强**（V1 已实现 `level` / `since` 参数，V2 增加 Loki 聚合）：
 
 ```diff
 - GET /api/v1/tasks/{id}/logs
@@ -794,44 +751,35 @@ POST   /api/v1/tasks  # 新增 distribution_mode / shared_redis_url / worker_cou
 
 ### 8.3 废弃 API
 
-```
-# V2 仍保留但标记 deprecated，V3 移除
-GET /api/v1/nodes/agent/tasks?wait=0  # 立即返回模式（兼容 V1 Agent）
-```
+V1 已完成的清理：
+- query token 传递已彻底移除（agent 端已全部升级 Bearer）
 
 ---
 
 ## 九、演进路线
 
-### Phase 1：止血修复（2 周，无架构变更）
+### Phase 1：止血修复（V1 已完成）
 
-**目标**：让 V1 能安全上生产。
-
-| 任务 | 工作量 | 优先级 |
-|---|---|---|
-| 删除 task_executor.py 死代码 | 0.5h | P0 |
-| SECRET_KEY 拆分 + 启动校验 | 1h | P0 |
-| Agent token 改 Bearer header | 2h | P0 |
-| tar 路径穿越修复 | 1h | P0 |
-| SSH 命令注入 + host key | 4h | P0 |
-| CRAWLO_WHEEL_PATH 默认改 None | 0.5h | P0 |
-
-**交付**：V1.1 安全版本。
+> 以下已在 V1 交付：删除 task_executor.py 死代码、SECRET_KEY 拆分 + 启动校验（强制双密钥分离）、
+> Agent token 改 Bearer header（彻底移除 query token）、tar 路径穿越修复、
+> SSH 命令注入 + host key TOFU、CRAWLO_WHEEL_PATH 默认 None。
+> 详见 [design-philosophy.md](design-philosophy.md)。
 
 ### Phase 2：架构收敛（1-2 个月）
 
 **目标**：解决状态散落 + 单实例约束 + Crawlo 分布式调度。
 
+> V1 已交付基础：Executor Protocol 定义与 4 执行器适配、Agent 长轮询、Agent 任务领取/终态的状态原子更新（DB 条件 UPDATE）、迁移历史清理。
+
+**V2 待办**：
+
 | 任务 | 工作量 | 依赖 |
 |---|---|---|
 | 引入 Redis 基础设施 | 2h | - |
 | 实现 TaskStateStore | 16h | Redis |
-| 定义 Executor Protocol + 适配 4 执行器 | 24h | TaskStateStore |
 | **实现 CrawloDistributedAdapter** | 24h | TaskStateStore |
-| Agent 改长轮询（hold 30s） | 8h | - |
 | 调度器拆分 + DB 锁 | 16h | - |
-| 状态更新改 DB 条件 UPDATE | 8h | TaskStateStore |
-| 迁移历史清理 | 8h | - |
+| 全量状态写入收敛到 TaskStateStore（覆盖 Local/SSH/Docker 执行器） | 16h | TaskStateStore |
 
 **交付**：V2.0，多实例可部署，支持三种 Crawlo 分布式模式。
 

@@ -41,22 +41,22 @@ CrawloPilot 是 Crawlo 爬虫框架的管理部署平台，支持本地 / SSH / 
 ┌─────────────────────────────────────────────────┐
 │                  Web UI (Vue3)                    │
 ├─────────────────────────────────────────────────┤
-│               API Gateway (Nginx)                │
+│          FastAPI 控制面（Uvicorn :18000）         │
 ├──────────┬──────────┬──────────┬────────────────┤
 │ 项目管理  │ 任务调度  │ 运行监控  │   用户权限    │
 │  Service │  Service │  Service │   Service      │
 ├──────────┴──────────┴──────────┴────────────────┤
 │  MySQL (元数据)   │   uploads/ (项目代码/任务日志)  │
 ├──────────────────┴───────────────────────────────┤
-│           Docker Engine / API                     │
-├─────────────────────────────────────────────────┤
-│   Worker Node 1  │  Worker Node 2  │  Node N    │
-│  ┌────────────┐  │  ┌────────────┐  │            │
-│  │ Container  │  │  │ Container  │  │            │
-│  │ (Spider)   │  │  │ (Spider)   │  │            │
-│  └────────────┘  │  └────────────┘  │            │
-└─────────────────────────────────────────────────┘
+│           四种执行器（按 deploy_mode 分发）        │
+├──────────┬──────────┬──────────┬────────────────┤
+│  Local   │   SSH    │  Docker  │    Agent       │
+│ (子进程) │ (远程)   │ (容器)   │  (反向注册)    │
+└──────────┴──────────┴──────────┴────────────────┘
 ```
+
+> **注意**：V1 实际架构与上述产品愿景图不同——无 Nginx 网关、无 Worker 池。
+> 实际架构见 [design-philosophy.md](design-philosophy.md) 的 mermaid 图。
 
 ### 2.2 技术选型
 
@@ -69,9 +69,9 @@ CrawloPilot 是 Crawlo 爬虫框架的管理部署平台，支持本地 / SSH / 
 | 容器编排 | Docker Engine API | 容器生命周期管理 |
 | 实时推送 | WebSocket | 任务状态与日志实时推送 |
 | 元数据库 | MySQL 8.0 | 项目/任务/用户元数据 |
-| 对象存储 | MinIO / 阿里云 OSS（可选） | 项目包、日志文件 |
-| 监控 | Prometheus + Grafana | 指标采集与可视化 |
-| 日志 | ELK (Elasticsearch + Logstash + Kibana) | 日志聚合检索 |
+| 对象存储 | 本地文件系统（uploads/） | 项目代码、任务日志 |
+| 监控 | Prometheus（/metrics 端点） | V1 仅暴露指标端点，Grafana V2 |
+| 日志 | 本地文件 + WebSocket 推送 | V1 无 ELK，日志过滤见 design-philosophy.md |
 
 ---
 
@@ -79,16 +79,18 @@ CrawloPilot 是 Crawlo 爬虫框架的管理部署平台，支持本地 / SSH / 
 
 ### 3.1 项目部署管理
 
+> **注意**：以下为产品愿景设计。V1 实际交付以 [remaining-work.md](remaining-work.md) 为准。
+
 #### 3.1.1 项目管理
 
-| 功能 | 说明 |
-|------|------|
-| 项目注册 | 上传项目包（zip/tar.gz）或关联 Git 仓库 |
-| 版本管理 | 多版本共存，支持回滚 |
-| 配置管理 | 可视化编辑 settings.py，环境变量覆盖 |
-| 一键部署 | 选择版本 + 节点 + 配置，一键部署容器 |
-| 灰度发布 | 按比例/按节点逐步切换新版本 |
-| 项目克隆 | 基于已有项目快速创建新项目 |
+| 功能 | 说明 | V1 状态 |
+|------|------|---------|
+| 项目注册 | 上传项目包（zip/tar.gz）或关联 Git 仓库 | ✅ 已实现 |
+| 版本管理 | 多版本共存，支持回滚 | ✅ 已实现 |
+| 配置管理 | 可视化编辑 settings.py，环境变量覆盖 | ⚠️ 基础形态 |
+| 一键部署 | 选择版本 + 节点 + 配置，一键部署容器 | ✅ 四种执行器 |
+| 灰度发布 | 按比例/按节点逐步切换新版本 | ❌ V2 规划 |
+| 项目克隆 | 基于已有项目快速创建新项目 | ❌ V2 规划 |
 
 #### 3.1.2 项目包结构规范
 
@@ -108,91 +110,79 @@ project_name/
 
 #### 3.1.3 部署流程
 
-```
-上传项目包 → 解析项目结构 → 校验配置 → 构建 Docker 镜像
-→ 推送镜像仓库 → 分配节点 → 创建容器 → 健康检查 → 部署完成
-```
+> V1 实际流程（四种执行器）：创建任务 → 按 `deploy_mode` 分发 → Local/SSH/Docker/Agent 执行 → 状态回写。
 
 #### 3.1.4 部署策略
 
-| 策略 | 说明 |
-|------|------|
-| 全量部署 | 所有节点同时更新 |
-| 滚动部署 | 逐个节点更新，零停机 |
-| 灰度部署 | 先部署到部分节点，验证后全量 |
-| 蓝绿部署 | 两套环境切换 |
+> ❌ V2 规划。V1 通过四种执行器模式实现不同部署方式，见 [design-philosophy.md](design-philosophy.md)。
+
+| 策略 | 说明 | V1 状态 |
+|------|------|---------|
+| 全量部署 | 所有节点同时更新 | ❌ |
+| 滚动部署 | 逐个节点更新，零停机 | ❌ |
+| 灰度部署 | 先部署到部分节点，验证后全量 | ❌ |
+| 蓝绿部署 | 两套环境切换 | ❌ |
 
 ### 3.2 任务调度管理
 
+> V1 已实现：cron / interval / once 三种触发方式（进程内 APScheduler），见 [designs/scheduling.md](designs/scheduling.md)。
+
 #### 3.2.1 调度类型
 
-| 类型 | 说明 | 示例 |
-|------|------|------|
-| Cron 定时 | Cron 表达式调度 | `0 8 * * *` 每天8点 |
-| 间隔调度 | 固定间隔执行 | 每30分钟一次 |
-| 一次性任务 | 手动触发，执行一次 | 立即运行 |
-| 依赖调度 | 上游任务完成后触发 | 数据采集完成后触发清洗 |
-| 事件驱动 | 外部事件触发 | Kafka 消息到达后触发 |
+| 类型 | 说明 | 示例 | V1 状态 |
+|------|------|------|---------|
+| Cron 定时 | Cron 表达式调度 | `0 8 * * *` 每天8点 | ✅ 已实现 |
+| 间隔调度 | 固定间隔执行 | 每30分钟一次 | ✅ 已实现 |
+| 一次性任务 | 手动触发，执行一次 | 立即运行 | ✅ 已实现 |
+| 依赖调度 | 上游任务完成后触发 | 数据采集完成后触发清洗 | ❌ V3 规划 |
+| 事件驱动 | 外部事件触发 | Kafka 消息到达后触发 | ❌ V3 规划 |
 
 #### 3.2.2 调度策略
 
-| 策略 | 说明 |
-|------|------|
-| 并发控制 | 同一项目最大并发实例数 |
-| 优先级队列 | 高/中/低优先级，抢占式调度 |
-| 超时控制 | 单次执行最大时长，超时自动终止 |
-| 重试策略 | 失败后自动重试，指数退避 |
-| 依赖管理 | DAG 依赖图，上游失败下游不执行 |
-| 资源限制 | CPU/内存配额，防止资源争抢 |
+| 策略 | 说明 | V1 状态 |
+|------|------|---------|
+| 并发控制 | 同一项目最大并发实例数 | ✅ 已实现（并发守卫） |
+| 优先级队列 | 高/中/低优先级，抢占式调度 | ❌ V3 规划 |
+| 超时控制 | 单次执行最大时长，超时自动终止 | ⚠️ 基础形态 |
+| 重试策略 | 失败后自动重试，指数退避 | ⚠️ 手动重试 |
+| 依赖管理 | DAG 依赖图，上游失败下游不执行 | ❌ V3 规划 |
+| 资源限制 | CPU/内存配额，防止资源争抢 | ⚠️ Docker 模式支持 |
 
 #### 3.2.3 DAG 依赖调度
 
-```
-[股票列表采集] → [财务数据采集] → [数据清洗] → [数据入库]
-                        ↓
-                  [公告文件下载] → [文件解析]
-```
+> ❌ V3 规划。V1 不支持 DAG 依赖调度。
 
 ### 3.3 运行监控告警
 
+> ⚠️ V1 仅基础形态：健康检查 + 基础 dashboard + 实时日志。告警/ELK/Grafana 为 V2 规划。
+
 #### 3.3.1 实时监控
 
-| 指标 | 说明 |
-|------|------|
-| 运行状态 | 运行中/已停止/异常/等待中 |
-| 下载速率 | 请求/秒 |
-| 成功率 | 成功请求/总请求 |
-| 队列深度 | 待处理请求数 |
-| 资源占用 | CPU/内存/网络 IO |
-| 数据吞吐 | 条/秒 |
+| 指标 | 说明 | V1 状态 |
+|------|------|---------|
+| 运行状态 | 运行中/已停止/异常/等待中 | ✅ 已实现 |
+| 下载速率 | 请求/秒 | ❌ V2 |
+| 成功率 | 成功请求/总请求 | ❌ V2 |
+| 队列深度 | 待处理请求数 | ❌ V2 |
+| 资源占用 | CPU/内存/网络 IO | ❌ V2 |
+| 数据吞吐 | 条/秒 | ❌ V2 |
 
 #### 3.3.2 日志管理
 
-| 功能 | 说明 |
-|------|------|
-| 实时日志 | WebSocket 推送容器日志流 |
-| 日志检索 | ELK 全文检索，支持关键词/时间/级别过滤 |
-| 日志下载 | 按任务实例下载日志文件 |
-| 日志归档 | 超期日志自动归档/清理 |
+| 功能 | 说明 | V1 状态 |
+|------|------|---------|
+| 实时日志 | WebSocket 推送日志流 | ✅ 已实现 |
+| 日志检索 | 关键词/时间/级别过滤 | ✅ 已实现（本地文件） |
+| 日志下载 | 按任务实例下载日志文件 | ⚠️ 基础形态 |
+| 日志归档 | 超期日志自动清理 | ✅ 30 天自动清理 |
 
 #### 3.3.3 告警规则
 
-| 规则类型 | 示例 |
-|----------|------|
-| 状态告警 | 爬虫异常退出 |
-| 阈值告警 | 成功率 < 80% |
-| 超时告警 | 执行时间超过阈值 |
-| 资源告警 | 内存使用 > 90% |
-| 数据告警 | 数据量同比/环比异常 |
+> ❌ V2 规划。V1 无告警引擎。
 
 #### 3.3.4 告警通道
 
-| 通道 | 说明 |
-|------|------|
-| 钉钉/飞书 | Webhook 推送（框架已内置） |
-| 邮件 | SMTP 发送 |
-| 短信 | 阿里云 SMS |
-| Webhook | 自定义 HTTP 回调 |
+> ❌ V2 规划。
 
 ### ~~3.4 数据质量管理~~（2026-08-07 取消）
 
@@ -249,6 +239,8 @@ project_name/
 
 ### 3.6 代理池管理
 
+> ❌ V2 规划。V1 未实现。
+
 #### 3.6.1 代理管理
 
 | 功能 | 说明 |
@@ -270,6 +262,8 @@ project_name/
 
 ### 3.7 API 接口管理
 
+> ❌ V2 规划。V1 未实现。
+
 #### 3.7.1 API 管理
 
 | 功能 | 说明 |
@@ -282,6 +276,8 @@ project_name/
 
 ### 3.8 数据导出管理
 
+> ❌ V2 规划。V1 未实现。
+
 | 功能 | 说明 |
 |------|------|
 | 导出格式 | CSV/Excel/JSON/Parquet |
@@ -290,6 +286,8 @@ project_name/
 | 自动清理 | 导出文件定期清理 |
 
 ### 3.9 操作审计
+
+> ❌ V2 规划。V1 未实现。
 
 | 功能 | 说明 |
 |------|------|
@@ -317,6 +315,9 @@ Spider ──1:N──> DataQualityReport
 ```
 
 ### 4.2 核心表结构
+
+> **注意**：以下为产品设计稿中的表结构，部分表（alert_rule/proxy_pool/api_config/audit_log）在 V1 模型代码中不存在，DDL 定义保留在 alembic 迁移历史中，V2 可恢复。
+> 实际模型以 `backend/app/models/__init__.py` 为准。
 
 **project（项目表）**
 | 字段 | 类型 | 说明 |
@@ -437,88 +438,59 @@ Spider ──1:N──> DataQualityReport
 ### 5.1 API 规范
 
 - RESTful 风格
-- 统一响应格式：`{"code": 0, "message": "ok", "data": {}}`
-- 分页参数：`page`, `page_size`
-- 认证方式：JWT Token
+- 分页参数：`skip` / `limit`（V1 实际使用）
+- 认证方式：JWT Token（Bearer header）
+- 完整 API 文档见各模块文档：[modules/](modules/)
 
 ### 5.2 核心 API 列表
 
+> **注意**：以下为产品愿景设计稿中的 API 规划，实际 V1 实现路径有差异。
+> 各模块实际 API 以 [modules/](modules/) 目录下的文档和代码为准。
+
 **项目管理**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/v1/projects | 项目列表 |
-| POST | /api/v1/projects | 创建项目 |
-| GET | /api/v1/projects/{id} | 项目详情 |
-| PUT | /api/v1/projects/{id} | 更新项目 |
-| DELETE | /api/v1/projects/{id} | 删除项目 |
-| POST | /api/v1/projects/{id}/versions | 上传新版本 |
-| POST | /api/v1/projects/{id}/deploy | 部署项目 |
+| 方法 | 路径（设计稿） | 实际 V1 路径 | 说明 |
+|------|------|------|------|
+| GET | /api/v1/projects | /api/v1/projects | ✅ 项目列表 |
+| POST | /api/v1/projects | /api/v1/projects | ✅ 创建项目 |
+| GET | /api/v1/projects/{id} | /api/v1/projects/{id} | ✅ 项目详情 |
+| PUT | /api/v1/projects/{id} | /api/v1/projects/{id} | ✅ 更新项目 |
+| DELETE | /api/v1/projects/{id} | /api/v1/projects/{id} | ✅ 删除项目 |
+| POST | /api/v1/projects/{id}/versions | /api/v1/projects/{id}/versions | ✅ 上传新版本 |
+| POST | /api/v1/projects/{id}/deploy | /api/v1/deploys | ❌ 路径不同 |
 
 **任务调度**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/v1/schedules | 调度列表 |
-| POST | /api/v1/schedules | 创建调度 |
-| PUT | /api/v1/schedules/{id} | 更新调度 |
-| POST | /api/v1/schedules/{id}/trigger | 手动触发 |
-| POST | /api/v1/schedules/{id}/pause | 暂停调度 |
-| POST | /api/v1/schedules/{id}/resume | 恢复调度 |
-| GET | /api/v1/tasks | 任务实例列表 |
-| GET | /api/v1/tasks/{id}/logs | 任务日志 |
+| 方法 | 路径（设计稿） | 实际 V1 路径 | 说明 |
+|------|------|------|------|
+| GET | /api/v1/schedules | /api/v1/schedules | ✅ 调度列表 |
+| POST | /api/v1/schedules | /api/v1/schedules | ✅ 创建调度 |
+| PUT | /api/v1/schedules/{id} | /api/v1/schedules/{id} | ✅ 更新调度 |
+| POST | /api/v1/schedules/{id}/trigger | /api/v1/schedules/{id}/run-now | ⚠️ 实际为 run-now |
+| POST | /api/v1/schedules/{id}/pause | /api/v1/schedules/{id}/disable | ⚠️ 实际为 disable |
+| POST | /api/v1/schedules/{id}/resume | /api/v1/schedules/{id}/enable | ⚠️ 实际为 enable |
+| GET | /api/v1/tasks | /api/v1/execution/tasks | ⚠️ 实际路径不同 |
+| GET | /api/v1/tasks/{id}/logs | /api/v1/execution/tasks/{id}/logs | ⚠️ 实际路径不同 |
 
 **运行监控**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/v1/monitor/overview | 全局概览 |
-| GET | /api/v1/monitor/projects/{id}/status | 项目状态 |
-| GET | /api/v1/monitor/nodes | 节点列表 |
-| GET | /api/v1/monitor/metrics | Prometheus 指标 |
-| WS | /ws/tasks/{task_id}（实际实现，无 API 前缀） | 实时日志推送 |
+| 方法 | 路径（设计稿） | 实际 V1 路径 | 说明 |
+|------|------|------|------|
+| GET | /api/v1/monitor/overview | /api/v1/monitoring/dashboard | ⚠️ 实际路径不同 |
+| GET | /api/v1/monitor/projects/{id}/status | — | ❌ 未实现 |
+| GET | /api/v1/monitor/nodes | /api/v1/nodes | ⚠️ 实际路径不同 |
+| GET | /api/v1/monitor/metrics | /metrics | ⚠️ 实际路径不同（需认证） |
+| WS | /ws/tasks/{task_id} | /ws/tasks/{task_id} | ✅ 一致 |
 
 **~~数据质量~~（2026-08-07 取消）**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| ~~GET~~ | ~~/api/v1/data-quality/reports~~ | ~~质量报告列表~~ |
-| ~~GET~~ | ~~/api/v1/data-quality/stats~~ | ~~数据统计~~ |
-| ~~POST~~ | ~~/api/v1/data-quality/check~~ | ~~触发检测~~ |
 
 **用户权限**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | /api/v1/auth/login | 登录 |
-| GET | /api/v1/users | 用户列表 |
-| POST | /api/v1/users | 创建用户 |
-| GET | /api/v1/roles | 角色列表 |
-| PUT | /api/v1/roles/{id}/permissions | 更新权限 |
+| 方法 | 路径（设计稿） | 实际 V1 路径 | 说明 |
+|------|------|------|------|
+| POST | /api/v1/auth/login | /api/v1/auth/login | ✅ 登录 |
+| GET | /api/v1/users | /api/v1/users | ✅ 用户列表 |
+| POST | /api/v1/users | /api/v1/users | ✅ 创建用户 |
+| GET | /api/v1/roles | /api/v1/users/roles | ⚠️ 实际路径不同 |
+| PUT | /api/v1/roles/{id}/permissions | — | ❌ 未实现 |
 
-**代理池**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/v1/proxies | 代理列表 |
-| POST | /api/v1/proxies | 添加代理 |
-| PUT | /api/v1/proxies/{id} | 更新代理 |
-| DELETE | /api/v1/proxies/{id} | 删除代理 |
-| POST | /api/v1/proxies/check | 批量健康检查 |
-
-**API 配置**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/v1/api-configs | API 列表 |
-| POST | /api/v1/api-configs | 创建 API 配置 |
-| PUT | /api/v1/api-configs/{id} | 更新配置 |
-| GET | /api/v1/api-configs/{id}/stats | 调用统计 |
-
-**数据导出**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | /api/v1/exports | 创建导出任务 |
-| GET | /api/v1/exports/{id}/status | 导出状态 |
-| GET | /api/v1/exports/{id}/download | 下载导出文件 |
-
-**审计日志**
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/v1/audit-logs | 审计日志列表 |
+**以下均为 V2 规划（V1 未实现）：代理池 / API 配置 / 数据导出 / 审计日志**
 
 ---
 

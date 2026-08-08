@@ -56,7 +56,7 @@ def main():
     print("=" * 60)
 
     # 1. 登录
-    status, d = http("POST", "/api/v1/auth/login", data=None) if False else _login()
+    status, d = _login()
     token = d["access_token"]
 
     # 2. 建团队项目
@@ -72,13 +72,14 @@ def main():
     })
     sid = spider["id"]
 
-    # 3. 上传代码（用 urllib multipart）
+    # 3. 上传代码（用 urllib multipart，任务有 2s 启动延迟让 WebSocket 有时间连接）
     code_zip = "/tmp/ws_spider.zip"
     with zipfile.ZipFile(code_zip, "w") as zf:
         zf.writestr("main.py",
                     "import time\n"
+                    "time.sleep(2)  # 等待 WebSocket 连接\n"
                     "print('WS_START')\n"
-                    "for i in range(3):\n"
+                    "for i in range(5):\n"
                     "    print(f'ws_item_{i}')\n"
                     "    time.sleep(0.5)\n"
                     "print('WS_DONE')\n")
@@ -98,8 +99,13 @@ def main():
         up_status = resp.status
     check("上传代码", up_status == 200, f"({up_status})")
 
-    # 4. 连接 WebSocket（先连接，再运行任务）
-    print("\n[WS] 连接 /ws/tasks/{task_id} ...")
+    # 4. 先运行任务获取 task_id，再连接 WebSocket
+    status, run = http("POST", f"/api/v1/spiders/{sid}/run", token=token, json_body={})
+    task_id = run["task_id"]
+    print(f"\n[RUN] 任务已启动 task_id={task_id}")
+
+    # 5. 立即连接 WebSocket（任务有 2s 启动延迟，足够建立连接）
+    print("[WS] 连接 /ws/tasks/{task_id} ...")
     received = []
 
     def on_message(ws, message):
@@ -113,30 +119,15 @@ def main():
     def on_open(ws):
         print("     ✅ WebSocket 已连接")
 
-    ws = websocket.WebSocketApp(f"{WS}/ws/tasks/pending_ws_test",
-                                on_message=on_message, on_open=on_open)
-    wst = threading.Thread(target=ws.run_forever, daemon=True)
-    wst.start()
-    time.sleep(1)
-
-    # 5. 运行爬虫，获得真实 task_id
-    status, run = http("POST", f"/api/v1/spiders/{sid}/run", token=token, json_body={})
-    task_id = run["task_id"]
-    print(f"\n[RUN] 任务已启动 task_id={task_id}")
-
-    # 重新用真实 task_id 连接
-    ws.close()
-    time.sleep(0.5)
-    received.clear()
-    ws2 = websocket.WebSocketApp(f"{WS}/ws/tasks/{task_id}",
+    ws = websocket.WebSocketApp(f"{WS}/ws/tasks/{task_id}?token={token}",
                                  on_message=on_message, on_open=on_open)
-    threading.Thread(target=ws2.run_forever, daemon=True).start()
+    threading.Thread(target=ws.run_forever, daemon=True).start()
     time.sleep(1)
 
     # 等待任务执行完成
-    print("\n[WAIT] 等待任务执行(3秒)...")
-    time.sleep(4)
-    ws2.close()
+    print("\n[WAIT] 等待任务执行(7秒)...")
+    time.sleep(7)
+    ws.close()
 
     # 6. 验证收到的推送内容
     print("\n[VERIFY] 验证 WebSocket 推送")

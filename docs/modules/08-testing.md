@@ -29,7 +29,7 @@ cd .. && python tests/test_deployment_flow.py
 | `tests/git_credentials_test.py` | Git 凭据体系端到端（34/34，个人凭据/团队凭据池/引用保护/脱敏） |
 | `tests/ws_push_test.py` | WebSocket 日志与状态推送验证 |
 | `tests/api_test.py` | API 全量冒烟（登录后逐接口校验） |
-| `tests/test_pagination.py` / `test_pagination_quick.py` | 分页行为专项 |
+| `tests/test_pagination.py` / `tests/test_pagination_auto.py` | 分页行为专项 |
 | `tests/integration/pages/` | 页面级联调（nodes/spiders/tasks） |
 | `tests/unit/test_01_auth.py` | 认证单测（6/6） |
 | `tests/unit/test_02_projects.py` | 项目单测（部分用例与分页/删除接口格式不匹配，待修） |

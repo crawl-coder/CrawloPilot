@@ -60,13 +60,15 @@ node.connect_type = agent  → 任务保持 PENDING，等 agent 领取
 
 ```text
 uploads/project_{id}/spider_{id}/
-├── crawlo.cfg              # 必须：指定 settings 模块
+├── crawlo.cfg              # 使用 Crawlo 框架时必需（指定 settings 模块），
+│                           # 若用 run.py 等独立脚本入口则不需要
 ├── run.py                  # 入口
 └── <package>/              # 爬虫包（spiders/ 目录）
 ```
 
-缺少 `crawlo.cfg` 时 crawler 无法定位 `SPIDER_MODULES`，运行会报
-`Spider not found in registry`。
+`crawlo.cfg` **仅在 `entry_file` 使用 `crawlo run` 时必需**（指定 `settings.py` 等配置模块）。
+若爬虫用 `run.py` 等独立脚本入口（Scrapy、Selenium 等），则无需 `crawlo.cfg`。
+参见 [design-philosophy.md](../design-philosophy.md) §1.5。
 
 ### 代码生命周期（控制面为唯一代码源）
 
