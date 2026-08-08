@@ -23,6 +23,33 @@ LOGS_DIR = Path(settings.UPLOAD_DIR) / "_task_logs"
 class AgentTaskService:
     """Agent 模式任务控制"""
 
+    async def execute_task(self, config) -> str:
+        """启动任务（契约实现）。
+
+        Agent 模式的"启动"即把任务置为 PENDING，交由节点上的 agent 拉取执行。
+        本方法为幂等操作：若任务已存在且待领取，直接返回 task_id。
+        """
+        task_id = str(getattr(config, "task_id", ""))
+        if not task_id:
+            raise ValueError("Agent execute_task 缺少 task_id")
+        db = SessionLocal()
+        try:
+            task = (
+                db.query(TaskInstance).filter(TaskInstance.id == int(task_id)).first()
+                if task_id.isdigit()
+                else None
+            )
+            if not task:
+                raise ValueError(f"任务 {task_id} 不存在")
+            # 确保任务处于 PENDING，等待节点 agent 领取
+            if task.status not in (TaskStatus.PENDING, TaskStatus.RUNNING):
+                task.status = TaskStatus.PENDING
+                db.commit()
+            logger.info(f"Agent 任务 {task_id} 已就绪，等待节点领取")
+            return task_id
+        finally:
+            db.close()
+
     def get_task_status(self, task_id: str) -> Optional[Dict]:
         db = SessionLocal()
         try:

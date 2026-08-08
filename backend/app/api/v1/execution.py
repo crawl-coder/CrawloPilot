@@ -5,7 +5,8 @@
 """
 
 import logging
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -37,6 +38,76 @@ def _is_remote_mode(task) -> bool:
         return False
     dm_val = dm.value if hasattr(dm, "value") else str(dm)
     return dm_val in ('ssh', 'docker', 'agent')
+
+
+def _filter_logs(logs: str, level: Optional[str] = None, since: Optional[str] = None) -> str:
+    """对日志文本做 level 关键词与 since 时间窗口过滤。
+
+    - level: 匹配行内级别关键词（ERROR/WARN/INFO 等，大小写不敏感）
+    - since: 仅保留最近一段时间内的行（解析行首时间戳，如 `1h`/`30m`/`1d`）
+    """
+    if not logs:
+        return logs
+    lines = logs.split('\n')
+
+    # level 关键词过滤
+    if level:
+        kw = level.strip().upper()
+        allowed = []
+        for ln in lines:
+            up = ln.upper()
+            if kw == 'ERROR' and ('ERROR' in up or ' TRACE' in up and ' Traceback' in ln):
+                allowed.append(ln)
+            elif kw == 'WARN' and ('WARN' in up or 'WARNING' in up):
+                allowed.append(ln)
+            elif kw == 'INFO' and ('INFO' in up or 'INFO' in up):
+                allowed.append(ln)
+            else:
+                allowed.append(ln) if kw not in ('ERROR', 'WARN', 'INFO') else None
+        lines = allowed
+
+    # since 时间窗口过滤（解析行首时间戳）
+    if since:
+        m = re.fullmatch(r'(\d+)([smhd])', since.strip())
+        if m:
+            num = int(m.group(1))
+            unit = m.group(2)
+            seconds = num * {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}[unit]
+            cutoff = datetime.utcnow() - timedelta(seconds=seconds)
+            kept = []
+            for ln in lines:
+                ts = _extract_log_ts(ln)
+                if ts is None or ts >= cutoff:
+                    kept.append(ln)
+            lines = kept
+
+    return '\n'.join(lines)
+
+
+def _extract_log_ts(line: str):
+    """尝试从日志行首解析时间戳，返回 datetime 或 None。
+
+    支持两种格式：`2026-08-08 12:00:00`（完整）与 `12:00:00`（仅时间，
+    视为今天的该时刻）。
+    """
+    if not line:
+        return None
+    # 完整格式：YYYY-MM-DD HH:MM:SS
+    m = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            return None
+    # 仅时间格式：HH:MM:SS（按今天处理）
+    m2 = re.match(r'^(\d{2}:\d{2}:\d{2})', line)
+    if m2:
+        try:
+            today = datetime.utcnow().date()
+            return datetime.combine(today, datetime.strptime(m2.group(1), '%H:%M:%S').time())
+        except ValueError:
+            return None
+    return None
 
 
 @router.post("/tasks", response_model=TaskResponse)
@@ -235,16 +306,23 @@ async def get_task_status(
 async def get_task_logs(
     task_id: str,
     tail: int = 100,
+    level: Optional[str] = None,
+    since: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取任务日志"""
+    """获取任务日志
+
+    - **tail**: 返回末尾 N 行（默认 100）
+    - **level**: 按级别过滤（ERROR/WARN/INFO，对日志文本做关键词匹配）
+    - **since**: 按时间过滤，如 `1h`（最近1小时）、`30m`、`1d`
+    """
     task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     logs_text = ''
-    
+
     # 有进程（本地 PID / 远程 PID / 容器 ID）时从对应执行器获取日志
     if _is_remote_mode(task):
         try:
@@ -252,7 +330,10 @@ async def get_task_logs(
             logs_text = executor.get_task_logs(task_id, tail=tail)
         except Exception as e:
             logger.warning(f"获取执行器日志失败: {e}")
-    
+
+    # 二次过滤：level 关键词 + since 时间窗口（针对本地文件日志）
+    logs_text = _filter_logs(logs_text, level=level, since=since)
+
     return TaskLogResponse(
         task_id=task_id,
         logs=logs_text,
@@ -334,8 +415,6 @@ async def get_task_stats(
     current_user: User = Depends(get_current_user)
 ):
     """获取任务统计概览"""
-    from datetime import timedelta
-
     query = db.query(TaskInstance)
     if schedule_id:
         query = query.filter(TaskInstance.schedule_id == schedule_id)

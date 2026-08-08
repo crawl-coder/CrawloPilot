@@ -24,6 +24,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, SessionLocal
@@ -84,16 +85,16 @@ def _get_node_by_token(db: Session, token: str) -> Optional[Node]:
     return db.query(Node).filter(Node.agent_token == token).first()
 
 
-def _extract_token(
-    request: Request,
-    body_token: Optional[str] = None,
-    query_token: Optional[str] = None,
-) -> Optional[str]:
-    """优先从 Authorization: Bearer header 取 token，回退 body / query（兼容旧版 agent）"""
+def _extract_token(request: Request) -> Optional[str]:
+    """仅从 Authorization: Bearer header 取 token。
+
+    不再接受 body/query 中的 token（避免 token-in-URL 泄露）。
+    旧版 agent 已全部升级为 Bearer，无兼容负担。
+    """
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:].strip()
-    return body_token or query_token
+    return None
 
 
 def _validate_agent(db: Session, node_id: int, token: str) -> Node:
@@ -152,8 +153,8 @@ async def agent_register(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Agent 注册：用令牌换取 node_id"""
-    token = _extract_token(request, body_token=data.token)
+    """Agent 注册：用令牌换取 node_id（Bearer header）"""
+    token = _extract_token(request)
     node = _get_node_by_token(db, token or "")
     if not node:
         raise HTTPException(status_code=401, detail="无效的 Agent 令牌")
@@ -197,8 +198,8 @@ async def agent_heartbeat(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Agent 心跳"""
-    token = _extract_token(request, body_token=data.token)
+    """Agent 心跳（Bearer header）"""
+    token = _extract_token(request)
     node = _validate_agent(db, data.node_id, token or "")
     node.last_heartbeat = datetime.utcnow()
     node.agent_status = "online"
@@ -219,19 +220,18 @@ async def agent_heartbeat(
 async def agent_get_tasks(
     node_id: int,
     request: Request,
-    token: Optional[str] = None,
     long_poll: int = 0,
     db: Session = Depends(get_db),
 ):
     """领取待执行任务（同一时间只给一个）
 
     long_poll=1 时长轮询：无任务时挂起最多 25 秒，减少节点空载轮询压力；
-    有任务立即返回。
+    有任务立即返回。鉴权走 Authorization: Bearer header。
     """
     import asyncio
     import time as _time
-    token = _extract_token(request, query_token=token)
-    node = _validate_agent(db, node_id, token)
+    token = _extract_token(request)
+    node = _validate_agent(db, node_id, token or "")
     wait_seconds = min(max(long_poll, 0), 25)
     deadline = _time.time() + wait_seconds
 
@@ -247,9 +247,21 @@ async def agent_get_tasks(
             .first()
         )
         if task:
-            task.status = TaskStatus.RUNNING
-            task.started_at = task.started_at or datetime.utcnow()
+            # 原子领取：用条件 UPDATE 确保只有本节点能抢占该任务，
+            # 避免多个 agent 同时读到同一 PENDING 任务导致重复执行。
+            claimed = db.execute(
+                update(TaskInstance)
+                .where(
+                    TaskInstance.id == task.id,
+                    TaskInstance.status == TaskStatus.PENDING,
+                )
+                .values(status=TaskStatus.RUNNING,
+                        started_at=task.started_at or datetime.utcnow())
+            )
             db.commit()
+            if claimed.rowcount == 0:
+                # 已被其他 agent 抢占，继续找下一个
+                continue
             return {
                 "task": {
                     "task_id": task.id,
@@ -269,12 +281,11 @@ async def agent_get_task_status(
     task_id: int,
     node_id: int,
     request: Request,
-    token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """查询任务状态（Agent 运行中轮询，检测停止标记）"""
-    token = _extract_token(request, query_token=token)
-    _validate_agent(db, node_id, token)
+    token = _extract_token(request)
+    _validate_agent(db, node_id, token or "")
     task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -290,12 +301,11 @@ async def agent_get_task_code(
     task_id: int,
     node_id: int,
     request: Request,
-    token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """下载爬虫代码包（tar.gz）"""
-    token = _extract_token(request, query_token=token)
-    _validate_agent(db, node_id, token)
+    token = _extract_token(request)
+    _validate_agent(db, node_id, token or "")
     task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
     if not task or not task.spider_id:
         raise HTTPException(status_code=404, detail="任务或爬虫不存在")
@@ -328,8 +338,8 @@ async def agent_upload_logs(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """实时上报日志（追加写入）"""
-    token = _extract_token(request, body_token=data.token)
+    """实时上报日志（追加写入，Bearer header）"""
+    token = _extract_token(request)
     _validate_agent(db, data.node_id, token or "")
     _append_task_logs(task_id, data.logs)
     return {"ok": True}
@@ -342,8 +352,8 @@ async def agent_report_task(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """回报任务终态"""
-    token = _extract_token(request, body_token=data.token)
+    """回报任务终态（Bearer header）"""
+    token = _extract_token(request)
     _validate_agent(db, data.node_id, token or "")
     task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
     if not task:
@@ -354,22 +364,28 @@ async def agent_report_task(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"无效的任务状态: {data.status}")
 
-    task.status = status
-    task.finished_at = datetime.utcnow()
-    task.pages_crawled = data.pages_crawled or 0
-    task.items_scraped = data.items_scraped or 0
-    task.errors_count = data.errors_count or 0
-    task.deploy_mode = DeployMode.AGENT
-    if data.error_message:
-        task.error_message = data.error_message
-    if task.started_at:
-        task.duration = (task.finished_at - task.started_at).total_seconds()
-    db.commit()
+    # 终态原子更新：若任务已被取消/超时等进入终态，不覆盖（防 stop 后 agent 回报改写）
+    from app.services.task_updater import update_task_completion
+    updated = update_task_completion(
+        task_id,
+        status=status,
+        finished_at=datetime.utcnow(),
+        pages_crawled=data.pages_crawled or 0,
+        items_scraped=data.items_scraped or 0,
+        errors_count=data.errors_count or 0,
+        error_message=data.error_message,
+        deploy_mode="agent",
+        logs=data.logs,
+        log_dir=LOGS_DIR,
+    )
 
-    if data.logs:
-        _write_task_logs(task_id, data.logs)
+    if not updated:
+        logger.info(f"Agent 回报任务 {task_id} 终态 {status.value}，但任务已是终态，已忽略")
 
-    _update_spider_stats(db, task, status)
+    # 统计回写（仅当任务确实进入终态时）
+    task = db.query(TaskInstance).filter(TaskInstance.id == task_id).first()
+    if task:
+        _update_spider_stats(db, task, task.status if hasattr(task.status, "value") else TaskStatus(task.status))
     logger.info(
         f"Agent 任务 {task_id} 完成: {status.value}, "
         f"pages={task.pages_crawled}, items={task.items_scraped}, duration={task.duration}s"
