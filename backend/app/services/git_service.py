@@ -104,6 +104,14 @@ class GitService:
                 return cred_url, {}, None
 
         if spider.git_auth_type == "ssh" and spider.git_ssh_key:
+            # 将 https/http URL 自动转为 scp 风格 SSH URL（git@host:path），
+            # 否则 git 对 https URL 不会使用 GIT_SSH_COMMAND，仍走匿名 https
+            parsed = urlparse(clean_url)
+            if parsed.scheme in ("http", "https") and parsed.hostname:
+                ssh_path = parsed.path.lstrip("/")
+                clean_url = f"git@{parsed.hostname}:{ssh_path}"
+                if not clean_url.endswith(".git"):
+                    clean_url += ".git"
             fd, key_path = tempfile.mkstemp(prefix="crawlo_git_key_")
             os.close(fd)
             askpass_path = None
