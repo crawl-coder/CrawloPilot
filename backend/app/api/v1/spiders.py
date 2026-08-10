@@ -57,8 +57,13 @@ async def list_spiders(
     # 获取总数
     total = query.count()
     
-    # 获取分页数据
-    spiders = query.offset(skip).limit(limit).all()
+    # 获取分页数据（按创建时间倒序，最新在前）
+    spiders = (
+        query.order_by(Spider.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     
     return {
         "total": total,
