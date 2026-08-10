@@ -30,4 +30,4 @@ async def list_teams(
     current_user: User = Depends(get_current_user)
 ):
     """获取团队列表"""
-    return db.query(Team).order_by(Team.id).all()
+    return db.query(Team).order_by(Team.created_at.desc()).all()

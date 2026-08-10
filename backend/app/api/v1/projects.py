@@ -22,7 +22,12 @@ def list_projects(
     skip, limit = clamp_pagination(skip, limit, default_limit=20)
     query = db.query(Project).filter(Project.status != ProjectStatus.DELETED)
     total = query.count()
-    projects = query.offset(skip).limit(limit).all()
+    projects = (
+        query.order_by(Project.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return {
         "total": total,
         "items": projects,

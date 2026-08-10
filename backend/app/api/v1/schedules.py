@@ -222,7 +222,13 @@ async def list_schedules(
         query = query.filter(Schedule.spider_id == spider_id)
     if enabled is not None:
         query = query.filter(Schedule.enabled == enabled)
-    return [_serialize(s) for s in query.order_by(Schedule.id.desc()).offset(skip).limit(limit).all()]
+    return [
+        _serialize(s)
+        for s in query.order_by(Schedule.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    ]
 
 
 @router.get("/preview")

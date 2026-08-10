@@ -69,7 +69,12 @@ class ServerService:
                 (Server.name.like(kw)) | (Server.host.like(kw))
             )
         total = query.count()
-        servers = query.order_by(Server.id.desc()).offset(skip).limit(limit).all()
+        servers = (
+            query.order_by(Server.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
         return servers, total
 
     def update_server(

@@ -56,7 +56,7 @@ async def list_git_credentials(
     query = db.query(GitCredential)
     if not include_inactive:
         query = query.filter(GitCredential.is_active == True)  # noqa: E712
-    return [_to_out(c) for c in query.order_by(GitCredential.id).all()]
+    return [_to_out(c) for c in query.order_by(GitCredential.created_at.desc()).all()]
 
 
 @router.post("", response_model=GitCredentialOut, status_code=status.HTTP_201_CREATED)

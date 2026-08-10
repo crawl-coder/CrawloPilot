@@ -52,7 +52,12 @@ async def list_users(
         query = query.filter(User.roles.any(Role.id == role_id))
     
     total = query.count()
-    users = query.offset(skip).limit(limit).all()
+    users = (
+        query.order_by(User.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return {"total": total, "items": users, "skip": skip, "limit": limit}
 
 
