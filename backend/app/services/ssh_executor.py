@@ -92,6 +92,9 @@ class SshConnection:
         self.key = key
         self._client: Optional[SSHClient] = None
         self._lock = Lock()
+        # 命令锁：paramiko 同一连接并发开 channel 会排队超时
+        # （"Timeout opening channel"），串行化所有远程命令
+        self._cmd_lock = Lock()
 
     def connect(self) -> SSHClient:
         """建立 SSH 连接"""
@@ -141,6 +144,9 @@ class SshConnection:
                 connect_kwargs['look_for_keys'] = True
 
             self._client.connect(**connect_kwargs)
+            # 连接保活：防止空闲连接被服务端断开导致间歇性 channel 超时
+            if self._client.get_transport():
+                self._client.get_transport().set_keepalive(30)
             # 首次连接：持久化 host key，供后续严格校验
             try:
                 SSH_KNOWN_HOSTS.parent.mkdir(parents=True, exist_ok=True)
@@ -159,23 +165,45 @@ class SshConnection:
         Returns:
             (stdout, stderr, exit_code)
         """
-        client = self.connect()
-        stdin, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=get_pty)
-        exit_code = stdout.channel.recv_exit_status()
-        # 注意：不能用 stdout.read()——它阻塞到通道关闭；远程命令若含后台驻留进程
-        # （setsid nohup ... &），部分 sshd 会保持通道不关闭导致 read() 超时。
-        # SSH 协议保证 exit-status 之前所有 stdout/stderr 数据已按序到达，
-        # 因此 recv_exit_status 返回后直接排空缓冲即可。
-        chan = stdout.channel
-        out_chunks = []
-        while chan.recv_ready():
-            out_chunks.append(chan.recv(65536))
-        err_chunks = []
-        while chan.recv_stderr_ready():
-            err_chunks.append(chan.recv_stderr(65536))
-        out = b"".join(out_chunks).decode('utf-8', errors='replace').strip()
-        err = b"".join(err_chunks).decode('utf-8', errors='replace').strip()
-        return out, err, exit_code
+        # 串行化远程命令，避免并发 channel 竞争超时
+        if not self._cmd_lock.acquire(timeout=timeout + 10):
+            raise TimeoutError("等待 SSH 命令锁超时")
+        try:
+            return self._exec_command_locked(command, timeout, get_pty)
+        finally:
+            self._cmd_lock.release()
+
+    def _exec_command_locked(self, command: str, timeout: int, get_pty: bool) -> tuple:
+        # 断连自动重连一次：连接可能被服务端静默断开（空闲超时），
+        # 首次失败时重建连接再试，避免偶发 "Timeout opening channel"
+        for attempt in range(2):
+            try:
+                client = self.connect()
+                stdin, stdout, stderr = client.exec_command(
+                    command, timeout=timeout, get_pty=get_pty
+                )
+                exit_code = stdout.channel.recv_exit_status()
+                # 注意：不能用 stdout.read()——它阻塞到通道关闭；远程命令若含后台驻留进程
+                # （setsid nohup ... &），部分 sshd 会保持通道不关闭导致 read() 超时。
+                # SSH 协议保证 exit-status 之前所有 stdout/stderr 数据已按序到达，
+                # 因此 recv_exit_status 返回后直接排空缓冲即可。
+                chan = stdout.channel
+                out_chunks = []
+                while chan.recv_ready():
+                    out_chunks.append(chan.recv(65536))
+                err_chunks = []
+                while chan.recv_stderr_ready():
+                    err_chunks.append(chan.recv_stderr(65536))
+                out = b"".join(out_chunks).decode('utf-8', errors='replace').strip()
+                err = b"".join(err_chunks).decode('utf-8', errors='replace').strip()
+                return out, err, exit_code
+            except (EOFError, OSError, paramiko.SSHException) as e:
+                if attempt == 1:
+                    raise
+                logger.warning(
+                    f"SSH 执行命令失败（尝试重连）: {e}"
+                )
+                self._client = None  # 强制下次 connect 重建连接
 
     def upload_dir(self, local_dir: str, remote_dir: str) -> bool:
         """
@@ -590,23 +618,54 @@ class SshSpiderProcess:
             try:
                 # 先尝试优雅停止
                 logger.info(f"[{self.task_id}] 停止远程进程 PID={self.remote_pid}")
-                self.ssh.exec_command(f"kill {_q(str(self.remote_pid))}", timeout=5)
+                try:
+                    self.ssh.exec_command(f"kill {_q(str(self.remote_pid))}", timeout=5)
+                except Exception as e:
+                    logger.warning(f"[{self.task_id}] kill 失败，将直接强制终止: {e}")
 
                 # 等待进程结束
                 import time
                 for _ in range(timeout):
-                    alive, _, _ = self.ssh.exec_command(
-                        f"kill -0 {_q(str(self.remote_pid))} 2>/dev/null && echo alive || echo dead"
-                    )
+                    try:
+                        alive, _, _ = self.ssh.exec_command(
+                            f"kill -0 {_q(str(self.remote_pid))} 2>/dev/null && echo alive || echo dead"
+                        )
+                    except Exception:
+                        alive = "alive"  # 连接异常按存活处理，进入强制终止
                     if 'dead' in alive:
                         break
                     time.sleep(1)
                 else:
                     # 超时强制杀死
                     logger.warning(f"[{self.task_id}] 进程未响应，强制终止")
-                    self.ssh.exec_command(
-                        f"kill -9 {_q(str(self.remote_pid))}", timeout=5
+                    try:
+                        self.ssh.exec_command(
+                            f"kill -9 {_q(str(self.remote_pid))}", timeout=5
+                        )
+                    except Exception as e:
+                        logger.error(f"[{self.task_id}] kill -9 失败: {e}")
+
+                # kill -9 后最终确认：仍存活则记录告警（进程可能已无法访问，
+                # 由外层 DB 兜底清理重试）
+                try:
+                    alive, _, _ = self.ssh.exec_command(
+                        f"kill -0 {_q(str(self.remote_pid))} 2>/dev/null && echo alive || echo dead"
                     )
+                    if 'alive' in alive:
+                        logger.warning(f"[{self.task_id}] 强制终止后进程仍存活")
+                except Exception as e:
+                    logger.warning(f"[{self.task_id}] 停止后确认进程状态失败: {e}")
+
+                # 按 workspace 清理同会话残留子进程（setsid bash 派生的
+                # venv python 等），避免孤儿进程继续占用资源
+                if self.workspace:
+                    try:
+                        self.ssh.exec_command(
+                            f"pkill -9 -f {_q(self.workspace)} 2>/dev/null; echo done",
+                            timeout=10,
+                        )
+                    except Exception as e:
+                        logger.warning(f"[{self.task_id}] pkill 残留进程失败: {e}")
 
                 self.status = TaskStatus.CANCELLED
                 self.finished_at = datetime.utcnow()
@@ -918,30 +977,108 @@ class SshExecutor:
         logger.debug(f"[{task_id}] 已从活动任务中清理")
 
     async def stop_task(self, task_id: str) -> bool:
-        """停止 SSH 远程任务"""
-        process = self.active_tasks.get(task_id)
-        if not process:
-            logger.warning(f"未找到远程任务: {task_id}")
-            return False
+        """停止 SSH 远程任务
 
-        success = process.stop()
+        先尝试 active_tasks 中的进程句柄；若句柄丢失（如后端重启后
+        active_tasks 为空），从 DB 读取节点凭据重建连接兜底清理，
+        确保取消后远程进程必死、工作目录被清理，不留孤儿进程。
+        """
+        process = self.active_tasks.get(task_id)
+        success = process.stop() if process else False
+        if not success:
+            logger.warning(f"active_tasks 未找到远程任务 {task_id}，尝试 DB 兜底清理")
+            success = self._force_kill_remote(task_id)
         if success:
-            process.parse_metrics_from_logs()
+            if process:
+                process.parse_metrics_from_logs()
             self._update_task_completion(
                 task_id,
                 TaskStatus.CANCELLED,
-                process.finished_at or datetime.utcnow(),
-                process.pages_crawled,
-                process.items_scraped,
-                process.errors_count
+                datetime.utcnow(),
+                process.pages_crawled if process else 0,
+                process.items_scraped if process else 0,
+                process.errors_count if process else 0,
             )
-            Thread(
-                target=self._delayed_cleanup,
-                args=(task_id,),
-                daemon=True
-            ).start()
+            if process:
+                Thread(
+                    target=self._delayed_cleanup,
+                    args=(task_id,),
+                    daemon=True
+                ).start()
 
         return success
+
+    def _force_kill_remote(self, task_id: str) -> bool:
+        """DB 兜底：后端重启/句柄丢失时，从 DB 重建连接杀远程进程并清理目录"""
+        db = SessionLocal()
+        try:
+            task = db.query(TaskInstance).filter(TaskInstance.id == int(task_id)).first()
+            if not task or task.deploy_mode != "ssh":
+                logger.warning(f"[{task_id}] DB 兜底：任务不存在或非 SSH 模式")
+                return False
+            node = db.query(Node).filter(Node.id == task.node_id).first()
+            if not node:
+                logger.warning(f"[{task_id}] DB 兜底：节点不存在 node_id={task.node_id}")
+                return False
+
+            from app.services.node_service import decrypt_node_credential
+            ssh = SshConnection(
+                host=node.ssh_host or node.host,
+                port=node.ssh_port or 22,
+                user=node.ssh_user or "root",
+                password=decrypt_node_credential(node.ssh_pwd),
+                key=decrypt_node_credential(node.ssh_key),
+            )
+            pid = task.process_id
+            workspace = task.workspace
+            killed = False
+            if pid:
+                # 先优雅 kill，等待 2s，未死则 kill -9
+                try:
+                    ssh.exec_command(f"kill {_q(str(pid))}", timeout=5)
+                except Exception:
+                    pass
+                import time as _time
+                _time.sleep(2)
+                try:
+                    alive, _, _ = ssh.exec_command(
+                        f"kill -0 {_q(str(pid))} 2>/dev/null && echo alive || echo dead",
+                        timeout=5,
+                    )
+                except Exception:
+                    alive = "alive"
+                if "alive" in alive:
+                    try:
+                        ssh.exec_command(f"kill -9 {_q(str(pid))}", timeout=5)
+                        logger.info(f"[{task_id}] DB 兜底 kill -9 远程进程 {pid}")
+                    except Exception as e:
+                        logger.error(f"[{task_id}] DB 兜底 kill -9 失败: {e}")
+                killed = True
+            # 兜底：按 workspace 匹配杀掉同会话残留子进程（setsid bash 派生的
+            # venv python 等），确保取消后不留孤儿进程
+            if workspace:
+                try:
+                    out, _, _ = ssh.exec_command(
+                        f"pkill -9 -f {_q(workspace)} 2>/dev/null; echo done",
+                        timeout=10,
+                    )
+                    logger.info(f"[{task_id}] DB 兜底 pkill workspace 残留进程")
+                except Exception as e:
+                    logger.warning(f"[{task_id}] DB 兜底 pkill 失败: {e}")
+                killed = True
+            # 清理远程工作目录
+            if workspace:
+                try:
+                    ssh.exec_command(f"rm -rf {_q(workspace)}", timeout=10)
+                    logger.info(f"[{task_id}] DB 兜底清理远程目录 {workspace}")
+                except Exception as e:
+                    logger.warning(f"[{task_id}] DB 兜底清理目录失败: {e}")
+            return killed or bool(workspace)
+        except Exception as e:
+            logger.error(f"[{task_id}] DB 兜底清理失败: {e}")
+            return False
+        finally:
+            db.close()
 
     def get_task_status(self, task_id: str) -> Optional[Dict]:
         """获取远程任务状态"""
