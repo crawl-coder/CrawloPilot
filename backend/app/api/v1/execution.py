@@ -290,6 +290,13 @@ async def get_task_status(
         duration = float(task.duration)
     elif task.started_at and task.finished_at:
         duration = (task.finished_at - task.started_at).total_seconds()
+    elif task.started_at and task.status not in (
+        TaskStatus.SUCCESS, TaskStatus.FAILED,
+        TaskStatus.CANCELLED, TaskStatus.TIMEOUT,
+    ):
+        # 运行中：实时返回已运行秒数（北京时间）
+        from app.core.time_utils import cn_now
+        duration = round((cn_now() - task.started_at).total_seconds(), 1)
     
     return TaskStatusResponse(
         task_id=task_id,
@@ -499,6 +506,14 @@ def _serialize_task(task: TaskInstance, spider: Optional[Spider] = None) -> dict
     """任务序列化（供列表/详情复用）"""
     if spider is None:
         spider = task.spider
+    # 实时执行时长：任务未结束时按 started_at 到当前时间估算（北京时间）
+    duration = float(task.duration) if task.duration is not None else None
+    if duration is None and task.started_at and task.status not in (
+        TaskStatus.SUCCESS, TaskStatus.FAILED,
+        TaskStatus.CANCELLED, TaskStatus.TIMEOUT,
+    ):
+        from app.core.time_utils import cn_now
+        duration = round((cn_now() - task.started_at).total_seconds(), 1)
     return {
         "id": task.id,
         "spider_id": task.spider_id,
@@ -518,7 +533,7 @@ def _serialize_task(task: TaskInstance, spider: Optional[Spider] = None) -> dict
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "finished_at": task.finished_at.isoformat() if task.finished_at else None,
-        "duration": float(task.duration) if task.duration is not None else None,
+        "duration": duration,
         "error_message": task.error_message,
         "pages_crawled": task.pages_crawled or 0,
         "items_scraped": task.items_scraped or 0,
