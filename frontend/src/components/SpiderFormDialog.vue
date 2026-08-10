@@ -79,7 +79,6 @@
         <!-- 编辑模式：状态归入基本信息区 -->
         <el-form-item v-if="isEdit" label="状态" style="margin-top: 18px">
           <el-select v-model="spiderForm.status" style="width: 100%">
-            <el-option label="草稿" value="draft" />
             <el-option label="启用" value="active" />
             <el-option label="已禁用" value="disabled" />
           </el-select>
@@ -403,7 +402,7 @@ const spiderForm = reactive({
   run_at: null,
   timeout_seconds: 3600,
   retry_count: 3,
-  status: 'draft'
+  status: 'active'
 })
 
 // Git 凭据来源（创建模式）
@@ -619,7 +618,7 @@ const initForm = () => {
       run_at: null,
       timeout_seconds: 3600,
       retry_count: 3,
-      status: 'draft'
+      status: 'active'
     })
   }
 }

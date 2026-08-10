@@ -193,7 +193,7 @@ async def create_spider(
     # 创建爬虫
     new_spider = Spider(
         **data,
-        status="draft"
+        status="active"
     )
 
     db.add(new_spider)

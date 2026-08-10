@@ -35,7 +35,6 @@
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 150px">
-            <el-option label="草稿" value="draft" />
             <el-option label="启用" value="active" />
             <el-option label="已禁用" value="disabled" />
             <el-option label="错误" value="error" />

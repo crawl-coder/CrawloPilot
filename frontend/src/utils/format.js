@@ -42,7 +42,7 @@ export function getStatusText(status) {
     paused: '已暂停',
     timeout: '超时',
     draft: '草稿',
-    active: '运行中',
+    active: '启用',
     disabled: '已禁用',
     error: '错误',
     online: '在线',

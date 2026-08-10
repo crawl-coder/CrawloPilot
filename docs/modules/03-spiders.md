@@ -14,12 +14,35 @@
 关键字段：
 
 - `spider_type`：crawlo / scrapy / selenium / playwright / requests / custom
-- `status`：**启用态**（draft / active / disabled / error），与任务运行态分离
+- `status`：**启用态**（active / disabled / error），与任务运行态分离
 - `entry_file`：入口文件（默认 run.py）
 - `spider_name`：传给 crawlo 的爬虫名称
 - `run_count / success_count / error_count / last_run_at / last_run_status`：运行统计
 - `git_*`：Git 工作流字段（仓库地址/认证方式/分支；秘密字段加密落库、API 不回传）
 - `git_credential_id`：引用的共享 Git 凭据（凭据池，见 `git_credential` 表）
+
+#### 状态枚举（SpiderStatus）
+
+爬虫状态为三态语义（早期含 `draft`，因语义与行为不符已移除默认值）：
+
+| 枚举 | 含义 | 说明 |
+|------|------|------|
+| `active`（启用） | 可运行 | 创建默认状态；上传代码后即可运行 |
+| `disabled`（禁用） | 不可运行 | 运行接口返回 400"爬虫已禁用" |
+| `error`（错误） | 异常标记 | 运行异常后的状态标记 |
+
+> `draft` 枚举仍保留在模型/DB 中兼容存量，但不再作为默认值，前端也不再提供该选项。
+
+#### 状态值约定（全项目通用）
+
+SQLAlchemy `Enum` 默认将**成员名（大写）**存入数据库（如 `ACTIVE`、`PENDING`），
+而 API 序列化统一返回 `.value` **小写**（如 `active`、`pending`），前端展示按小写映射。
+
+**代码规范**：
+
+- 状态比较一律使用枚举常量（`TaskStatus.RUNNING`、`SpiderStatus.DISABLED`）或 `.value`，
+  **禁止裸字符串比较**（`task.status == "running"` 易与 DB 大写值混淆）
+- 新增状态枚举保持"成员名大写 + value 小写"的既有约定
 
 ## 后端实现（`backend/app/api/v1/spiders.py`）
 
