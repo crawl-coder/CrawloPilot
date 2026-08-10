@@ -96,7 +96,7 @@
             <div class="row-actions">
               <el-button size="small" @click="openEdit(row)">编辑</el-button>
               <el-button size="small" type="success" plain @click="runNow(row)">
-                立即执行
+                运行
               </el-button>
               <el-button size="small" type="danger" plain @click="remove(row)">
                 删除
