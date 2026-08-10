@@ -73,6 +73,9 @@ flowchart TB
 
 ## 🚀 快速开始
 
+> **🖥️ 在线演示**：http://117.72.16.51:3000/dashboard
+> 账号：`admin` / 密码：`admin123`（演示环境，数据随时可能重置）
+
 前置：Python 3.10+、Node.js 18+、本机或 Docker 版 MySQL 8.0+。
 
 ```bash
