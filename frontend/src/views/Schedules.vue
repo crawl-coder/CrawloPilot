@@ -154,7 +154,7 @@
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item v-if="createForm.schedule_type === 'cron'" label="Cron 表达式" required>
+        <el-form-item v-if="createForm.schedule_type === 'cron'" label="Cron" required>
           <el-input v-model="createForm.cron_expr" placeholder="如 */5 * * * *（每5分钟）" />
         </el-form-item>
 
