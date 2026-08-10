@@ -15,62 +15,73 @@ const routes = [
       {
         path: 'dashboard',
         name: 'Dashboard',
+        meta: { title: '仪表盘' },
         component: () => import('@/views/Dashboard.vue')
       },
       {
         path: 'projects',
         name: 'Projects',
+        meta: { title: '项目管理' },
         component: () => import('@/views/Projects.vue')
       },
       {
         path: 'projects/:id',
         name: 'ProjectDetail',
+        meta: { title: '项目详情' },
         component: () => import('@/views/ProjectDetail.vue')
       },
       {
         path: 'spiders',
         name: 'Spiders',
+        meta: { title: '爬虫管理' },
         component: () => import('@/views/Spiders.vue')
       },
       {
         path: 'spiders/:id',
         name: 'SpiderDetail',
+        meta: { title: '爬虫详情' },
         component: () => import('@/views/SpiderDetail.vue')
       },
       {
         path: 'nodes',
         name: 'Nodes',
+        meta: { title: '节点管理' },
         component: () => import('@/views/Nodes.vue')
       },
       {
         path: 'servers/:id',
         name: 'ServerDetail',
+        meta: { title: '服务器详情' },
         component: () => import('@/views/ServerDetail.vue')
       },
       {
         path: 'tasks',
         name: 'Tasks',
+        meta: { title: '任务管理' },
         component: () => import('@/views/Tasks.vue')
       },
       {
         path: 'tasks/:id',
         name: 'TaskDetail',
+        meta: { title: '任务详情' },
         component: () => import('@/views/TaskDetail.vue')
       },
       {
         path: 'schedules',
         name: 'Schedules',
+        meta: { title: '定时任务' },
         component: () => import('@/views/Schedules.vue')
       },
       {
         path: 'users',
         name: 'Users',
-        meta: { requiresAdmin: true },
+        meta: { title: '用户管理', requiresAdmin: true },
         component: () => import('@/views/Users.vue')
       },
       {
         path: 'profile',
         name: 'Profile',
+        meta: { title: '个人中心' },
         component: () => import('@/views/Profile.vue')
       }
     ]

@@ -59,8 +59,7 @@
       <el-header>
         <div class="header-content">
           <el-breadcrumb separator="/">
-            <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
-            <el-breadcrumb-item>{{ $route.name }}</el-breadcrumb-item>
+            <el-breadcrumb-item>{{ $route.meta.title || $route.name }}</el-breadcrumb-item>
           </el-breadcrumb>
           <div class="user-info">
             <el-tooltip :content="themeStore.isDark ? '切换到浅色模式' : '切换到暗色模式'" placement="bottom">
