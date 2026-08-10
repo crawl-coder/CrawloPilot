@@ -11,6 +11,7 @@ ENV/
 dist/
 build/
 .eggs/
+.qoder/
 .qoder/cache/
 .qoder/skills
 

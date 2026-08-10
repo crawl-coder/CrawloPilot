@@ -7,6 +7,7 @@ from app.core.database import SessionLocal, engine
 from app.core.security import get_password_hash
 from app.models import User, Team, Role, Permission, UserRole
 from datetime import datetime
+from app.core.time_utils import cn_now
 
 
 def init_admin_user(db: Session):
@@ -24,7 +25,7 @@ def init_admin_user(db: Session):
         password_hash=get_password_hash("admin123"),
         full_name="系统管理员",
         is_active=True,
-        created_at=datetime.utcnow()
+        created_at=cn_now()
     )
     
     db.add(admin_user)
@@ -45,7 +46,7 @@ def init_default_team(db: Session):
     team = Team(
         name="默认团队",
         description="系统默认团队",
-        created_at=datetime.utcnow()
+        created_at=cn_now()
     )
     
     db.add(team)
@@ -108,7 +109,7 @@ def init_roles_and_permissions(db: Session):
     admin_role = Role(
         name="admin",
         description="系统管理员",
-        created_at=datetime.utcnow()
+        created_at=cn_now()
     )
     admin_role.permissions = permissions
     
@@ -118,7 +119,7 @@ def init_roles_and_permissions(db: Session):
     user_role = Role(
         name="user",
         description="普通用户",
-        created_at=datetime.utcnow()
+        created_at=cn_now()
     )
     # 普通用户只有读取和创建权限
     user_role.permissions = [p for p in permissions if ":read" in p.code or ":create" in p.code]
