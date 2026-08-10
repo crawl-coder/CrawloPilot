@@ -98,10 +98,10 @@
               <el-button size="small" type="success" plain @click="runNow(row)">
                 立即执行
               </el-button>
-              <el-button size="small" @click="showHistory(row)">历史</el-button>
               <el-button size="small" type="danger" plain @click="remove(row)">
                 删除
               </el-button>
+              <el-button size="small" @click="showHistory(row)">历史</el-button>
             </div>
           </template>
         </el-table-column>
