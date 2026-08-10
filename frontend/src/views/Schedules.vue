@@ -93,13 +93,15 @@
 
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="success" plain @click="runNow(row)">
-              立即执行
-            </el-button>
-            <el-button size="small" @click="showHistory(row)">历史</el-button>
-            <el-button size="small" type="danger" plain @click="remove(row)">
-              删除
-            </el-button>
+            <div class="row-actions">
+              <el-button size="small" type="success" plain @click="runNow(row)">
+                立即执行
+              </el-button>
+              <el-button size="small" @click="showHistory(row)">历史</el-button>
+              <el-button size="small" type="danger" plain @click="remove(row)">
+                删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -108,6 +110,23 @@
     <!-- 新建定时任务对话框 -->
     <el-dialog v-model="createVisible" title="新建定时任务" width="560px">
       <el-form :model="createForm" label-width="100px">
+        <el-form-item label="项目" required>
+          <el-select
+            v-model="createForm.project_id"
+            placeholder="选择项目"
+            filterable
+            style="width: 100%"
+            @change="onProjectChange"
+          >
+            <el-option
+              v-for="p in projectOptions"
+              :key="p.id"
+              :label="p.name"
+              :value="p.id"
+            />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="爬虫" required>
           <el-select
             v-model="createForm.spider_id"
@@ -116,7 +135,7 @@
             style="width: 100%"
           >
             <el-option
-              v-for="s in spiderOptions"
+              v-for="s in filteredSpiderOptions"
               :key="s.id"
               :label="`${s.name}${s.project_name ? '（' + s.project_name + '）' : ''}`"
               :value="s.id"
@@ -195,7 +214,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Plus } from '@element-plus/icons-vue'
@@ -206,6 +225,7 @@ import {
 import { formatDateTime } from '@/utils/common'
 import { getSpiders } from '@/api/spider'
 import { getNodes } from '@/api/node'
+import { getProjects } from '@/api/project'
 
 const router = useRouter()
 const loading = ref(false)
@@ -219,10 +239,12 @@ const history = ref([])
 const historySchedule = ref(null)
 
 const spiderOptions = ref([])
+const projectOptions = ref([])
 const nodeOptions = ref([])
 const createVisible = ref(false)
 const creating = ref(false)
 const createForm = reactive({
+  project_id: null,
   spider_id: null,
   schedule_type: 'cron',
   cron_expr: '',
@@ -232,21 +254,30 @@ const createForm = reactive({
   enabled: true
 })
 
+const filteredSpiderOptions = computed(() => {
+  if (!createForm.project_id) return spiderOptions.value
+  return spiderOptions.value.filter(s => s.project_id === createForm.project_id)
+})
+
 const loadOptions = async () => {
   try {
-    const [spiders, nodes] = await Promise.all([
+    const [spiders, nodes, projects] = await Promise.all([
       getSpiders({ limit: 1000 }),
-      getNodes()
+      getNodes(),
+      getProjects({ limit: 1000 })
     ])
     const items = spiders?.items ?? spiders ?? []
     spiderOptions.value = Array.isArray(items) ? items : []
     nodeOptions.value = Array.isArray(nodes) ? nodes.filter(n => n.status === 'online') : []
+    const projItems = projects?.items ?? projects ?? []
+    projectOptions.value = Array.isArray(projItems) ? projItems : []
   } catch (error) {
     ElMessage.warning('加载爬虫/节点列表失败：' + (error.response?.data?.detail || error.message))
   }
 }
 
 const openCreate = () => {
+  createForm.project_id = null
   createForm.spider_id = null
   createForm.schedule_type = 'cron'
   createForm.cron_expr = ''
@@ -255,6 +286,10 @@ const openCreate = () => {
   createForm.node_id = null
   createForm.enabled = true
   createVisible.value = true
+}
+
+const onProjectChange = () => {
+  createForm.spider_id = null
 }
 
 const submitCreate = async () => {
@@ -415,6 +450,16 @@ onMounted(() => {
 }
 .table-card :deep(.el-table) {
   width: 100%;
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.row-actions .el-button {
+  margin-left: 0;
+  padding: 4px 8px;
 }
 .mono {
   font-family: var(--cp-mono-font, 'SF Mono', Menlo, Consolas, monospace);
