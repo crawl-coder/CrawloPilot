@@ -85,23 +85,34 @@
             <el-input v-model="myCredForm.username" placeholder="Git 用户名" />
           </el-form-item>
           <el-form-item label="密码/Token">
-            <el-input
-              v-model="myCredForm.password"
-              type="password"
-              show-password
-              :placeholder="myCred.has_password ? '已配置，留空保持不变' : '请输入密码或访问令牌'"
-            />
+            <div class="input-with-tip">
+              <el-input
+                v-model="myCredForm.password"
+                type="password"
+                show-password
+                :placeholder="myCred.has_password ? '已配置，留空保持不变' : '请输入密码或访问令牌'"
+              />
+              <el-tooltip placement="top" content="GitHub：Settings → Developer settings → Personal access tokens（Tokens (classic) 勾选 repo）">
+                <span class="field-tip"><el-icon><QuestionFilled /></el-icon>如何获取 Token？</span>
+              </el-tooltip>
+            </div>
           </el-form-item>
         </template>
 
         <template v-if="myCredForm.auth_type === 'ssh'">
           <el-form-item label="SSH私钥">
-            <el-input
-              v-model="myCredForm.ssh_key"
-              type="textarea"
-              :rows="4"
-              :placeholder="myCred.has_ssh_key ? '已配置，留空保持不变' : '-----BEGIN OPENSSH PRIVATE KEY-----'"
-            />
+            <div class="input-with-tip">
+              <el-input
+                v-model="myCredForm.ssh_key"
+                type="textarea"
+                :rows="4"
+                :placeholder="myCred.has_ssh_key ? '已配置，留空保持不变' : '-----BEGIN OPENSSH PRIVATE KEY-----'"
+              />
+              <span class="field-tip">
+                <el-icon><QuestionFilled /></el-icon>
+                <code>ssh-keygen -t ed25519</code> 生成后粘贴私钥内容；公钥添加到 Git 平台
+              </span>
+            </div>
           </el-form-item>
         </template>
 
@@ -252,7 +263,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Key, Connection, Message, User, Calendar, Share, Lock } from '@element-plus/icons-vue'
+import { Plus, Key, Connection, Message, User, Calendar, Share, Lock, QuestionFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { getMyGitCredentials, saveMyGitCredentials, deleteMyGitCredentials } from '@/api/auth'
 import {
@@ -468,6 +479,8 @@ onMounted(() => {
 <style scoped>
 .profile-container {
   padding: 0;
+  max-width: 1080px;
+  margin: 0 auto;
 }
 
 /* ==================== 页头 ==================== */
@@ -508,6 +521,18 @@ onMounted(() => {
   align-items: center;
   gap: var(--cp-space-lg);
   padding: var(--cp-space-xs) var(--cp-space-sm);
+}
+
+@media (max-width: 768px) {
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .hero-meta {
+    flex-direction: column;
+    gap: 6px;
+  }
 }
 
 .hero-avatar {
@@ -672,8 +697,46 @@ onMounted(() => {
   line-height: 1.6;
 }
 
+.input-with-tip {
+  width: 100%;
+}
+
+.input-with-tip .el-input,
+.input-with-tip .el-textarea {
+  width: 100%;
+}
+
+.field-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--cp-text-secondary);
+  cursor: pointer;
+}
+
+.field-tip code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.12);
+  font-size: 11px;
+}
+
+.field-tip:hover {
+  color: var(--cp-primary);
+}
+
 .cred-name {
   font-weight: 500;
   color: var(--cp-text-primary);
+}
+
+.profile-card :deep(.el-card__body) {
+  padding: 20px;
+}
+
+.profile-card :deep(.el-table) {
+  border-radius: var(--cp-radius-sm);
 }
 </style>
