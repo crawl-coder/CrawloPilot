@@ -91,9 +91,10 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
+              <el-button size="small" @click="openEdit(row)">编辑</el-button>
               <el-button size="small" type="success" plain @click="runNow(row)">
                 立即执行
               </el-button>
@@ -107,14 +108,15 @@
       </el-table>
     </el-card>
 
-    <!-- 新建定时任务对话框 -->
-    <el-dialog v-model="createVisible" title="新建定时任务" width="560px">
+    <!-- 新建/编辑定时任务对话框 -->
+    <el-dialog v-model="createVisible" :title="editingId ? '编辑定时任务' : '新建定时任务'" width="560px">
       <el-form :model="createForm" label-width="100px">
         <el-form-item label="项目" required>
           <el-select
             v-model="createForm.project_id"
             placeholder="选择项目"
             filterable
+            :disabled="!!editingId"
             style="width: 100%"
             @change="onProjectChange"
           >
@@ -132,6 +134,7 @@
             v-model="createForm.spider_id"
             placeholder="选择爬虫"
             filterable
+            :disabled="!!editingId"
             style="width: 100%"
           >
             <el-option
@@ -181,7 +184,9 @@
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="submitCreate">创建</el-button>
+        <el-button type="primary" :loading="creating" @click="submitCreate">
+          {{ editingId ? '保存' : '创建' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -219,7 +224,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Plus } from '@element-plus/icons-vue'
 import {
-  getSchedules, createSchedule, enableSchedule, disableSchedule,
+  getSchedules, createSchedule, updateSchedule, enableSchedule, disableSchedule,
   runScheduleNow, deleteSchedule, getScheduleHistory
 } from '@/api/schedule'
 import { formatDateTime } from '@/utils/common'
@@ -243,6 +248,7 @@ const projectOptions = ref([])
 const nodeOptions = ref([])
 const createVisible = ref(false)
 const creating = ref(false)
+const editingId = ref(null)
 const createForm = reactive({
   project_id: null,
   spider_id: null,
@@ -277,6 +283,7 @@ const loadOptions = async () => {
 }
 
 const openCreate = () => {
+  editingId.value = null
   createForm.project_id = null
   createForm.spider_id = null
   createForm.schedule_type = 'cron'
@@ -285,6 +292,21 @@ const openCreate = () => {
   createForm.run_at = null
   createForm.node_id = null
   createForm.enabled = true
+  createVisible.value = true
+}
+
+const openEdit = (row) => {
+  editingId.value = row.id
+  createForm.project_id = row.project_id ?? null
+  createForm.spider_id = row.spider_id ?? null
+  createForm.schedule_type = row.schedule_type || 'cron'
+  createForm.cron_expr = row.cron_expr || ''
+  createForm.interval_minutes = row.interval_seconds
+    ? Math.max(1, Math.round(row.interval_seconds / 60))
+    : 60
+  createForm.run_at = row.run_at ? row.run_at.slice(0, 19) : null
+  createForm.node_id = row.node_id ?? null
+  createForm.enabled = !!row.enabled
   createVisible.value = true
 }
 
@@ -298,11 +320,13 @@ const submitCreate = async () => {
     return
   }
   const payload = {
-    spider_id: createForm.spider_id,
     schedule_type: createForm.schedule_type,
     node_id: createForm.node_id || undefined,
     timezone: 'Asia/Shanghai',
     enabled: createForm.enabled
+  }
+  if (!editingId.value) {
+    payload.spider_id = createForm.spider_id
   }
   if (createForm.schedule_type === 'cron') {
     if (!createForm.cron_expr?.trim()) {
@@ -322,8 +346,13 @@ const submitCreate = async () => {
 
   creating.value = true
   try {
-    await createSchedule(payload)
-    ElMessage.success('定时任务已创建')
+    if (editingId.value) {
+      await updateSchedule(editingId.value, payload)
+      ElMessage.success('定时任务已更新')
+    } else {
+      await createSchedule(payload)
+      ElMessage.success('定时任务已创建')
+    }
     createVisible.value = false
     await loadSchedules()
   } catch (error) {
