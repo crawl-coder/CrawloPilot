@@ -19,7 +19,9 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180" />
+      <el-table-column label="创建时间" width="180">
+        <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="240">
         <template #default="{ row }">
           <el-button size="small" type="primary" @click="viewProject(row)">详情</el-button>
@@ -75,6 +77,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getProjects, createProject, updateProject, deleteProject } from '@/api/project'
 import { getTeams } from '@/api/team'
+import { formatDateTime } from '@/utils/common'
 import Pagination from '@/components/Pagination.vue'
 
 const router = useRouter()
