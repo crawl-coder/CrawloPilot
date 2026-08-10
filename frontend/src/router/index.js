@@ -58,6 +58,11 @@ const routes = [
         component: () => import('@/views/TaskDetail.vue')
       },
       {
+        path: 'schedules',
+        name: 'Schedules',
+        component: () => import('@/views/Schedules.vue')
+      },
+      {
         path: 'users',
         name: 'Users',
         meta: { requiresAdmin: true },
