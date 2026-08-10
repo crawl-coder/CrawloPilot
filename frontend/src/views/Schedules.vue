@@ -58,16 +58,16 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="下次运行" width="170">
+        <el-table-column label="下次运行" width="180">
           <template #default="{ row }">
-            <span v-if="row.enabled && row.next_run_time">{{ formatDateTime(row.next_run_time) }}</span>
+            <span v-if="row.enabled && row.next_run_time" class="nowrap">{{ formatDateTime(row.next_run_time) }}</span>
             <span v-else>-</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="上次运行" width="160">
+        <el-table-column label="上次运行" width="180">
           <template #default="{ row }">
-            <span v-if="row.last_run_at">{{ formatDateTime(row.last_run_at) }}</span>
+            <span v-if="row.last_run_at" class="nowrap">{{ formatDateTime(row.last_run_at) }}</span>
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -489,6 +489,9 @@ onMounted(() => {
 .row-actions .el-button {
   margin-left: 0;
   padding: 4px 8px;
+}
+.nowrap {
+  white-space: nowrap;
 }
 .mono {
   font-family: var(--cp-mono-font, 'SF Mono', Menlo, Consolas, monospace);
