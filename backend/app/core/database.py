@@ -34,6 +34,18 @@ else:
 
 
 @event.listens_for(engine, "connect")
+def _set_session_timezone(dbapi_connection, connection_record):
+    """数据库连接统一使用中国时区（UTC+8）"""
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("SET time_zone = '+08:00'")
+        cursor.close()
+    except Exception:
+        # SQLite 等不支持 time_zone 的数据库忽略
+        pass
+
+
+@event.listens_for(engine, "connect")
 def set_connect_timeout(dbapi_connection, connection_record):
     """设置连接超时"""
     try:

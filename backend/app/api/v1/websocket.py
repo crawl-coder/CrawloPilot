@@ -13,6 +13,7 @@ import asyncio
 import json
 import queue
 import logging
+from app.core.time_utils import cn_now
 
 from app.core.database import SessionLocal
 from app.models import TaskInstance, DeployMode
@@ -197,7 +198,7 @@ async def task_websocket(websocket: WebSocket, task_id: str):
                             from app.models import TaskStatus
                             task.status = TaskStatus.CANCELLED
                             from datetime import datetime
-                            task.finished_at = datetime.utcnow()
+                            task.finished_at = cn_now()
                             db.commit()
                             ok = True
                     finally:

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, 
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
+from app.core.time_utils import cn_now
 import logging
 
 from app.core.database import get_db
@@ -346,7 +347,7 @@ async def stop_spider(
             # executor 已更新数据库状态，这里作为兜底
             if task.status not in [TaskStatus.CANCELLED, TaskStatus.SUCCESS, TaskStatus.FAILED]:
                 task.status = TaskStatus.CANCELLED
-                task.finished_at = datetime.utcnow()
+                task.finished_at = cn_now()
                 if task.started_at:
                     task.duration = (task.finished_at - task.started_at).total_seconds()
             stopped.append(str(task.id))

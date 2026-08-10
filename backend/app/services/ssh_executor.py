@@ -19,6 +19,7 @@ import tempfile
 import shlex
 from pathlib import Path
 from datetime import datetime
+from app.core.time_utils import cn_now
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 from threading import Lock, Thread
@@ -506,7 +507,7 @@ class SshSpiderProcess:
                     self.remote_pid = int(pid_out.strip())
 
             self.status = TaskStatus.RUNNING
-            self.started_at = datetime.utcnow()
+            self.started_at = cn_now()
 
             # 写 PID 到文件以便管理
             if self.remote_pid:
@@ -668,7 +669,7 @@ class SshSpiderProcess:
                         logger.warning(f"[{self.task_id}] pkill 残留进程失败: {e}")
 
                 self.status = TaskStatus.CANCELLED
-                self.finished_at = datetime.utcnow()
+                self.finished_at = cn_now()
                 logger.info(f"[{self.task_id}] 远程进程已停止")
                 return True
 
@@ -705,7 +706,7 @@ class SshSpiderProcess:
                         self.status = TaskStatus.FAILED
                     else:
                         self.status = TaskStatus.SUCCESS
-                    self.finished_at = datetime.utcnow()
+                    self.finished_at = cn_now()
 
             return {
                 'task_id': self.task_id,
@@ -901,11 +902,11 @@ class SshExecutor:
                 logger.warning(f"[{task_id}] 远程任务超时 ({timeout}s)")
                 process.stop(timeout=5)
                 process.status = TaskStatus.TIMEOUT
-                process.finished_at = datetime.utcnow()
+                process.finished_at = cn_now()
 
             # 进程结束后的处理
             if process.status not in [TaskStatus.TIMEOUT, TaskStatus.CANCELLED]:
-                process.finished_at = datetime.utcnow()
+                process.finished_at = cn_now()
                 # 优先读取退出码判断成功/失败
                 exit_code_out, _, _ = process.ssh.exec_command(
                     f"cat {process.workspace}/exit.code 2>/dev/null || echo ''"
@@ -933,7 +934,7 @@ class SshExecutor:
             self._update_task_completion(
                 task_id,
                 process.status,
-                process.finished_at or datetime.utcnow(),
+                process.finished_at or cn_now(),
                 process.pages_crawled,
                 process.items_scraped,
                 process.errors_count
@@ -955,7 +956,7 @@ class SshExecutor:
         except Exception as e:
             logger.error(f"[{task_id}] 远程进程监控异常: {e}")
             process.status = TaskStatus.FAILED
-            process.finished_at = datetime.utcnow()
+            process.finished_at = cn_now()
             self._update_task_completion(
                 task_id,
                 TaskStatus.FAILED,
@@ -994,7 +995,7 @@ class SshExecutor:
             self._update_task_completion(
                 task_id,
                 TaskStatus.CANCELLED,
-                datetime.utcnow(),
+                cn_now(),
                 process.pages_crawled if process else 0,
                 process.items_scraped if process else 0,
                 process.errors_count if process else 0,
@@ -1144,11 +1145,11 @@ class SshExecutor:
                 if error_message:
                     task.error_message = error_message
                 if status == TaskStatus.RUNNING and not task.started_at:
-                    task.started_at = datetime.utcnow()
+                    task.started_at = cn_now()
                 elif status in [TaskStatus.SUCCESS, TaskStatus.FAILED,
                                 TaskStatus.CANCELLED, TaskStatus.TIMEOUT]:
                     if not task.finished_at:
-                        task.finished_at = datetime.utcnow()
+                        task.finished_at = cn_now()
                     if task.started_at and not task.duration:
                         task.duration = (task.finished_at - task.started_at).total_seconds()
                 db.commit()
@@ -1202,7 +1203,7 @@ class SshExecutor:
             spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
             if not spider:
                 return
-            spider.last_run_at = datetime.utcnow()
+            spider.last_run_at = cn_now()
             spider.last_run_status = status.value
             if status == TaskStatus.SUCCESS:
                 spider.success_count = (spider.success_count or 0) + 1

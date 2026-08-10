@@ -4,6 +4,7 @@
 """
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from app.core.time_utils import cn_now
 from sqlalchemy.orm import Session
 from app.models import Node, NodeStatus, Container, ContainerStatus
 from app.services.docker_service import DockerService
@@ -90,7 +91,7 @@ class NodeService:
             public_ip=public_ip,
             private_ip=private_ip,
             status=NodeStatus.OFFLINE,
-            created_at=datetime.utcnow()
+            created_at=cn_now()
         )
         
         self.db.add(node)
@@ -214,7 +215,7 @@ class NodeService:
         info = docker.get_info()
         
         node.status = NodeStatus.ONLINE
-        node.last_heartbeat = datetime.utcnow()
+        node.last_heartbeat = cn_now()
         node.resources = {
             "cpus": info.get("cpus", 0),
             "memory_total": info.get("memory_total", 0),
@@ -286,7 +287,7 @@ class NodeService:
                 "python": info["python"],
             }
             node.status = NodeStatus.ONLINE
-            node.last_heartbeat = datetime.utcnow()
+            node.last_heartbeat = cn_now()
             self.db.commit()
 
             return {
@@ -317,7 +318,7 @@ class NodeService:
                 "message": f"Agent on {node.name} has not reported heartbeat yet"
             }
         
-        now = datetime.utcnow()
+        now = cn_now()
         diff_seconds = (now - node.last_heartbeat).total_seconds()
         
         if diff_seconds < 60:  # 1 分钟内有心跳
@@ -363,7 +364,7 @@ class NodeService:
         if not node:
             return False
         
-        node.last_heartbeat = datetime.utcnow()
+        node.last_heartbeat = cn_now()
         if node.status == NodeStatus.OFFLINE:
             node.status = NodeStatus.ONLINE
         
@@ -406,7 +407,7 @@ class NodeService:
         """
         nodes = self.db.query(Node).all()
         results = []
-        now = datetime.utcnow()
+        now = cn_now()
 
         for node in nodes:
             status = "offline"
@@ -467,7 +468,7 @@ class NodeService:
                 try:
                     docker.stop_container(container.container_id)
                     container.status = ContainerStatus.EXITED
-                    container.stopped_at = datetime.utcnow()
+                    container.stopped_at = cn_now()
                 except Exception as e:
                     logger.warning(f"Failed to stop container {container.container_id}: {e}")
             

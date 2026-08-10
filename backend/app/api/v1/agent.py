@@ -19,6 +19,7 @@ import logging
 from pathlib import Path
 from app.core.config import settings
 from datetime import datetime
+from app.core.time_utils import cn_now
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -132,7 +133,7 @@ def _update_spider_stats(db, task: TaskInstance, status: TaskStatus):
         spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
         if not spider:
             return
-        spider.last_run_at = datetime.utcnow()
+        spider.last_run_at = cn_now()
         spider.last_run_status = status.value
         if status == TaskStatus.SUCCESS:
             spider.success_count = (spider.success_count or 0) + 1
@@ -161,7 +162,7 @@ async def agent_register(
 
     node.agent_status = "online"
     node.status = NodeStatus.ONLINE
-    node.last_heartbeat = datetime.utcnow()
+    node.last_heartbeat = cn_now()
     node.agent_version = data.agent_version or node.agent_version
     if data.hostname:
         # 节点名以创建时用户指定为准；hostname 仅记录到 labels，
@@ -201,7 +202,7 @@ async def agent_heartbeat(
     """Agent 心跳（Bearer header）"""
     token = _extract_token(request)
     node = _validate_agent(db, data.node_id, token or "")
-    node.last_heartbeat = datetime.utcnow()
+    node.last_heartbeat = cn_now()
     node.agent_status = "online"
     node.status = NodeStatus.ONLINE
     if data.cpu_usage is not None:
@@ -256,7 +257,7 @@ async def agent_get_tasks(
                     TaskInstance.status == TaskStatus.PENDING,
                 )
                 .values(status=TaskStatus.RUNNING,
-                        started_at=task.started_at or datetime.utcnow())
+                        started_at=task.started_at or cn_now())
             )
             db.commit()
             if claimed.rowcount == 0:
@@ -369,7 +370,7 @@ async def agent_report_task(
     updated = update_task_completion(
         task_id,
         status=status,
-        finished_at=datetime.utcnow(),
+        finished_at=cn_now(),
         pages_crawled=data.pages_crawled or 0,
         items_scraped=data.items_scraped or 0,
         errors_count=data.errors_count or 0,

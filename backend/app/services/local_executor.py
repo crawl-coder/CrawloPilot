@@ -18,6 +18,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from datetime import datetime
+from app.core.time_utils import cn_now
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 from threading import Lock, Thread
@@ -151,7 +152,7 @@ class LocalSpiderProcess:
                     start_new_session=True,  # 独立进程组，暂停/停止可覆盖子进程
                 )
                 self.status = TaskStatus.RUNNING
-                self.started_at = datetime.utcnow()
+                self.started_at = cn_now()
                 logger.info(f"[{self.task_id}] 进程已启动, PID={self.process.pid}")
 
             except Exception as e:
@@ -234,7 +235,7 @@ asyncio.run(CrawlerProcess().crawl('{spider_name_to_run or config.spider_name}')
                     self.process.wait(timeout=5)
 
                 self.status = TaskStatus.CANCELLED
-                self.finished_at = datetime.utcnow()
+                self.finished_at = cn_now()
                 logger.info(f"[{self.task_id}] 进程已停止")
                 
                 # 关闭日志文件
@@ -264,7 +265,7 @@ asyncio.run(CrawlerProcess().crawl('{spider_name_to_run or config.spider_name}')
             if poll_result is not None:
                 # 进程已结束
                 if self.status not in [TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED]:
-                    self.finished_at = datetime.utcnow()
+                    self.finished_at = cn_now()
                     if poll_result == 0:
                         self.status = TaskStatus.SUCCESS
                     else:
@@ -546,7 +547,7 @@ class LocalExecutor:
             process._collect_remaining_output()
             
             # 更新进程状态
-            process.finished_at = datetime.utcnow()
+            process.finished_at = cn_now()
             error_msg = None
             if process.status in (TaskStatus.RUNNING, TaskStatus.PENDING) and exit_code == 0:
                 process.status = TaskStatus.SUCCESS
@@ -601,7 +602,7 @@ class LocalExecutor:
             try:
                 process.stop(timeout=5)
                 process.status = TaskStatus.TIMEOUT
-                process.finished_at = datetime.utcnow()
+                process.finished_at = cn_now()
                 process._collect_remaining_output()
                 process.parse_metrics_from_logs()
                 process._close_log_file()
@@ -621,7 +622,7 @@ class LocalExecutor:
         except Exception as e:
             logger.error(f"[{task_id}] 进程监控异常: {e}")
             process.status = TaskStatus.FAILED
-            process.finished_at = datetime.utcnow()
+            process.finished_at = cn_now()
             process._close_log_file()
             
             self._update_task_completion(
@@ -646,7 +647,7 @@ class LocalExecutor:
             if not spider:
                 return
 
-            spider.last_run_at = datetime.utcnow()
+            spider.last_run_at = cn_now()
             spider.last_run_status = status.value
             if status == TaskStatus.SUCCESS:
                 spider.success_count = (spider.success_count or 0) + 1
@@ -681,7 +682,7 @@ class LocalExecutor:
             self._update_task_completion(
                 task_id,
                 TaskStatus.CANCELLED,
-                process.finished_at or datetime.utcnow(),
+                process.finished_at or cn_now(),
                 process.pages_crawled,
                 process.items_scraped,
                 process.errors_count
@@ -812,10 +813,10 @@ class LocalExecutor:
                 if error_message:
                     task.error_message = error_message
                 if status == TaskStatus.RUNNING and not task.started_at:
-                    task.started_at = datetime.utcnow()
+                    task.started_at = cn_now()
                 elif status in [TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.TIMEOUT]:
                     if not task.finished_at:
-                        task.finished_at = datetime.utcnow()
+                        task.finished_at = cn_now()
                     if task.started_at and not task.duration:
                         task.duration = (task.finished_at - task.started_at).total_seconds()
 

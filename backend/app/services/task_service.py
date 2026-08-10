@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
+from app.core.time_utils import cn_now
 from threading import Thread
 
 from app.models import TaskInstance, TaskStatus, Spider, SpiderStatus, Node, DeployMode
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 def _update_spider_run_stats(db, spider):
     """回写爬虫运行统计"""
     spider.run_count = (spider.run_count or 0) + 1
-    spider.last_run_at = datetime.utcnow()
+    spider.last_run_at = cn_now()
     spider.last_run_status = "running"
     db.commit()
 

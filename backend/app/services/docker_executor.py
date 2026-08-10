@@ -22,6 +22,7 @@ import uuid
 import tarfile
 import logging
 from datetime import datetime
+from app.core.time_utils import cn_now
 from pathlib import Path
 from typing import Dict, Optional, List
 from dataclasses import dataclass
@@ -421,7 +422,7 @@ class DockerExecutor:
             self._update_task_completion(
                 config.task_id,
                 TaskStatus.FAILED,
-                datetime.utcnow(),
+                cn_now(),
                 0, 0, 0,
                 error_message=str(e),
             )
@@ -476,7 +477,7 @@ class DockerExecutor:
             self._update_task_completion(
                 config.task_id,
                 status,
-                datetime.utcnow(),
+                cn_now(),
                 pages,
                 items,
                 errors,
@@ -505,7 +506,7 @@ class DockerExecutor:
             self._update_task_completion(
                 config.task_id,
                 TaskStatus.FAILED,
-                datetime.utcnow(),
+                cn_now(),
                 0, 0, 0,
                 container_id=container_id,
                 error_message=str(e),
@@ -533,7 +534,7 @@ class DockerExecutor:
             self._update_task_completion(
                 task_id,
                 TaskStatus.CANCELLED,
-                datetime.utcnow(),
+                cn_now(),
                 0, 0, 0,
                 container_id=cid,
                 logs=logs_text,
@@ -617,7 +618,7 @@ class DockerExecutor:
                 task.status = TaskStatus.RUNNING
                 task.deploy_mode = DeployMode.DOCKER
                 task.container_id = container_id
-                task.started_at = task.started_at or datetime.utcnow()
+                task.started_at = task.started_at or cn_now()
                 db.commit()
         except Exception as e:
             logger.error(f"更新 Docker 任务启动状态失败: {e}")
@@ -685,7 +686,7 @@ class DockerExecutor:
             spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
             if not spider:
                 return
-            spider.last_run_at = datetime.utcnow()
+            spider.last_run_at = cn_now()
             spider.last_run_status = status.value
             if status == TaskStatus.SUCCESS:
                 spider.success_count = (spider.success_count or 0) + 1

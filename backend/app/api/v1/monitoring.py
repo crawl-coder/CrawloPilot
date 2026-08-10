@@ -4,6 +4,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+from app.core.time_utils import cn_now
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -33,7 +34,7 @@ async def get_health_status(
     
     return {
         "status": "healthy" if db_healthy else "degraded",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": cn_now().isoformat(),
         "components": {
             "database": {
                 "status": "healthy" if db_healthy else "unhealthy"
@@ -56,7 +57,7 @@ async def get_dashboard_data(
     # 任务统计
     total_tasks = db.query(TaskInstance).count()
     today_tasks = db.query(TaskInstance).filter(
-        TaskInstance.created_at >= datetime.utcnow() - timedelta(days=1)
+        TaskInstance.created_at >= cn_now() - timedelta(days=1)
     ).count()
     success_rate = 0
     if total_tasks > 0:
@@ -66,7 +67,7 @@ async def get_dashboard_data(
     # 部署统计
     total_deploys = db.query(Deploy).count()
     recent_deploys = db.query(Deploy).filter(
-        Deploy.created_at >= datetime.utcnow() - timedelta(days=7)
+        Deploy.created_at >= cn_now() - timedelta(days=7)
     ).count()
     
     # 节点统计

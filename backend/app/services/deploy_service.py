@@ -4,6 +4,7 @@
 """
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from app.core.time_utils import cn_now
 from sqlalchemy.orm import Session
 from app.models import Deploy, DeployStatus, DeployStrategy, Container, ContainerStatus, Node, ProjectVersion
 from app.services.docker_service import DockerService, get_docker_service
@@ -66,7 +67,7 @@ class DeployService:
             target_env=target_env,
             node_id=node_id,
             deployed_by=deployed_by,
-            created_at=datetime.utcnow()
+            created_at=cn_now()
         )
         
         self.db.add(deploy)
@@ -115,7 +116,7 @@ class DeployService:
         try:
             # 更新状态为部署中
             deploy.status = DeployStatus.DEPLOYING
-            deploy.started_at = datetime.utcnow()
+            deploy.started_at = cn_now()
             self.db.commit()
                 
             # 根据策略执行部署（使用同步版本）
@@ -128,7 +129,7 @@ class DeployService:
                 
             # 更新部署状态
             deploy.status = DeployStatus.SUCCESS
-            deploy.finished_at = datetime.utcnow()
+            deploy.finished_at = cn_now()
             deploy.container_ids = result.get("container_ids", [])
             self.db.commit()
                 
@@ -139,7 +140,7 @@ class DeployService:
             logger.error(f"Deploy {deploy_id} failed: {e}")
             deploy.status = DeployStatus.FAILED
             deploy.error_message = str(e)
-            deploy.finished_at = datetime.utcnow()
+            deploy.finished_at = cn_now()
             self.db.commit()
                 
             # 尝试回滚
@@ -209,7 +210,7 @@ class DeployService:
                 node_docker.stop_container(old_container.container_id)
                 node_docker.remove_container(old_container.container_id)
                 old_container.status = ContainerStatus.EXITED
-                old_container.stopped_at = datetime.utcnow()
+                old_container.stopped_at = cn_now()
             except Exception as e:
                 logger.warning(f"Failed to remove old container: {e}")
         
@@ -238,7 +239,7 @@ class DeployService:
             version_id=deploy.version_id,
             image=image_tag,
             status=ContainerStatus.RUNNING,
-            started_at=datetime.utcnow()
+            started_at=cn_now()
         )
         
         self.db.add(container)
@@ -303,7 +304,7 @@ class DeployService:
             image=image_tag,
             status=ContainerStatus.RUNNING,
             ports=green_ports,
-            started_at=datetime.utcnow()
+            started_at=cn_now()
         )
         
         self.db.add(green_container)
@@ -318,7 +319,7 @@ class DeployService:
             try:
                 node_docker.stop_container(blue_container.container_id)
                 blue_container.status = ContainerStatus.EXITED
-                blue_container.stopped_at = datetime.utcnow()
+                blue_container.stopped_at = cn_now()
             except Exception as e:
                 logger.warning(f"Failed to stop blue container: {e}")
         
@@ -377,7 +378,7 @@ class DeployService:
                 version_id=deploy.version_id,
                 image=image_tag,
                 status=ContainerStatus.RUNNING,
-                started_at=datetime.utcnow()
+                started_at=cn_now()
             )
             
             self.db.add(new_container)
@@ -391,7 +392,7 @@ class DeployService:
             try:
                 node_docker.stop_container(old_container.container_id)
                 old_container.status = ContainerStatus.EXITED
-                old_container.stopped_at = datetime.utcnow()
+                old_container.stopped_at = cn_now()
             except Exception as e:
                 logger.warning(f"Failed to stop old container: {e}")
         

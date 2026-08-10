@@ -2,6 +2,7 @@ from app.core.database import Base
 from sqlalchemy import Column, BigInteger, String, Text, DateTime, Enum, Boolean, ForeignKey, JSON, DECIMAL, Integer, UniqueConstraint, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
+from app.core.time_utils import cn_now
 import enum
 
 
@@ -16,8 +17,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     # 个人 Git 凭据（Fernet 加密的 JSON：auth_type/username/password/ssh_key/passphrase/default_branch）
     git_credentials = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
     
     # Relationships
     teams = relationship("TeamMember", back_populates="user")
@@ -30,8 +31,8 @@ class Team(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     name = Column(String(128), unique=True, nullable=False)
     description = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
     
     # Relationships
     members = relationship("TeamMember", back_populates="team")
@@ -45,7 +46,7 @@ class TeamMember(Base):
     user_id = Column(BigInteger, ForeignKey("user.id"), nullable=False)
     team_id = Column(BigInteger, ForeignKey("team.id"), nullable=False)
     role = Column(String(32), default="member")  # admin/member
-    joined_at = Column(DateTime, default=datetime.utcnow)
+    joined_at = Column(DateTime, default=cn_now)
     
     # Relationships
     user = relationship("User", back_populates="teams")
@@ -58,7 +59,7 @@ class Role(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     name = Column(String(64), unique=True, nullable=False)
     description = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
     
     # Relationships
     users = relationship("User", secondary="user_role", back_populates="roles")
@@ -105,8 +106,8 @@ class Project(Base):
     description = Column(Text)
     git_url = Column(String(512))
     status = Column(Enum(ProjectStatus), default=ProjectStatus.ACTIVE)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
     
     # Relationships
     team = relationship("Team", back_populates="projects")
@@ -131,7 +132,7 @@ class ProjectVersion(Base):
     config_snapshot = Column(JSON)
     image_tag = Column(String(128))
     status = Column(Enum(ProjectVersionStatus), default=ProjectVersionStatus.BUILDING)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
     
     # Relationships
     project = relationship("Project", back_populates="versions")
@@ -152,8 +153,8 @@ class GitCredential(Base):
     default_branch = Column(String(128))     # 默认分支（可选，仅作创建时建议值）
     is_active = Column(Boolean, default=True)
     created_by = Column(BigInteger, ForeignKey("user.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
 
     # Relationships
     creator = relationship("User")
@@ -212,8 +213,8 @@ class Spider(Base):
     success_count = Column(Integer, default=0)
     error_count = Column(Integer, default=0)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
     
     # Relationships
     project = relationship("Project", back_populates="spiders")
@@ -256,8 +257,8 @@ class Schedule(Base):
     fail_count = Column(Integer, default=0)
     description = Column(Text)
     created_by = Column(BigInteger, ForeignKey("user.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
     
     # Relationships
     project = relationship("Project", back_populates="schedules")
@@ -322,7 +323,7 @@ class TaskInstance(Base):
     pages_crawled = Column(Integer, default=0)  # 爬取页面数
     items_scraped = Column(Integer, default=0)  # 采集条目数
     errors_count = Column(Integer, default=0)  # 错误数量
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
     
     # Relationships
     schedule = relationship("Schedule", back_populates="task_instances")
@@ -338,8 +339,8 @@ class EnvironmentConfig(Base):
     env_name = Column(String(32), nullable=False)  # dev/test/prod
     config = Column(JSON)
     is_active = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
 
 
 # ==================== Phase 2: 部署引擎 ====================
@@ -374,7 +375,7 @@ class Deploy(Base):
     deployed_by = Column(BigInteger, ForeignKey("user.id"))
     started_at = Column(DateTime)
     finished_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
     
     # Relationships
     project = relationship("Project")
@@ -415,8 +416,8 @@ class Server(Base):
     description = Column(String(512))
     status = Column(Enum(ServerStatus), default=ServerStatus.UNKNOWN)
     last_probed_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
 
     # Relationships
     nodes = relationship("Node", back_populates="server")
@@ -455,8 +456,8 @@ class Node(Base):
     private_ip = Column(String(64))     # 内网 IP
     container_count = Column(Integer, default=0)
     last_heartbeat = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
     
     # Relationships
     server = relationship("Server", back_populates="nodes")
@@ -489,7 +490,7 @@ class Container(Base):
     environment = Column(JSON)  # 环境变量
     resource_limits = Column(JSON)  # 资源限制
     health_check = Column(JSON)  # 健康检查配置
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=cn_now)
     started_at = Column(DateTime)
     stopped_at = Column(DateTime)
     

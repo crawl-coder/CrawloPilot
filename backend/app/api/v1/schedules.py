@@ -5,6 +5,7 @@ V1（方案 A）以"爬虫默认调度"为主：POST /schedules 对同一爬虫�
 独立列表页（V2）复用同一套接口。
 """
 from datetime import datetime, timedelta
+from app.core.time_utils import cn_now
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
@@ -111,7 +112,7 @@ def _validate_payload(schedule_type: str, cron_expr, interval_seconds, run_at, t
     elif schedule_type == "once":
         if not run_at:
             raise HTTPException(status_code=400, detail="once 类型必须提供 run_at")
-        if require_future_once and _to_utc_naive(run_at, timezone) <= datetime.utcnow():
+        if require_future_once and _to_utc_naive(run_at, timezone) <= cn_now():
             raise HTTPException(status_code=400, detail="once 类型的运行时间必须是将来的时间")
     else:
         raise HTTPException(status_code=400, detail=f"不支持的调度类型: {schedule_type}")
@@ -351,13 +352,13 @@ async def update_schedule(
         sched.timezone or "Asia/Shanghai",
     )
     # once 未来时间检查：仅在改动 run_at 或重新启用时触发，避免编辑历史 once 调度被误伤
-    # 注意 sched.run_at 已是 UTC naive（库存储格式），直接与 utcnow 比较
+    # 注意 sched.run_at 已是中国时区 naive（库存储格式），直接与 cn_now() 比较
     if (
         sched.enabled
         and sched.schedule_type == ScheduleType.ONCE
         and ("run_at" in payload or payload.get("enabled") is True)
         and sched.run_at
-        and sched.run_at <= datetime.utcnow()
+        and sched.run_at <= cn_now()
     ):
         raise HTTPException(status_code=400, detail="once 类型的运行时间必须是将来的时间")
     db.commit()

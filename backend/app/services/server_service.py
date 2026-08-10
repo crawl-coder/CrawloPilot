@@ -8,6 +8,7 @@ import socket
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from app.core.time_utils import cn_now
 
 from sqlalchemy.orm import Session
 
@@ -184,7 +185,7 @@ class ServerService:
             except Exception as e:
                 logger.warning(f"通道 {node.name} 握手失败: {e}")
 
-        server.last_probed_at = datetime.utcnow()
+        server.last_probed_at = cn_now()
         self.db.commit()
         self.aggregate_server_status(server)
         return {

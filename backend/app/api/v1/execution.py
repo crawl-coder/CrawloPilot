@@ -7,6 +7,7 @@
 import logging
 import re
 from datetime import datetime, timedelta
+from app.core.time_utils import cn_now
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -73,7 +74,7 @@ def _filter_logs(logs: str, level: Optional[str] = None, since: Optional[str] = 
             num = int(m.group(1))
             unit = m.group(2)
             seconds = num * {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}[unit]
-            cutoff = datetime.utcnow() - timedelta(seconds=seconds)
+            cutoff = cn_now() - timedelta(seconds=seconds)
             kept = []
             for ln in lines:
                 ts = _extract_log_ts(ln)
@@ -103,7 +104,7 @@ def _extract_log_ts(line: str):
     m2 = re.match(r'^(\d{2}:\d{2}:\d{2})', line)
     if m2:
         try:
-            today = datetime.utcnow().date()
+            today = cn_now().date()
             return datetime.combine(today, datetime.strptime(m2.group(1), '%H:%M:%S').time())
         except ValueError:
             return None
@@ -238,7 +239,7 @@ async def stop_task(
     if not ok:
         # 进程不存在时仍将数据库状态置为取消，保证记录可收敛
         task.status = TaskStatus.CANCELLED
-        task.finished_at = datetime.utcnow()
+        task.finished_at = cn_now()
         db.commit()
         logger.warning(f"Stop task {task_id}: process not found, marked CANCELLED")
         return {
@@ -429,7 +430,7 @@ async def get_task_stats(
     success = query.filter(TaskInstance.status == TaskStatus.SUCCESS).count()
     failed = query.filter(TaskInstance.status == TaskStatus.FAILED).count()
     today = query.filter(
-        TaskInstance.created_at >= datetime.utcnow() - timedelta(days=1)
+        TaskInstance.created_at >= cn_now() - timedelta(days=1)
     ).count()
 
     return {

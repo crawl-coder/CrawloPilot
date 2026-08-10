@@ -9,6 +9,7 @@
 import logging
 import os
 from datetime import datetime, timedelta
+from app.core.time_utils import cn_now
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -103,7 +104,7 @@ class SchedulerService:
         """启动恢复：错跑检测 + 注册所有 enabled 调度"""
         db = SessionLocal()
         try:
-            now = datetime.utcnow()
+            now = cn_now()
             window = timedelta(hours=int(os.environ.get("SCHEDULE_COMPENSATION_HOURS", "24")))
             for sched in db.query(Schedule).filter(Schedule.enabled == True).all():
                 # 单调度异常隔离：一条脏数据（如非法 cron）不能中断整体恢复
@@ -236,7 +237,7 @@ class SchedulerService:
 
             # 周期触发用当前时刻占幂等槽位；run-now 传 None（MySQL 唯一索引允许多个 NULL，不撞周期触发）
             if expected_run_at is None and not ignore_enabled:
-                expected_run_at = datetime.utcnow()
+                expected_run_at = cn_now()
             from app.services.task_service import create_and_run_task
             result = create_and_run_task(
                 db,
@@ -246,7 +247,7 @@ class SchedulerService:
                 expected_run_at=expected_run_at,
             )
 
-            sched.last_run_at = datetime.utcnow()
+            sched.last_run_at = cn_now()
             sched.last_run_status = "running"
             sched.last_run_task_id = result["task_id"]
             sched.run_count = (sched.run_count or 0) + 1
