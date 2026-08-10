@@ -72,7 +72,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="上次状态" width="100">
+        <el-table-column label="最近结果" width="100">
           <template #default="{ row }">
             <el-tag v-if="row.last_run_status" :type="statusTagType(row.last_run_status)" size="small">
               {{ statusText(row.last_run_status) }}
