@@ -105,7 +105,7 @@ V1 聚焦「爬虫部署流程」：登录 → 项目 → 爬虫 → 代码 → 
 
 ## 已知事项
 
-- crawlo 已升级至 1.7.2（本地环境 + Docker 基础镜像均使用，基础镜像构建优先用本地 wheel）
+- crawlo 已升级至 1.7.3（本地环境 + Docker 基础镜像均使用，基础镜像构建优先用本地 wheel）
 - Agent 程序：`agent/crawlo_agent.py`，纯标准库，反向连接控制端
 - 本地开发数据库：Homebrew mysql@8.0 或 Docker MySQL，库名 `crawlo_pilot`，
   账号见 `.env.example`（凭据以本地 `.env` 为准，不入库）

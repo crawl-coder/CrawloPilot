@@ -6,12 +6,16 @@
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg)
 ![Vue 3](https://img.shields.io/badge/Frontend-Vue3-4FC08D.svg)
-![Crawlo](https://img.shields.io/badge/Crawlo-1.7.2-purple.svg)
+![Crawlo](https://img.shields.io/badge/Crawlo-1.7.3-purple.svg)
 
 CrawloPilot 是围绕 [Crawlo](https://github.com/crawl-coder/Crawlo) 爬虫框架构建的管理部署平台，
 支持本地 / SSH / Docker / Agent 四种执行模式跨节点分发爬虫任务。在 Web 界面上完成
 项目与爬虫管理、代码克隆/上传/在线编辑、定时调度、任务全生命周期管控，
 并实时查看任务状态、日志与运行指标。
+
+> **Crawlo 版本要求**：`crawlo >= 1.7.3`。1.7.3 完成了核心架构重构（包结构重组、
+> 初始化系统子包化），分布式组件（Redis Stream / Failover / Cluster）在该版本后才
+> 完全稳定；1.7.2 存在已知的配置路径问题。依赖已按此要求声明（`backend/requirements.txt`）。
 
 ## 目录
 
@@ -296,7 +300,7 @@ flowchart LR
 - **项目 Dockerfile（仅 Docker 模式）**：构建策略为「项目 Dockerfile 优先，缺失回退内置模板」：
   - 代码目录存在 `Dockerfile` → 以项目 Dockerfile 构建镜像（`FROM/COPY/CMD` 全由项目决定），
     构建失败自动回退；
-  - 没有 Dockerfile → 内置模板（`FROM crawlopilot/base:1.7.2` + COPY 代码 + 装 requirements）；
+  - 没有 Dockerfile → 内置模板（`FROM crawlopilot/base:1.7.3` + COPY 代码 + 装 requirements）；
   - 镜像按 `crawlo-project-{project_id}-{内容摘要}` 缓存，代码不变则秒级复用。
 - **启动命令**：配置了 `entry_file` 就精确执行 `python <entry_file>`；
   否则尊重镜像 `ENTRYPOINT/CMD`；内置模板默认 `python run.py`。
