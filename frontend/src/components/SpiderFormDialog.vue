@@ -625,7 +625,7 @@ const initForm = () => {
 }
 
 // 编辑模式：从 /schedules 读取该爬虫的默认调度并回显
-// 注意 run_at 库存为 UTC naive，展示时需按 UTC 解析（+'Z'）
+// 注意 run_at 库存为北京时间 naive，展示时按 +08:00 解析
 const loadExistingSchedule = async (spiderId) => {
   try {
     const list = await getSchedules({ spider_id: spiderId })
@@ -638,7 +638,7 @@ const loadExistingSchedule = async (spiderId) => {
       spiderForm.interval_minutes = sched.interval_seconds
         ? Math.max(1, Math.round(sched.interval_seconds / 60))
         : 60
-      spiderForm.run_at = sched.run_at ? new Date(sched.run_at + 'Z') : null
+      spiderForm.run_at = sched.run_at ? new Date(sched.run_at + '+08:00') : null
     }
   } catch (error) {
     // 读取失败不阻塞编辑，保持关闭状态
@@ -686,7 +686,7 @@ const syncSchedule = async (spiderId) => {
       ...buildTriggerPayload(ex.schedule_type || 'cron', {
         cronExpr: ex.cron_expr || '0 * * * *',
         intervalMinutes: (ex.interval_seconds || 3600) / 60,
-        runAt: ex.run_at ? new Date(ex.run_at + 'Z') : null
+        runAt: ex.run_at ? new Date(ex.run_at + '+08:00') : null
       }),
       timezone: ex.timezone || 'Asia/Shanghai',
       max_concurrency: ex.max_concurrency || 1,

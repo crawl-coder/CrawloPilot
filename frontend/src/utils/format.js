@@ -57,14 +57,17 @@ export function getStatusText(status) {
 }
 
 /**
- * 解析后端时间：后端为 UTC 无时区标记（如 2026-08-06T06:55:01），
- * 按 UTC 解析并转本地时区显示；带时区标记的直接解析。
+ * 解析后端时间：
+ * - 普通业务时间（任务/爬虫/项目等）已是北京时间 naive（如 2026-08-10T22:01:58），
+ *   无时区标记时按 +08:00（北京时间）解析，再按浏览器本地时区显示；
+ * - 带时区标记（Z / ±hh:mm）的直接解析。
+ * 注意：调度 run_at 仍是 UTC naive，需单独加 'Z' 解析（见 SpiderFormDialog）。
  */
 export function parseDate(value) {
   if (!value) return null
   const s = String(value).trim()
   const hasTz = /(Z|[+-]\d{2}:?\d{2})$/.test(s)
-  const iso = hasTz ? s : s.replace(' ', 'T') + 'Z'
+  const iso = hasTz ? s : s.replace(' ', 'T') + '+08:00'
   return new Date(iso)
 }
 

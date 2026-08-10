@@ -203,13 +203,16 @@ class SchedulerService:
         if sched.schedule_type == ScheduleType.ONCE:
             if not sched.run_at:
                 return None
-            return DateTrigger(run_date=sched.run_at, timezone=ZoneInfo("UTC"))
+            return DateTrigger(run_date=sched.run_at, timezone=tz)
         return None
 
     def _sync_next_run_time(self, db, sched: Schedule):
         job = self.scheduler.get_job(self._job_id(sched.id))
         if job and job.next_run_time:
-            sched.next_run_time = job.next_run_time.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+            # 统一存储北京时间（Asia/Shanghai）naive，与数据库其他时间一致
+            sched.next_run_time = job.next_run_time.astimezone(
+                ZoneInfo(DEFAULT_TZ)
+            ).replace(tzinfo=None)
         else:
             sched.next_run_time = None
 

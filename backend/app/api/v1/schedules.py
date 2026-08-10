@@ -84,11 +84,14 @@ class ScheduleOut(BaseModel):
 
 # ==================== 工具函数 ====================
 
-def _to_utc_naive(dt: datetime, tz: str) -> datetime:
-    """输入时间按调度时区解释，转 UTC naive 存储"""
+def _to_cn_naive(dt: datetime, tz: str) -> datetime:
+    """输入时间按调度时区解释，转北京时间（Asia/Shanghai）naive 存储
+
+    数据库时间统一中国时区，调度 run_at/next_run_time 不再存 UTC。
+    """
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=ZoneInfo(tz))
-    return dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    return dt.astimezone(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
 
 
 def _validate_payload(schedule_type: str, cron_expr, interval_seconds, run_at, timezone,
@@ -112,7 +115,7 @@ def _validate_payload(schedule_type: str, cron_expr, interval_seconds, run_at, t
     elif schedule_type == "once":
         if not run_at:
             raise HTTPException(status_code=400, detail="once 类型必须提供 run_at")
-        if require_future_once and _to_utc_naive(run_at, timezone) <= cn_now():
+        if require_future_once and _to_cn_naive(run_at, timezone) <= cn_now():
             raise HTTPException(status_code=400, detail="once 类型的运行时间必须是将来的时间")
     else:
         raise HTTPException(status_code=400, detail=f"不支持的调度类型: {schedule_type}")
@@ -151,7 +154,7 @@ def _apply_payload(sched: Schedule, payload: dict):
             sched.interval_seconds = payload["interval_seconds"]
     elif sched.schedule_type == ScheduleType.ONCE:
         if "run_at" in payload and payload["run_at"] is not None:
-            sched.run_at = _to_utc_naive(payload["run_at"], sched.timezone or "Asia/Shanghai")
+            sched.run_at = _to_cn_naive(payload["run_at"], sched.timezone or "Asia/Shanghai")
 
 
 def _serialize(sched: Schedule) -> ScheduleOut:
@@ -309,7 +312,7 @@ async def create_schedule(
         schedule_type=ScheduleType(data.schedule_type),
         cron_expr=data.cron_expr if data.schedule_type == "cron" else None,
         interval_seconds=data.interval_seconds if data.schedule_type == "interval" else None,
-        run_at=_to_utc_naive(data.run_at, data.timezone) if data.schedule_type == "once" and data.run_at else None,
+        run_at=_to_cn_naive(data.run_at, data.timezone) if data.schedule_type == "once" and data.run_at else None,
         timezone=data.timezone,
         max_concurrency=data.max_concurrency,
         timeout_seconds=data.timeout_seconds,
