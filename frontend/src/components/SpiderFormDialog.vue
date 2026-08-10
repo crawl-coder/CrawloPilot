@@ -351,7 +351,7 @@ import { ElMessage } from 'element-plus'
 import { UploadFilled, Link, FolderAdd } from '@element-plus/icons-vue'
 import { createSpider, updateSpider, cloneSpiderGit, uploadSpiderCode } from '@/api/spider'
 import { getProjects } from '@/api/project'
-import { getSchedules, createSchedule } from '@/api/schedule'
+import { getSchedules, createSchedule, disableSchedule } from '@/api/schedule'
 import { getMyGitCredentials } from '@/api/auth'
 import { getGitCredentials } from '@/api/git-credential'
 import { formatDuration } from '@/utils/common'
@@ -678,21 +678,8 @@ const syncSchedule = async (spiderId) => {
       enabled: true
     })
   } else if (existingSchedule.value) {
-    // 有关联调度但用户关闭：保留行、停用（保留原触发配置，run_at 原值往返不漂移）
-    const ex = existingSchedule.value
-    await createSchedule({
-      spider_id: spiderId,
-      schedule_type: ex.schedule_type || 'cron',
-      ...buildTriggerPayload(ex.schedule_type || 'cron', {
-        cronExpr: ex.cron_expr || '0 * * * *',
-        intervalMinutes: (ex.interval_seconds || 3600) / 60,
-        runAt: ex.run_at ? new Date(ex.run_at + '+08:00') : null
-      }),
-      timezone: ex.timezone || 'Asia/Shanghai',
-      max_concurrency: ex.max_concurrency || 1,
-      timeout_seconds: ex.timeout_seconds || spiderForm.timeout_seconds,
-      enabled: false
-    })
+    // 用户关闭调度：停用现有调度（V2 一爬虫可多条，这里停用表单关联的那条）
+    await disableSchedule(existingSchedule.value.id)
   }
 }
 

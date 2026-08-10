@@ -1,7 +1,8 @@
 """
 定时任务调度 API
 
-V1（方案 A）以"爬虫默认调度"为主：POST /schedules 对同一爬虫做 upsert。
+V2：一爬虫可配置多条调度。POST /schedules 始终新增（不再对同一爬虫 upsert），
+    修改走 PUT /schedules/{id}，启停走 enable/disable。
 独立列表页（V2）复用同一套接口。
 """
 from datetime import datetime, timedelta
@@ -92,6 +93,16 @@ def _to_cn_naive(dt: datetime, tz: str) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=ZoneInfo(tz))
     return dt.astimezone(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
+
+
+def _next_schedule_seq(db, spider_id: int) -> int:
+    """同一爬虫下的调度序号（用于默认名称去重）"""
+    count = (
+        db.query(Schedule)
+        .filter(Schedule.spider_id == spider_id)
+        .count()
+    )
+    return count + 1
 
 
 def _validate_payload(schedule_type: str, cron_expr, interval_seconds, run_at, timezone,
@@ -279,7 +290,7 @@ async def create_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建调度；同一爬虫已存在调度时执行 upsert（V1 一对一）"""
+    """创建调度（V2：一爬虫可多条，始终新增；修改走 PUT /schedules/{id}）"""
     spider = db.query(Spider).filter(Spider.id == data.spider_id).first()
     if not spider:
         raise HTTPException(status_code=404, detail="爬虫不存在")
@@ -293,18 +304,8 @@ async def create_schedule(
         require_future_once=data.enabled,
     )
 
-    existing = db.query(Schedule).filter(Schedule.spider_id == data.spider_id).first()
-    if existing:
-        # upsert：更新现有调度
-        payload = data.dict(exclude={"spider_id"})
-        _apply_payload(existing, payload)
-        db.commit()
-        from app.services.scheduler_service import get_scheduler_service
-        get_scheduler_service().sync_schedule(existing.id)
-        return _reload_schedule(existing.id)
-
     sched = Schedule(
-        name=data.name or f"{spider.name}-调度",
+        name=data.name or f"{spider.name}-调度-{_next_schedule_seq(db, spider.id)}",
         project_id=spider.project_id,
         spider_id=spider.id,
         spider_name=spider.spider_name or spider.name,
