@@ -428,13 +428,18 @@ async def get_spider_file_content(
 @router.post("/{spider_id}/files/content")
 async def save_spider_file_content(
     spider_id: int,
-    path: str,
-    content: str,
+    request: dict,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """保存爬虫文件内容"""
     from app.services.file_service import FileService
+    path = request.get("path")
+    content = request.get("content")
+    if not path:
+        raise HTTPException(status_code=422, detail="缺少 path 参数")
+    if content is None:
+        raise HTTPException(status_code=422, detail="缺少 content 参数")
     
     spider = db.query(Spider).filter(Spider.id == spider_id).first()
     if not spider:

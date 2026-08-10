@@ -28,7 +28,7 @@
           <template #header>
             <div class="panel-header">
               <h3>最近任务</h3>
-              <el-link type="primary" :underline="false" @click="router.push('/tasks')">
+              <el-link type="primary" :underline="'never'" @click="router.push('/tasks')">
                 查看全部<el-icon><ArrowRight /></el-icon>
               </el-link>
             </div>

@@ -67,8 +67,9 @@ export function getSpiderFileContent(spiderId, path) {
 
 // 保存爬虫文件内容
 export function saveSpiderFileContent(spiderId, path, content) {
-  return request.post(`/spiders/${spiderId}/files/content`, null, {
-    params: { path, content }
+  return request.post(`/spiders/${spiderId}/files/content`, {
+    path,
+    content
   })
 }
 
