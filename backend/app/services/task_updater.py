@@ -80,6 +80,27 @@ def update_task_completion(
             task.duration = (finished_at - task.started_at).total_seconds()
             db.commit()
 
+        # 失败/超时告警（Webhook）
+        if status in (TaskStatus.FAILED, TaskStatus.TIMEOUT):
+            try:
+                from app.services.alert_service import notify_task_failed
+                spider_name = task.spider_name or (task.spider.name if task.spider else "")
+                project_name = task.spider.project.name if task.spider and task.spider.project else ""
+                node_name = task.node.name if task.node else ""
+                notify_task_failed(
+                    task.id,
+                    spider_name,
+                    project_name,
+                    node_name,
+                    status.value,
+                    error_message,
+                    task.duration,
+                    task.started_at,
+                    finished_at,
+                )
+            except Exception as e:
+                logger.warning(f"[{task_id}] 触发失败告警异常: {e}")
+
         logger.info(
             f"[{task_id}] 任务完成: status={status.value}, "
             f"pages={pages_crawled}, items={items_scraped}, "

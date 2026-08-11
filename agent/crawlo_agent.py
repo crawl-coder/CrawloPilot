@@ -19,6 +19,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -214,11 +215,17 @@ class AgentClient:
             code_dir = workspace / "code"
             log(f"代码已下载: {code_dir}")
 
-            # 2. 确保 crawlo 可用
-            self._ensure_crawlo()
-            self._install_requirements(code_dir)
+            # 2. 隔离环境：venv 内装 crawlo 与项目依赖，避免多爬虫互相污染
+            venv_python = self._create_venv(workspace)
+            self._ensure_crawlo(venv_python)
+            self._install_requirements(code_dir, venv_python)
 
-            # 3. 启动进程
+            # 3. 构建启动命令（支持任务参数 args）
+            run_args = [venv_python, entry_file]
+            task_args = task.get("args") or ""
+            if task_args:
+                run_args.extend(shlex.split(task_args))
+
             env = os.environ.copy()
             env.update({
                 "TASK_ID": str(task_id),
@@ -226,8 +233,11 @@ class AgentClient:
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONIOENCODING": "utf-8",
             })
+            task_env = task.get("env") or {}
+            if isinstance(task_env, dict):
+                env.update({str(k): str(v) for k, v in task_env.items() if k and v is not None})
             proc = subprocess.Popen(
-                [sys.executable, entry_file],
+                run_args,
                 cwd=str(code_dir),
                 env=env,
                 stdout=subprocess.PIPE,
@@ -302,10 +312,46 @@ class AgentClient:
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
 
-    def _ensure_crawlo(self):
-        """确保本机可导入 crawlo（缺失则自动 pip 安装）"""
+    def _create_venv(self, base_dir: Path) -> str:
+        """创建虚拟环境，返回 venv 内 python 路径（隔离各爬虫依赖）"""
+        venv_dir = base_dir / ".venv"
+        created = False
+        try:
+            r = subprocess.run(
+                [sys.executable, "-m", "venv", str(venv_dir)],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            created = r.returncode == 0
+        except Exception as e:
+            log(f"python -m venv 失败: {e}")
+        if not created:
+            log("python -m venv 不可用，尝试 virtualenv")
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--quiet", "virtualenv", "-i", PIP_INDEX],
+                    timeout=300,
+                )
+                subprocess.run(
+                    [sys.executable, "-m", "virtualenv", str(venv_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
+            except Exception as e:
+                raise RuntimeError(f"虚拟环境创建失败: {e}")
+
+        python = venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        if not python.exists():
+            raise RuntimeError(f"虚拟环境 python 不存在: {python}")
+        log(f"虚拟环境已创建: {python}")
+        return str(python)
+
+    def _ensure_crawlo(self, python: str):
+        """确保 venv 内可导入 crawlo（缺失则自动 pip 安装）"""
         check = subprocess.run(
-            [sys.executable, "-c", "import crawlo"],
+            [python, "-c", "import crawlo"],
             capture_output=True,
         )
         if check.returncode == 0:
@@ -314,22 +360,22 @@ class AgentClient:
         log("检测到 crawlo 未安装，自动安装中...")
         try:
             subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--quiet", "crawlo", "aiomysql", "-i", PIP_INDEX],
+                [python, "-m", "pip", "install", "--quiet", "crawlo", "aiomysql", "-i", PIP_INDEX],
                 timeout=600,
             )
             log("crawlo 安装完成")
         except Exception as e:
             log(f"crawlo 自动安装失败: {e}")
 
-    def _install_requirements(self, code_dir):
-        """安装项目 requirements.txt（如存在）"""
+    def _install_requirements(self, code_dir, python: str):
+        """安装项目 requirements.txt（如存在，装进 venv）"""
         req_file = os.path.join(str(code_dir), "requirements.txt")
         if not os.path.exists(req_file):
             return
         log(f"检测到 requirements.txt，安装依赖...")
         try:
             subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-r", req_file, "-i", PIP_INDEX],
+                [python, "-m", "pip", "install", "-r", req_file, "-i", PIP_INDEX],
                 timeout=600,
             )
             log("项目依赖安装完成")

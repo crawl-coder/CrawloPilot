@@ -276,7 +276,7 @@
     </el-dialog>
 
     <!-- 运行爬虫对话框 -->
-    <el-dialog v-model="showRunDialog" title="运行爬虫" width="500px">
+    <el-dialog v-model="showRunDialog" title="运行爬虫" width="560px">
       <el-form label-width="100px">
         <el-form-item label="运行模式">
           <el-radio-group v-model="runForm.mode">
@@ -315,6 +315,17 @@
             <div><strong>端口:</strong> {{ selectedNode.ssh_port || selectedNode.port }}</div>
             <div><strong>连接方式:</strong> {{ selectedNode.connect_type }}</div>
           </div>
+        </el-form-item>
+        <el-form-item label="命令行参数">
+          <el-input v-model="runForm.args" placeholder='如 -a start_date=2026-08-01（追加到启动命令末尾）' />
+        </el-form-item>
+        <el-form-item label="环境变量">
+          <el-input
+            v-model="runForm.envText"
+            type="textarea"
+            :rows="3"
+            placeholder="每行一个 KEY=VALUE，例如：&#10;START_DATE=2026-08-01"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -410,7 +421,9 @@ const nodesLoading = ref(false)
 const availableNodes = ref([])
 const runForm = reactive({
   mode: 'local',
-  nodeId: null
+  nodeId: null,
+  args: '',
+  envText: ''
 })
 const selectedNode = computed(() => {
   if (!runForm.nodeId) return null
@@ -780,6 +793,8 @@ const handleRun = async () => {
   // 打开运行对话框
   runForm.mode = 'local'
   runForm.nodeId = null
+  runForm.args = ''
+  runForm.envText = ''
   showRunDialog.value = true
 }
 
@@ -790,6 +805,21 @@ const confirmRun = async () => {
     const data = {}
     if (runForm.mode === 'node' && runForm.nodeId) {
       data.node_id = runForm.nodeId
+    }
+    if (runForm.args.trim()) {
+      data.args = runForm.args.trim()
+    }
+    const env = {}
+    runForm.envText.split('\n').forEach((line) => {
+      const idx = line.indexOf('=')
+      if (idx > 0) {
+        const k = line.slice(0, idx).trim()
+        const v = line.slice(idx + 1).trim()
+        if (k) env[k] = v
+      }
+    })
+    if (Object.keys(env).length > 0) {
+      data.env = env
     }
     
     const res = await runSpider(spiderId, data)

@@ -80,6 +80,9 @@ class SshTaskConfig:
     # 环境变量
     extra_env: Dict[str, str] = field(default_factory=dict)
 
+    # 命令行参数（追加到远程启动命令末尾）
+    args: Optional[str] = None
+
 
 class SshConnection:
     """SSH 连接管理器（带自动重连）"""
@@ -481,6 +484,17 @@ class SshSpiderProcess:
             # 6. 构建启动命令
             self._append_task_log("准备启动爬虫...")
             start_cmd = self._build_start_command(config)
+            # 注入环境变量（export 前缀）与任务参数（追加到命令末尾）
+            if config.extra_env:
+                exports = " ".join(
+                    f"export {k}={shlex.quote(str(v))};"
+                    for k, v in config.extra_env.items()
+                )
+                start_cmd = exports + " " + start_cmd
+            if config.args:
+                start_cmd = start_cmd + " " + " ".join(
+                    shlex.quote(a) for a in shlex.split(config.args)
+                )
 
             # 6. 通过 nohup 启动（获取 PID）
             # 使用 setsid 确保进程独立于 SSH 会话

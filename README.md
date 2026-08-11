@@ -144,6 +144,9 @@ cp .env.example .env
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | 控制面默认 Docker 连接 |
 | `UPLOAD_DIR` | `uploads`（相对 backend 工作目录） | 代码/上传/任务日志根目录，**生产必须改为绝对路径** |
 | `TASK_LOG_RETENTION_DAYS` | `30` | 任务日志保留天数，`0` 表示不清理 |
+| `TASK_RETENTION_DAYS` | `90` | 终态任务记录保留天数，`0` 表示不清理 |
+| `DOCKER_IMAGE_KEEP` | `5` | 每个项目保留的 Docker 任务镜像数，`0` 表示不清理 |
+| `ALERT_WEBHOOK_URL` | 空 | 任务失败/超时告警 Webhook（钉钉/企微/飞书/Slack 自定义机器人，POST JSON） |
 
 > 注意：`CREDENTIAL_ENCRYPTION_KEY` 用于 Git 凭据的对称加密，一旦启用后**不可变更**，更换会导致历史密文无法解密。建议首次部署时使用 `openssl rand -hex 32` 生成并固定。
 

@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
+from typing import Dict, Optional
 from app.core.time_utils import cn_now
 from threading import Thread
 
@@ -57,6 +58,8 @@ def create_and_run_task(
     memory_limit=None,
     cpu_limit=None,
     timeout=None,
+    task_args: Optional[str] = None,
+    task_env: Optional[Dict[str, str]] = None,
 ):
     """
     创建任务并按节点分发
@@ -108,36 +111,48 @@ def create_and_run_task(
         deploy_mode=deploy_mode,
         memory_limit=memory_limit,
         cpu_limit=cpu_limit,
+        stats={"args": task_args, "env": task_env} if (task_args or task_env) else None,
     )
     db.add(task)
     db.commit()
     db.refresh(task)
 
     spider_name = spider.spider_name or spider.name
+    task_stats = task.stats or {}
+    task_args = task_stats.get("args")
+    task_env = task_stats.get("env") or {}
     if node:
         if node.connect_type == "ssh":
-            result = _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks)
+            result = _dispatch_ssh(
+                spider, task, node, code_dir, spider_name, background_tasks,
+                task_args=task_args, task_env=task_env,
+            )
         elif node.connect_type == "docker":
             result = _dispatch_docker(
                 spider, task, node, code_dir, spider_name, background_tasks,
                 memory_limit=memory_limit, cpu_limit=cpu_limit,
+                task_args=task_args, task_env=task_env,
             )
         elif node.connect_type == "agent":
             result = _dispatch_agent(spider, task, node, db)
         else:
-            result = _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks)
+            result = _dispatch_ssh(
+                spider, task, node, code_dir, spider_name, background_tasks,
+                task_args=task_args, task_env=task_env,
+            )
     else:
         result = _dispatch_local(spider, task, code_dir, spider_name, background_tasks,
                                  timeout=timeout,
                                  memory_limit=memory_limit,
-                                 cpu_limit=cpu_limit)
+                                 cpu_limit=cpu_limit,
+                                 task_args=task_args, task_env=task_env)
 
     _update_spider_run_stats(db, spider)
     return result
 
 
 def _dispatch_local(spider, task, code_dir, spider_name, background_tasks, timeout=None,
-                    memory_limit=None, cpu_limit=None):
+                    memory_limit=None, cpu_limit=None, task_args=None, task_env=None):
     """本地模式：子进程运行"""
     from app.services.local_executor import get_local_executor, LocalTaskConfig
 
@@ -151,6 +166,8 @@ def _dispatch_local(spider, task, code_dir, spider_name, background_tasks, timeo
         timeout=timeout or 3600,
         memory_limit=memory_limit,
         cpu_limit=cpu_limit,
+        extra_env=task_env or {},
+        args=task_args,
     )
     if background_tasks:
         background_tasks.add_task(get_local_executor().execute_task, config)
@@ -167,7 +184,8 @@ def _dispatch_local(spider, task, code_dir, spider_name, background_tasks, timeo
     }
 
 
-def _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks):
+def _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks,
+                  task_args=None, task_env=None):
     """SSH 模式：上传代码远程运行"""
     from app.services.ssh_executor import get_ssh_executor, SshTaskConfig
     from app.core.crypto import decrypt_or_plain
@@ -184,6 +202,8 @@ def _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks):
         code_dir=code_dir,
         entry_file=spider.entry_file,
         spider_name_to_run=spider_name,
+        extra_env=task_env or {},
+        args=task_args,
     )
     if background_tasks:
         background_tasks.add_task(get_ssh_executor().execute_task, config)
@@ -203,7 +223,7 @@ def _dispatch_ssh(spider, task, node, code_dir, spider_name, background_tasks):
 
 
 def _dispatch_docker(spider, task, node, code_dir, spider_name, background_tasks,
-                     memory_limit=None, cpu_limit=None):
+                     memory_limit=None, cpu_limit=None, task_args=None, task_env=None):
     """Docker 模式：直连节点 Docker API"""
     from app.services.docker_executor import get_docker_executor, DockerTaskConfig
 
@@ -220,6 +240,8 @@ def _dispatch_docker(spider, task, node, code_dir, spider_name, background_tasks
         docker_host=node.docker_host,
         memory_limit=memory_limit or "512m",
         cpu_limit=cpu_limit or 1.0,
+        args=task_args,
+        env=task_env or {},
     )
     if background_tasks:
         background_tasks.add_task(get_docker_executor().execute_task, config)

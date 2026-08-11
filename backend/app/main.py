@@ -69,6 +69,26 @@ async def _task_log_cleanup_loop():
         await asyncio.sleep(86400)
 
 
+def _run_maintenance():
+    """日常维护：任务记录保留清理 + Docker 任务镜像 GC"""
+    from app.services.maintenance_service import (
+        cleanup_task_records,
+        cleanup_docker_images,
+    )
+    cleanup_task_records()
+    cleanup_docker_images()
+
+
+async def _maintenance_loop():
+    """数据治理：每天执行一次（任务记录保留、镜像 GC）"""
+    while True:
+        try:
+            await asyncio.to_thread(_run_maintenance)
+        except Exception as e:
+            logger.warning(f"日常维护失败: {e}")
+        await asyncio.sleep(86400)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动和关闭时的生命周期管理"""
@@ -78,6 +98,9 @@ async def lifespan(app: FastAPI):
 
     # 启动任务日志保留清理（每天执行一次）
     log_cleanup_task = asyncio.create_task(_task_log_cleanup_loop())
+
+    # 启动数据治理（任务记录保留 + Docker 镜像 GC，每天一次）
+    maintenance_task = asyncio.create_task(_maintenance_loop())
 
     # 启动定时调度器（进程内 APScheduler）
     from app.services.scheduler_service import get_scheduler_service

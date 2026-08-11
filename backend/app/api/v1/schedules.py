@@ -7,7 +7,7 @@ V2：一爬虫可配置多条调度。POST /schedules 始终新增（不再对�
 """
 from datetime import datetime, timedelta
 from app.core.time_utils import cn_now
-from typing import List, Optional
+from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from apscheduler.triggers.cron import CronTrigger
@@ -39,6 +39,8 @@ class ScheduleCreate(BaseModel):
     timeout_seconds: int = 3600
     enabled: bool = True
     description: Optional[str] = None
+    args: Optional[str] = None      # 命令行参数（触发时追加到启动命令）
+    env: Optional[Dict[str, str]] = None  # 额外环境变量
 
 
 class ScheduleUpdate(BaseModel):
@@ -53,6 +55,8 @@ class ScheduleUpdate(BaseModel):
     timeout_seconds: Optional[int] = None
     enabled: Optional[bool] = None
     description: Optional[str] = None
+    args: Optional[str] = None
+    env: Optional[Dict[str, str]] = None
 
 
 class ScheduleOut(BaseModel):
@@ -76,6 +80,8 @@ class ScheduleOut(BaseModel):
     last_run_task_id: Optional[int] = None
     run_count: int = 0
     description: Optional[str] = None
+    args: Optional[str] = None
+    env: Optional[Dict[str, str]] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -190,6 +196,8 @@ def _serialize(sched: Schedule) -> ScheduleOut:
         last_run_task_id=sched.last_run_task_id,
         run_count=sched.run_count or 0,
         description=sched.description,
+        args=(sched.retry_strategy or {}).get("args"),
+        env=(sched.retry_strategy or {}).get("env"),
         created_at=sched.created_at,
         updated_at=sched.updated_at,
     )
@@ -320,6 +328,7 @@ async def create_schedule(
         enabled=data.enabled,
         description=data.description,
         created_by=current_user.id,
+        retry_strategy={"args": data.args, "env": data.env} if (data.args or data.env) else None,
     )
     db.add(sched)
     db.commit()
@@ -347,6 +356,13 @@ async def update_schedule(
     sched = _get_schedule_or_404(db, schedule_id)
     payload = data.dict(exclude_unset=True)
     _apply_payload(sched, payload)
+    if "args" in payload or "env" in payload:
+        extra = dict(sched.retry_strategy or {})
+        if "args" in payload:
+            extra["args"] = payload["args"]
+        if "env" in payload:
+            extra["env"] = payload["env"]
+        sched.retry_strategy = extra or None
     # 更新后按最新类型/字段整体校验
     _validate_payload(
         sched.schedule_type.value,

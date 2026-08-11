@@ -10,6 +10,7 @@ import os
 import asyncio
 import sys
 import re
+import shlex
 import subprocess
 import signal
 import logging
@@ -60,6 +61,9 @@ class LocalTaskConfig:
     # 环境变量
     extra_env: Dict[str, str] = field(default_factory=dict)
 
+    # 命令行参数（追加到启动命令末尾，如 "-a param=value"）
+    args: Optional[str] = None
+
 
 class LocalSpiderProcess:
     """单个本地爬虫进程管理器"""
@@ -93,6 +97,8 @@ class LocalSpiderProcess:
 
             # 确定执行命令
             cmd = self._build_command(config, code_dir)
+            if config.args:
+                cmd = cmd + shlex.split(config.args)
             logger.info(f"[{self.task_id}] 启动命令: {' '.join(cmd)}")
 
             # 构建环境变量

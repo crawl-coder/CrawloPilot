@@ -269,6 +269,8 @@ async def agent_get_tasks(
                     "spider_id": task.spider_id,
                     "spider_name": task.spider_name,
                     "entry_file": task.spider.entry_file if task.spider else None,
+                    "args": (task.stats or {}).get("args"),
+                    "env": (task.stats or {}).get("env"),
                 }
             }
 

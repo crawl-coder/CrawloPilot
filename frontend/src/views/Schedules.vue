@@ -178,6 +178,18 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item label="命令行参数">
+          <el-input v-model="createForm.args" placeholder='如 -a start_date=2026-08-01（触发时追加到启动命令末尾）' />
+        </el-form-item>
+        <el-form-item label="环境变量">
+          <el-input
+            v-model="createForm.envText"
+            type="textarea"
+            :rows="2"
+            placeholder="每行一个 KEY=VALUE"
+          />
+        </el-form-item>
+
         <el-form-item label="立即启用">
           <el-switch v-model="createForm.enabled" />
         </el-form-item>
@@ -257,7 +269,9 @@ const createForm = reactive({
   interval_minutes: 60,
   run_at: null,
   node_id: null,
-  enabled: true
+  enabled: true,
+  args: '',
+  envText: ''
 })
 
 const filteredSpiderOptions = computed(() => {
@@ -292,6 +306,8 @@ const openCreate = () => {
   createForm.run_at = null
   createForm.node_id = null
   createForm.enabled = true
+  createForm.args = ''
+  createForm.envText = ''
   createVisible.value = true
 }
 
@@ -307,6 +323,10 @@ const openEdit = (row) => {
   createForm.run_at = row.run_at ? row.run_at.slice(0, 19) : null
   createForm.node_id = row.node_id ?? null
   createForm.enabled = !!row.enabled
+  createForm.args = row.args || ''
+  createForm.envText = row.env
+    ? Object.entries(row.env).map(([k, v]) => `${k}=${v}`).join('\n')
+    : ''
   createVisible.value = true
 }
 
@@ -328,6 +348,17 @@ const submitCreate = async () => {
   if (!editingId.value) {
     payload.spider_id = createForm.spider_id
   }
+  const env = {}
+  createForm.envText.split('\n').forEach((line) => {
+    const idx = line.indexOf('=')
+    if (idx > 0) {
+      const k = line.slice(0, idx).trim()
+      const v = line.slice(idx + 1).trim()
+      if (k) env[k] = v
+    }
+  })
+  if (createForm.args.trim()) payload.args = createForm.args.trim()
+  if (Object.keys(env).length > 0) payload.env = env
   if (createForm.schedule_type === 'cron') {
     if (!createForm.cron_expr?.trim()) {
       ElMessage.warning('请填写 Cron 表达式')

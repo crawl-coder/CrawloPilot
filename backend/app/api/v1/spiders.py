@@ -3,7 +3,7 @@
 """
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 from app.core.time_utils import cn_now
 import logging
@@ -31,6 +31,8 @@ class RunSpiderRequest(BaseModel):
     node_id: Optional[int] = None  # 指定目标节点，None=本地运行
     memory_limit: Optional[str] = None  # Docker 内存限制，如 "512m" / "1g"
     cpu_limit: Optional[float] = None   # Docker CPU 配额（核数）
+    args: Optional[str] = None          # 命令行参数，如 "-a start_date=2026-08-01"
+    env: Optional[Dict[str, str]] = None  # 额外环境变量
 
 
 
@@ -300,6 +302,8 @@ async def run_spider(
             background_tasks=background_tasks,
             memory_limit=body.memory_limit,
             cpu_limit=body.cpu_limit,
+            task_args=body.args,
+            task_env=body.env,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

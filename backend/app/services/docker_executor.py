@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import os
 import re
+import shlex
 import time
 import uuid
 import tarfile
@@ -25,7 +26,7 @@ from datetime import datetime
 from app.core.time_utils import cn_now
 from pathlib import Path
 from typing import Dict, Optional, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Thread
 
 from app.core.database import SessionLocal
@@ -69,6 +70,8 @@ class DockerTaskConfig:
     timeout: int = 3600
     memory_limit: str = "512m"
     cpu_limit: float = 1.0
+    args: Optional[str] = None  # 追加到容器启动命令末尾
+    env: Dict[str, str] = field(default_factory=dict)  # 注入容器环境变量
 
 
 def _iter_code_files(code_dir: str):
@@ -372,17 +375,21 @@ class DockerExecutor:
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONIOENCODING": "utf-8",
             }
+            env.update(config.env)
             run_kwargs = {}
+            extra_args = shlex.split(config.args) if config.args else []
             if config.entry_file:
                 # 显式入口文件优先：精确执行 python <entry_file>
                 run_kwargs["entrypoint"] = ["python", config.entry_file]
-                run_kwargs["command"] = []
+                run_kwargs["command"] = extra_args
             elif project_dockerfile:
                 # 项目 Dockerfile 自带启动逻辑（ENTRYPOINT/CMD），不覆盖
                 logger.info(f"[{config.task_id}] 使用项目 Dockerfile 的启动命令")
+                if extra_args:
+                    run_kwargs["command"] = extra_args
             else:
                 # 内置模板默认入口 run.py
-                run_kwargs["command"] = ["python", "run.py"]
+                run_kwargs["command"] = ["python", "run.py"] + extra_args
 
             container = docker.create_container(
                 image=tag,

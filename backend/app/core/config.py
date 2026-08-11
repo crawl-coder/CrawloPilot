@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
+    # 失败告警 Webhook（可选）：任务 failed/timeout 时推送 JSON，兼容钉钉/企业微信/飞书自定义机器人
+    ALERT_WEBHOOK_URL: Optional[str] = None
+
+    # 数据治理：终态任务记录保留天数（0 关闭）、每个项目保留的任务镜像数（0 关闭）
+    TASK_RETENTION_DAYS: int = 90
+    DOCKER_IMAGE_KEEP: int = 5
+
     @property
     def jwt_secret(self) -> str:
         """JWT 签名密钥：优先 JWT_SECRET_KEY，回退 SECRET_KEY"""

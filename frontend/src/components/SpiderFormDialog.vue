@@ -311,6 +311,17 @@
               style="width: 100%"
             />
           </el-form-item>
+          <el-form-item label="命令行参数">
+            <el-input v-model="spiderForm.schedule_args" placeholder='如 -a start_date=2026-08-01（触发时追加到启动命令末尾）' />
+          </el-form-item>
+          <el-form-item label="环境变量">
+            <el-input
+              v-model="spiderForm.schedule_env"
+              type="textarea"
+              :rows="2"
+              placeholder="每行一个 KEY=VALUE"
+            />
+          </el-form-item>
         </template>
 
         <el-form-item label="超时时间">
@@ -400,6 +411,8 @@ const spiderForm = reactive({
   cron_expr: '',
   interval_minutes: 60,
   run_at: null,
+  schedule_args: '',
+  schedule_env: '',
   timeout_seconds: 3600,
   retry_count: 3,
   status: 'active'
@@ -590,7 +603,9 @@ const initForm = () => {
       schedule_type: 'cron',
       cron_expr: '0 * * * *',
       interval_minutes: 60,
-      run_at: null
+      run_at: null,
+      schedule_args: '',
+      schedule_env: ''
     })
     loadExistingSchedule(row.id)
   } else {
@@ -616,6 +631,8 @@ const initForm = () => {
       cron_expr: '',
       interval_minutes: 60,
       run_at: null,
+      schedule_args: '',
+      schedule_env: '',
       timeout_seconds: 3600,
       retry_count: 3,
       status: 'active'
@@ -638,10 +655,28 @@ const loadExistingSchedule = async (spiderId) => {
         ? Math.max(1, Math.round(sched.interval_seconds / 60))
         : 60
       spiderForm.run_at = sched.run_at ? new Date(sched.run_at + '+08:00') : null
+      spiderForm.schedule_args = sched.args || ''
+      spiderForm.schedule_env = sched.env
+        ? Object.entries(sched.env).map(([k, v]) => `${k}=${v}`).join('\n')
+        : ''
     }
   } catch (error) {
     // 读取失败不阻塞编辑，保持关闭状态
   }
+}
+
+// 解析 "KEY=VALUE" 多行文本为环境变量对象
+const parseEnvText = (text = '') => {
+  const env = {}
+  text.split('\n').forEach((line) => {
+    const idx = line.indexOf('=')
+    if (idx > 0) {
+      const k = line.slice(0, idx).trim()
+      const v = line.slice(idx + 1).trim()
+      if (k) env[k] = v
+    }
+  })
+  return Object.keys(env).length > 0 ? env : undefined
 }
 
 // 按触发类型组装触发字段；run_at 统一转 tz-aware ISO 提交，
@@ -674,7 +709,9 @@ const syncSchedule = async (spiderId) => {
       timezone: 'Asia/Shanghai',
       max_concurrency: 1,
       timeout_seconds: spiderForm.timeout_seconds,
-      enabled: true
+      enabled: true,
+      args: spiderForm.schedule_args?.trim() || undefined,
+      env: parseEnvText(spiderForm.schedule_env)
     })
   } else if (existingSchedule.value) {
     // 用户关闭调度：停用现有调度（V2 一爬虫可多条，这里停用表单关联的那条）

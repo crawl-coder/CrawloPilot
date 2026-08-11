@@ -242,12 +242,22 @@ class SchedulerService:
             if expected_run_at is None and not ignore_enabled:
                 expected_run_at = cn_now()
             from app.services.task_service import create_and_run_task
+            # 任务参数：优先调度自身的附加配置（args/env），兼容旧 spider.schedule_config
+            sched_cfg = sched.retry_strategy or {}
+            if not isinstance(sched_cfg, dict):
+                sched_cfg = {}
+            if not sched_cfg.get("args") and not sched_cfg.get("env") and sched.spider:
+                spider_cfg = sched.spider.schedule_config or {}
+                if isinstance(spider_cfg, dict):
+                    sched_cfg = spider_cfg
             result = create_and_run_task(
                 db,
                 spider_id=sched.spider_id,
                 node_id=sched.node_id,
                 schedule_id=sched.id,
                 expected_run_at=expected_run_at,
+                task_args=sched_cfg.get("args"),
+                task_env=sched_cfg.get("env"),
             )
 
             sched.last_run_at = cn_now()
