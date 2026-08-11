@@ -155,8 +155,8 @@ def deploy_agent_to_server(db, server, server_url: str) -> Dict[str, Any]:
         finally:
             conn.close()
 
-        # 4. 等待注册上线（agent 启动即注册，最长等 30s）
-        deadline = time.time() + 30
+        # 4. 等待注册上线（agent 启动后注册，首次可能因网络/重试耗时，最长等 90s）
+        deadline = time.time() + 90
         online = False
         while time.time() < deadline:
             db.expire_all()
@@ -164,13 +164,19 @@ def deploy_agent_to_server(db, server, server_url: str) -> Dict[str, Any]:
             if node and node.status == NodeStatus.ONLINE:
                 online = True
                 break
-            time.sleep(2)
+            time.sleep(3)
+
+        # 兜底：窗口结束前再确认一次（避免刚好卡在边界）
+        if not online:
+            db.expire_all()
+            node = db.query(Node).get(agent_node.id)
+            online = bool(node and node.status == NodeStatus.ONLINE)
 
         result["success"] = online
         result["message"] = (
             f"Agent 已上线（节点 ID: {agent_node.id}）"
             if online
-            else "Agent 已启动但 30 秒内未上线，请登录服务器检查 systemd 日志"
+            else "Agent 已启动但 90 秒内未上线，请登录服务器检查 systemd 日志"
         )
         return result
 
