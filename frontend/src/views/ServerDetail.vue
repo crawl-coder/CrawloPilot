@@ -176,6 +176,9 @@ import {
 import { testNodeConnection, activateNode, deleteNode } from '@/api/node'
 import { formatDateTime as formatTime } from '@/utils/common'
 
+// Agent 启动命令里的管理服务器地址（默认取当前站点域名 + 18000）
+const agentServerUrl = () => `http://${window.location.hostname}:18000`
+
 const route = useRoute()
 const router = useRouter()
 const serverId = route.params.id
@@ -323,7 +326,7 @@ const handleCreateChannel = async () => {
     ElMessage.success('通道创建成功')
     if (res.connect_type === 'agent' && res.agent_token) {
       ElMessageBox.alert(
-        `在服务器上运行：\npython crawlo_agent.py --server http://<管理服务器>:18000 --token ${res.agent_token}`,
+        `节点 ID: ${res.id}\n在服务器上运行：\npython crawlo_agent.py --server ${agentServerUrl()} --token ${res.agent_token}`,
         'Agent 注册令牌（仅显示一次）',
         { confirmButtonText: '我已复制' }
       )

@@ -789,7 +789,7 @@ const showAgentToken = async (node) => {
     }
     ElMessageBox.alert(
       `请在节点服务器上运行：\n\n${cmd}\n\n${copied ? '✅ 命令已复制到剪贴板' : '请手动复制上面的命令'}`,
-      `Agent 注册令牌 - ${node.name}`,
+      `Agent 注册令牌 - ${node.name}（节点 ID: ${detail.id}）`,
       { confirmButtonText: '关闭' }
     )
   } catch (error) {
