@@ -34,6 +34,10 @@ export function recoverServer(id) {
   return request.post(`/servers/${id}/recover`)
 }
 
+export function batchDeployAgent(data) {
+  return request.post('/servers/batch-deploy-agent', data)
+}
+
 export function getServerNodes(id) {
   return request.get(`/servers/${id}/nodes`)
 }

@@ -12,6 +12,10 @@
           <el-icon><Plus /></el-icon>
           添加节点
         </el-button>
+        <el-button type="warning" plain @click="openDeployDialog">
+          <el-icon><Promotion /></el-icon>
+          批量部署 Agent
+        </el-button>
         <el-button type="success" plain @click="handleHealthCheck" :loading="healthChecking">
           <el-icon><Refresh /></el-icon>
           健康检查
@@ -317,6 +321,72 @@
       </template>
     </el-dialog>
 
+    <!-- 批量部署 Agent 对话框 -->
+    <el-dialog
+      v-model="showDeployDialog"
+      title="批量部署 Agent"
+      width="680px"
+      :close-on-click-modal="false"
+    >
+      <template v-if="deployStep === 'select'">
+        <el-alert
+          title="将复用所选服务器的 SSH 通道，自动上传 agent 脚本并以 systemd 托管（开机自启 + 崩溃自动重启）"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+        />
+        <el-select
+          v-model="deployServerIds"
+          multiple
+          filterable
+          placeholder="选择要部署的服务器（可多选）"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="sv in servers"
+            :key="sv.id"
+            :label="`${sv.name}（${sv.host}）${hasSshChannel(sv) ? '' : ' - 无 SSH 通道'}`"
+            :value="sv.id"
+            :disabled="!hasSshChannel(sv)"
+          />
+        </el-select>
+        <div class="deploy-select-tip">已选 {{ deployServerIds.length }} 台服务器</div>
+      </template>
+
+      <template v-else>
+        <el-table :data="deployResults" border size="small" max-height="360">
+          <el-table-column prop="server_name" label="服务器" min-width="120" />
+          <el-table-column prop="host" label="IP" min-width="130" />
+          <el-table-column label="结果" width="80">
+            <template #default="{ row }">
+              <el-tag :type="row.success ? 'success' : 'danger'" size="small">
+                {{ row.success ? '成功' : '失败' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="message" label="说明" min-width="220" show-overflow-tooltip />
+        </el-table>
+        <div class="deploy-result-summary">
+          成功 {{ deployResults.filter((r) => r.success).length }} / {{ deployResults.length }}
+        </div>
+      </template>
+
+      <template #footer>
+        <el-button @click="showDeployDialog = false">关闭</el-button>
+        <el-button
+          v-if="deployStep === 'select'"
+          type="primary"
+          :loading="deploying"
+          :disabled="deployServerIds.length === 0"
+          @click="handleBatchDeploy"
+        >
+          开始部署（{{ deployServerIds.length }}）
+        </el-button>
+        <el-button v-else type="primary" @click="showDeployDialog = false">完成</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 编辑节点对话框 -->
     <el-dialog v-model="showEditDialog" title="编辑节点" width="600px">
       <el-form :model="editForm" label-width="120px">
@@ -392,9 +462,9 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Search, Monitor } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, Monitor, Promotion } from '@element-plus/icons-vue'
 import {
-  getServers, createServer, deleteServer, probeServer, createServerNode
+  getServers, createServer, deleteServer, probeServer, createServerNode, batchDeployAgent
 } from '@/api/server'
 import { parseDate } from '@/utils/format'
 import {
@@ -426,11 +496,20 @@ const showContainersDialog = ref(false)
 const currentNode = ref(null)
 const healthChecking = ref(false)
 
+const showDeployDialog = ref(false)
+const deploying = ref(false)
+const deployStep = ref('select')
+const deployServerIds = ref([])
+const deployResults = ref([])
+
 // 服务器是否有任何通道
 const hasChannels = (sv) => {
   const s = sv.channel_summary
   return !!(s && (s.ssh || s.docker || s.agent))
 }
+
+// 服务器是否有 SSH 通道（批量部署 Agent 的前置条件）
+const hasSshChannel = (sv) => !!(sv.channel_summary && sv.channel_summary.ssh > 0)
 
 // 状态 → 颜色（卡片顶条/状态点）
 const statusColor = (status) => {
@@ -853,6 +932,41 @@ const handleHealthCheck = async () => {
   }
 }
 
+const openDeployDialog = () => {
+  deployStep.value = 'select'
+  deployServerIds.value = []
+  deployResults.value = []
+  showDeployDialog.value = true
+}
+
+const handleBatchDeploy = async () => {
+  if (deployServerIds.value.length === 0) {
+    ElMessage.warning('请选择至少一台服务器')
+    return
+  }
+  deploying.value = true
+  try {
+    const res = await batchDeployAgent({
+      server_ids: deployServerIds.value,
+      server_url: agentServerUrl()
+    })
+    deployResults.value = res.results || []
+    deployStep.value = 'result'
+    loadNodes()
+    loadServers()
+    const ok = deployResults.value.filter((r) => r.success).length
+    if (ok === deployResults.value.length) {
+      ElMessage.success(`全部部署成功（${ok}/${deployResults.value.length}）`)
+    } else {
+      ElMessage.warning(`部署完成：成功 ${ok}/${deployResults.value.length}`)
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '批量部署失败')
+  } finally {
+    deploying.value = false
+  }
+}
+
 const handleNodeAction = async (action, node) => {
   try {
     switch (action) {
@@ -1192,5 +1306,18 @@ onMounted(() => {
   gap: 8px;
   padding-top: 10px;
   border-top: 1px solid var(--cp-border-light);
+}
+
+.deploy-select-tip {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--cp-text-secondary);
+}
+
+.deploy-result-summary {
+  margin-top: 10px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--cp-text-secondary);
 }
 </style>

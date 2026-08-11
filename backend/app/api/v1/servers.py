@@ -2,7 +2,7 @@
 Server（真实服务器）API 路由
 """
 
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -45,7 +45,30 @@ class ServerChannelCreate(BaseModel):
     docker_host: Optional[str] = None
 
 
+class AgentBatchDeployRequest(BaseModel):
+    """批量部署 Agent 请求"""
+
+    server_ids: List[int]
+    server_url: str
+
+
 # ==================== API ====================
+
+@router.post("/batch-deploy-agent")
+async def batch_deploy_agent(
+    data: AgentBatchDeployRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量一键部署 Agent（复用各服务器 SSH 通道，逐台报告结果）"""
+    from app.services.agent_deploy_service import batch_deploy_agents
+
+    server_url = data.server_url.strip().rstrip("/")
+    if not server_url:
+        raise HTTPException(status_code=422, detail="缺少管理服务器地址 server_url")
+    results = batch_deploy_agents(db, data.server_ids, server_url)
+    return {"results": results}
+
 
 @router.post("")
 async def create_server(
