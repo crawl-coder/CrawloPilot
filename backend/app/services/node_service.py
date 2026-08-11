@@ -475,6 +475,14 @@ class NodeService:
             node.status = NodeStatus.MAINTENANCE
             node.container_count = 0
             self.db.commit()
+
+            # 排空后立即聚合所属服务器状态（可能从在线降级）
+            if node.server_id:
+                from app.services.server_service import ServerService
+                try:
+                    ServerService(self.db).aggregate_all_servers()
+                except Exception as e:
+                    logger.warning(f"排空后聚合服务器状态失败: {e}")
             
             logger.info(f"Node {node.name} drained successfully")
             return True
@@ -551,8 +559,17 @@ class NodeService:
         if running_containers > 0:
             raise ValueError(f"Node has {running_containers} running containers. Please drain first.")
         
+        server_id = node.server_id
         self.db.delete(node)
         self.db.commit()
+
+        # 删除后立即聚合所属服务器状态（可能变为 unknown/offline）
+        if server_id:
+            from app.services.server_service import ServerService
+            try:
+                ServerService(self.db).aggregate_all_servers()
+            except Exception as e:
+                logger.warning(f"删除节点后聚合服务器状态失败: {e}")
         
         logger.info(f"Deleted node: {node.name}")
         return True
