@@ -141,6 +141,24 @@ class ServerService:
         except Exception:
             return False
 
+    def _probe_docker_system_info(self, host: str) -> Dict[str, Any]:
+        """通过开放的 Docker API 采集宿主机系统信息（无需凭据）"""
+        import json as _json
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(f"http://{host}:2375/info", timeout=5) as r:
+                info = _json.loads(r.read() or b"{}")
+            return {
+                "os_type": info.get("OSType"),
+                "os_version": info.get("OperatingSystem"),
+                "cpu_cores": info.get("NCPU"),
+                "memory_total": info.get("MemTotal"),
+            }
+        except Exception as e:
+            logger.warning(f"Docker API 系统信息采集失败 {host}:2375: {e}")
+            return {}
+
     def probe_server(self, server_id: int) -> Dict[str, Any]:
         """
         探测服务器：
@@ -185,6 +203,17 @@ class ServerService:
             except Exception as e:
                 logger.warning(f"通道 {node.name} 握手失败: {e}")
 
+        # 通道未采集到时，尝试通过开放的 Docker API 直接采集（无通道场景）
+        if len(filled) < 4 and ports.get("docker"):
+            try:
+                info = self._probe_docker_system_info(server.host)
+                for field, val in info.items():
+                    if field not in filled and val:
+                        setattr(server, field, val)
+                        filled.add(field)
+            except Exception as e:
+                logger.warning(f"Docker 系统信息探测失败: {e}")
+
         server.last_probed_at = cn_now()
         self.db.commit()
         self.aggregate_server_status(server)
@@ -192,6 +221,10 @@ class ServerService:
             "server_id": server.id,
             "ports": ports,
             "status": server.status.value,
+            "os_type": server.os_type,
+            "os_version": server.os_version,
+            "cpu_cores": server.cpu_cores,
+            "memory_total": server.memory_total,
             "last_probed_at": server.last_probed_at.isoformat() if server.last_probed_at else None,
         }
 

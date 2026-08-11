@@ -209,7 +209,7 @@ const statusType = computed(() => {
   return map[server.value?.status] || 'info'
 })
 const statusText = computed(() => {
-  const map = { online: '在线', offline: '离线', maintenance: '维护中', unknown: '未探测' }
+  const map = { online: '在线', offline: '离线', maintenance: '维护中', unknown: '无通道' }
   return map[server.value?.status] || server.value?.status
 })
 const channelGroups = computed(() => {
@@ -242,7 +242,8 @@ const handleProbe = async () => {
   probing.value = true
   try {
     const res = await probeServer(serverId)
-    ElMessage.success(`探测完成: ${res.status}（SSH:${res.ports?.ssh ? '通' : '不通'} Docker:${res.ports?.docker ? '通' : '不通'}）`)
+    const os = res.os_version || res.os_type || ''
+    ElMessage.success(`探测完成: ${res.status}（SSH:${res.ports?.ssh ? '通' : '不通'} Docker:${res.ports?.docker ? '通' : '不通'}${os ? ` 系统:${os}` : ''}）`)
     load()
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '探测失败')

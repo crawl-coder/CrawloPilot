@@ -496,7 +496,7 @@ const serverStatusType = (status) => {
 }
 
 const serverStatusText = (status) => {
-  const map = { online: '在线', offline: '离线', maintenance: '维护中', unknown: '未探测' }
+  const map = { online: '在线', offline: '离线', maintenance: '维护中', unknown: '无通道' }
   return map[status] || status
 }
 
