@@ -48,6 +48,9 @@ logs/
 *.db
 *.sqlite
 
+# Marketing (公众号等推广素材，不入库不推送)
+docs/marketing/
+
 # MinIO
 minio-data/
 
