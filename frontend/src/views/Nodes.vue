@@ -261,8 +261,23 @@
     </el-dialog>
 
     <!-- 添加节点对话框 -->
-    <el-dialog v-model="showAddDialog" title="添加节点" width="600px">
+    <el-dialog v-model="showAddDialog" title="添加节点（执行通道）" width="600px">
       <el-form :model="nodeForm" label-width="120px">
+        <el-form-item label="所属服务器" required>
+          <el-select
+            v-model="nodeForm.server_id"
+            placeholder="选择该通道所属的真实服务器"
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="sv in servers"
+              :key="sv.id"
+              :label="`${sv.name}（${sv.host}）`"
+              :value="sv.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="节点名称" required>
           <el-input v-model="nodeForm.name" placeholder="例如: beijing-server-1" />
         </el-form-item>
@@ -273,8 +288,8 @@
             <el-radio value="docker">Docker API</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="主机地址" required>
-          <el-input v-model="nodeForm.host" placeholder="例如: 192.168.1.100" />
+        <el-form-item label="主机地址">
+          <el-input :model-value="selectedServer?.host || ''" disabled placeholder="选择服务器后自动带出" />
         </el-form-item>
         <el-form-item :label="portLabel">
           <el-input-number v-model="nodeForm.port" :min="1" :max="65535" />
@@ -295,15 +310,6 @@
             />
           </el-form-item>
         </template>
-        <el-form-item label="公网 IP">
-          <el-input v-model="nodeForm.public_ip" placeholder="可选" />
-        </el-form-item>
-        <el-form-item label="内网 IP">
-          <el-input v-model="nodeForm.private_ip" placeholder="可选" />
-        </el-form-item>
-        <el-form-item label="标签">
-          <el-input v-model="labelsInput" placeholder="逗号分隔，例如: prod,beijing,high-memory" />
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showAddDialog = false">取消</el-button>
@@ -388,11 +394,10 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search, Monitor } from '@element-plus/icons-vue'
 import {
-  getServers, createServer, deleteServer, probeServer
+  getServers, createServer, deleteServer, probeServer, createServerNode
 } from '@/api/server'
 import { parseDate } from '@/utils/format'
 import {
-  createNode, 
   getNodes, 
   getNode,
   testNodeConnection, 
@@ -610,16 +615,15 @@ const portLabel = computed(() => {
 
 const nodeForm = reactive({
   name: '',
-  host: '',
+  server_id: null,
   port: 22,
   connect_type: 'ssh',
   ssh_user: 'root',
   ssh_pwd: '',
-  ssh_key: '',
-  public_ip: '',
-  private_ip: '',
-  labels: {}
+  ssh_key: ''
 })
+
+const selectedServer = computed(() => servers.value.find((s) => s.id === nodeForm.server_id))
 
 const editForm = reactive({
   id: null,
@@ -635,7 +639,6 @@ const editForm = reactive({
   labels: {}
 })
 
-const labelsInput = ref('')
 const editLabelsInput = ref('')
 
 const formatBytes = (bytes) => {
@@ -681,16 +684,12 @@ const onConnectTypeChange = () => {
 
 const openAddDialog = () => {
   nodeForm.name = ''
-  nodeForm.host = ''
+  nodeForm.server_id = null
   nodeForm.port = 22
   nodeForm.connect_type = 'ssh'
   nodeForm.ssh_user = 'root'
   nodeForm.ssh_pwd = ''
   nodeForm.ssh_key = ''
-  nodeForm.public_ip = ''
-  nodeForm.private_ip = ''
-  nodeForm.labels = {}
-  labelsInput.value = ''
   showAddDialog.value = true
 }
 
@@ -728,25 +727,35 @@ const loadNodes = async () => {
 }
 
 const handleAddNode = async () => {
-  if (!nodeForm.name || !nodeForm.host) {
+  if (!nodeForm.server_id) {
+    ElMessage.warning('请选择所属服务器')
+    return
+  }
+  if (!nodeForm.name) {
     ElMessage.warning('请填写完整信息')
     return
   }
 
-  // 解析标签
-  if (labelsInput.value) {
-    nodeForm.labels = labelsInput.value.split(',').reduce((acc, label, idx) => {
-      acc[`label_${idx}`] = label.trim()
-      return acc
-    }, {})
-  }
-
   adding.value = true
   try {
-    const created = await createNode(nodeForm)
-    ElMessage.success('节点添加成功')
+    const payload = {
+      name: nodeForm.name,
+      connect_type: nodeForm.connect_type,
+      port: nodeForm.port,
+      ssh_user: nodeForm.ssh_user,
+      ssh_pwd: nodeForm.ssh_pwd,
+      ssh_key: nodeForm.ssh_key
+    }
+    if (nodeForm.connect_type !== 'ssh') {
+      delete payload.ssh_user
+      delete payload.ssh_pwd
+      delete payload.ssh_key
+    }
+    const created = await createServerNode(nodeForm.server_id, payload)
+    ElMessage.success('节点添加成功，已挂载到所选服务器')
     showAddDialog.value = false
     loadNodes()
+    loadServers()
 
     if (nodeForm.connect_type === 'agent') {
       // Agent 节点：展示注册令牌，由节点上的 agent 程序使用
