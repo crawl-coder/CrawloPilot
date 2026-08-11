@@ -198,6 +198,7 @@
             <div class="node-actions">
               <el-button size="small" @click="testConnection(node)">测试</el-button>
               <el-button size="small" v-if="node.connect_type === 'docker'" @click="viewContainers(node)">容器</el-button>
+              <el-button size="small" type="warning" plain v-if="node.connect_type === 'agent'" @click="showAgentToken(node)">令牌</el-button>
               <el-button size="small" type="primary" plain @click="openEditDialog(node)">编辑</el-button>
               <el-button v-if="node.status !== 'online'" size="small" type="success" plain
                          @click="handleNodeAction('activate', node)">激活</el-button>
@@ -393,6 +394,7 @@ import { parseDate } from '@/utils/format'
 import {
   createNode, 
   getNodes, 
+  getNode,
   testNodeConnection, 
   checkNodesHealth,
   drainNode,
@@ -401,6 +403,9 @@ import {
   getNodeContainers,
   updateNode
 } from '@/api/node'
+
+// Agent 启动命令里的管理服务器地址（默认取当前站点域名 + 18000）
+const agentServerUrl = () => `http://${window.location.hostname}:18000`
 
 const nodes = ref([])
 const router = useRouter()
@@ -746,7 +751,7 @@ const handleAddNode = async () => {
     if (nodeForm.connect_type === 'agent') {
       // Agent 节点：展示注册令牌，由节点上的 agent 程序使用
       ElMessageBox.alert(
-        `请在节点服务器上运行：\n\npython crawlo_agent.py --server http://<管理服务器>:18000 --token ${created.agent_token}\n\nAgent 启动后会自动注册并上线。`,
+        `请在节点服务器上运行：\n\npython crawlo_agent.py --server ${agentServerUrl()} --token ${created.agent_token}\n\nAgent 启动后会自动注册并上线。`,
         'Agent 注册令牌（仅显示一次）',
         { confirmButtonText: '我已复制' }
       )
@@ -764,6 +769,31 @@ const handleAddNode = async () => {
     ElMessage.error(error.response?.data?.detail || '添加节点失败')
   } finally {
     adding.value = false
+  }
+}
+
+const showAgentToken = async (node) => {
+  try {
+    const detail = await getNode(node.id)
+    if (!detail.agent_token) {
+      ElMessage.warning('该节点还没有生成令牌')
+      return
+    }
+    const cmd = `python crawlo_agent.py --server ${agentServerUrl()} --token ${detail.agent_token}`
+    let copied = false
+    try {
+      await navigator.clipboard.writeText(cmd)
+      copied = true
+    } catch (e) {
+      copied = false
+    }
+    ElMessageBox.alert(
+      `请在节点服务器上运行：\n\n${cmd}\n\n${copied ? '✅ 命令已复制到剪贴板' : '请手动复制上面的命令'}`,
+      `Agent 注册令牌 - ${node.name}`,
+      { confirmButtonText: '关闭' }
+    )
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '获取令牌失败')
   }
 }
 

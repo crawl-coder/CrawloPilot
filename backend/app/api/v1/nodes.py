@@ -219,8 +219,6 @@ async def get_node(
         if not node:
             raise HTTPException(status_code=404, detail="节点不存在")
 
-        node.agent_token = None  # 详情不暴露令牌
-        
         return node
     except HTTPException:
         raise
