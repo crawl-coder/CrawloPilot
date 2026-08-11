@@ -292,6 +292,8 @@ flowchart LR
   - `docker` 节点：暴露 Docker API（`tcp://host:2375`）后直连；
   - `agent` 节点：在服务器上运行 `agent/crawlo_agent.py`，反向注册并领取任务。
 - 节点需要先「测试连接」再「激活」，状态为 `online` 才能被任务选择。
+- 节点多时可用「批量部署 Agent」一键下发：复用各服务器的 SSH 通道自动
+  上传 agent 脚本并以 systemd 托管（开机自启 + 崩溃自动重启），逐台报告结果。
 
 详细设计见 [docs/modules/05-nodes.md](docs/modules/05-nodes.md) 与
 [docs/designs/server-management.md](docs/designs/server-management.md)。
