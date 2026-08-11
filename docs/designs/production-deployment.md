@@ -62,7 +62,7 @@ SSH / Docker / Agent 是该服务器下的三种**执行通道**（node）。一
 
 管理服务器 A 直连节点 Docker API（`tcp://{host}:2375`），构建任务镜像
 （项目 Dockerfile 优先，缺失时用内置模板：基础镜像
-`crawlopilot/base:{CRAWLO_VERSION}`（当前 1.7.2）+ 爬虫代码 + 自动装 requirements），
+`crawlopilot/base:{CRAWLO_VERSION}`（当前 1.7.3）+ 爬虫代码 + 自动装 requirements），
 在节点上启动容器执行。
 
 **节点要求：**

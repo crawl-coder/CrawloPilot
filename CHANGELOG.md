@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- crawlo 升级到 1.7.3（与 PyPI 最新一致）：Docker 基础镜像
+  `crawlopilot/base:1.7.3` 随任务构建自动生成/复用
+
 ### Removed
 
 - 移除 Celery 死代码：`app/workers/` 任务模块（无任何活跃调用方）、

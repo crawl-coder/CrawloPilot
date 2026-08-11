@@ -36,7 +36,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # crawlo 版本（与 PyPI 最新保持一致）
-CRAWLO_VERSION = "1.7.2"
+CRAWLO_VERSION = "1.7.3"
 # 本地 crawlo wheel（纯 Python，安装快），默认不硬编码：
 # - 显式配置 CRAWLO_WHEEL_PATH 时优先使用
 # - 开发机若已构建 wheel 可设置环境变量；生产走 pip 安装
