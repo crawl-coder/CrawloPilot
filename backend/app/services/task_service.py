@@ -13,7 +13,16 @@ from datetime import datetime
 from app.core.time_utils import cn_now
 from threading import Thread
 
-from app.models import TaskInstance, TaskStatus, Spider, SpiderStatus, Node, DeployMode
+from app.models import (
+    TaskInstance,
+    TaskStatus,
+    Spider,
+    SpiderStatus,
+    Node,
+    Server,
+    ServerStatus,
+    DeployMode,
+)
 from app.services.upload_service import UploadService
 
 logger = logging.getLogger(__name__)
@@ -81,6 +90,11 @@ def create_and_run_task(
             raise ValueError("节点不存在")
         if node.status.value != "online":
             raise ValueError(f"节点 {node.name} 状态为 {node.status.value}，不可用")
+        # 服务器维护中禁止分配新任务
+        if node.server_id:
+            server = db.query(Server).filter(Server.id == node.server_id).first()
+            if server and server.status == ServerStatus.MAINTENANCE:
+                raise ValueError(f"服务器 {server.name} 处于维护模式，暂不能分配任务")
 
     # 按节点类型确定部署模式，供 executor_registry 分发 stop/status/logs
     deploy_mode = DeployMode.from_connect_type(node.connect_type if node else None)

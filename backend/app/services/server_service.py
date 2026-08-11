@@ -239,6 +239,27 @@ class ServerService:
         self.db.commit()
         return True
 
+    def exit_maintenance(self, server_id: int) -> bool:
+        """退出维护：重新探测维护/排空中的通道，再聚合服务器状态"""
+        server = self.get_server(server_id)
+        if not server:
+            return False
+
+        from app.services.node_service import NodeService
+        node_service = NodeService(self.db)
+        nodes = self.db.query(Node).filter(Node.server_id == server_id).all()
+        for node in nodes:
+            if node.status in (NodeStatus.MAINTENANCE, NodeStatus.DRAINING):
+                try:
+                    node_service.test_connection(node.id)
+                except Exception as e:
+                    logger.warning(f"退出维护时重新探测通道 {node.name} 失败: {e}")
+
+        server.status = ServerStatus.UNKNOWN
+        self.db.commit()
+        self.aggregate_server_status(server)
+        return True
+
     # ============ 通道管理 ============
 
     def get_channel_summary(self, server_id: int) -> Dict[str, int]:

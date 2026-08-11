@@ -177,6 +177,19 @@ async def enter_maintenance(
     return {"message": "服务器已进入维护模式", "id": server_id}
 
 
+@router.post("/{server_id}/recover")
+async def exit_maintenance(
+    server_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """服务器退出维护（重新探测通道并聚合状态）"""
+    service = ServerService(db)
+    if not service.exit_maintenance(server_id):
+        raise HTTPException(status_code=404, detail="服务器不存在")
+    return {"message": "服务器已退出维护模式", "id": server_id}
+
+
 @router.get("/{server_id}/nodes")
 async def list_server_nodes(
     server_id: int,

@@ -30,6 +30,10 @@ export function enterMaintenance(id) {
   return request.post(`/servers/${id}/maintenance`)
 }
 
+export function recoverServer(id) {
+  return request.post(`/servers/${id}/recover`)
+}
+
 export function getServerNodes(id) {
   return request.get(`/servers/${id}/nodes`)
 }

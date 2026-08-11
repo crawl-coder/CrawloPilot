@@ -9,7 +9,15 @@
         <div class="header-actions">
           <el-button size="small" :loading="probing" @click="handleProbe">重新探测</el-button>
           <el-button size="small" @click="openEdit">编辑</el-button>
-          <el-button size="small" type="warning" @click="handleMaintenance">维护</el-button>
+          <el-button
+            v-if="server?.status !== 'maintenance'"
+            size="small"
+            type="warning"
+            @click="handleMaintenance"
+          >
+            维护
+          </el-button>
+          <el-button v-else size="small" type="success" @click="handleRecover">退出维护</el-button>
           <el-button size="small" type="danger" @click="handleDelete">删除</el-button>
           <el-button type="primary" size="small" @click="showCreateChannel = true">
             <el-icon><Plus /></el-icon> 创建通道
@@ -162,7 +170,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
-  getServer, updateServer, deleteServer, probeServer, enterMaintenance,
+  getServer, updateServer, deleteServer, probeServer, enterMaintenance, recoverServer,
   getServerNodes, createServerNode
 } from '@/api/server'
 import { testNodeConnection, activateNode, deleteNode } from '@/api/node'
@@ -269,6 +277,17 @@ const handleMaintenance = async () => {
   try {
     await enterMaintenance(serverId)
     ElMessage.success('已进入维护模式')
+    load()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '操作失败')
+  }
+}
+
+const handleRecover = async () => {
+  await ElMessageBox.confirm('退出维护模式后将重新探测通道并恢复任务分配，确定？', '退出维护', { type: 'warning' })
+  try {
+    await recoverServer(serverId)
+    ElMessage.success('已退出维护模式')
     load()
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '操作失败')
