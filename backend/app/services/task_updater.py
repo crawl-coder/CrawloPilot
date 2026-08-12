@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy import update
 
 from app.core.database import SessionLocal
-from app.models import TaskInstance, TaskStatus
+from app.models import TaskInstance, TaskStatus, Schedule
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,19 @@ def update_task_completion(
         if task and task.started_at:
             task.duration = (finished_at - task.started_at).total_seconds()
             db.commit()
+
+        # 回写所属调度的上次状态与成功/失败计数（修复"上次状态永远 running"）
+        if task and task.schedule_id:
+            sched = db.query(Schedule).filter(Schedule.id == task.schedule_id).first()
+            if sched:
+                sched.last_run_status = status.value
+                sched.last_run_at = finished_at
+                sched.last_run_task_id = task.id
+                if status == TaskStatus.SUCCESS:
+                    sched.success_count = (sched.success_count or 0) + 1
+                elif status in (TaskStatus.FAILED, TaskStatus.TIMEOUT):
+                    sched.fail_count = (sched.fail_count or 0) + 1
+                db.commit()
 
         # 失败/超时告警（Webhook）
         if status in (TaskStatus.FAILED, TaskStatus.TIMEOUT):
