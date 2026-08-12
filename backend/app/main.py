@@ -92,6 +92,14 @@ async def _maintenance_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动和关闭时的生命周期管理"""
+    # 建表：仅创建缺失的表（如 login_log），不修改存量表、不影响 alembic 历史
+    try:
+        from app.core.database import Base, engine
+        import app.models  # noqa: F401  注册全部模型
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        logger.warning(f"启动建表检查失败: {e}")
+
     # 启动节点健康检查后台任务
     health_task = asyncio.create_task(_node_health_monitor_loop())
     logger.info("Node health monitor started")

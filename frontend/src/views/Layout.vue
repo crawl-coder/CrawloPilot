@@ -51,6 +51,10 @@
             <el-icon><User /></el-icon>
             <span>用户管理</span>
           </el-menu-item>
+          <el-menu-item index="/login-logs">
+            <el-icon><Document /></el-icon>
+            <span>登录日志</span>
+          </el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>
@@ -99,7 +103,7 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Odometer, Files, User, ArrowDown, Monitor, List, Aim, Setting, Moon, Sunny, Clock } from '@element-plus/icons-vue'
+import { Odometer, Files, User, ArrowDown, Monitor, List, Aim, Setting, Moon, Sunny, Clock, Document } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
 

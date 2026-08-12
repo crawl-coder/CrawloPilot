@@ -34,3 +34,8 @@ export function saveMyGitCredentials(data) {
 export function deleteMyGitCredentials() {
   return request.delete('/auth/me/git-credentials')
 }
+
+// 登录日志（admin 看全部，普通用户看自己）
+export function getLoginLogs(params) {
+  return request.get('/auth/login-logs', { params })
+}

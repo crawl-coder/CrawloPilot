@@ -79,6 +79,12 @@ const routes = [
         component: () => import('@/views/Users.vue')
       },
       {
+        path: 'login-logs',
+        name: 'LoginLogs',
+        meta: { title: '登录日志', requiresAdmin: true },
+        component: () => import('@/views/LoginLogs.vue')
+      },
+      {
         path: 'profile',
         name: 'Profile',
         meta: { title: '个人中心' },

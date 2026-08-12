@@ -25,6 +25,21 @@ class User(Base):
     roles = relationship("Role", secondary="user_role", back_populates="users")
 
 
+class LoginLog(Base):
+    """登录日志：记录用户、IP、时间与结果"""
+
+    __tablename__ = "login_log"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=True, index=True)
+    username = Column(String(64), nullable=False, index=True)
+    ip = Column(String(64))
+    user_agent = Column(String(256))
+    success = Column(Boolean, default=True)
+    detail = Column(String(128))  # 失败原因（成功为空）
+    login_at = Column(DateTime, default=cn_now, index=True)
+
+
 class Team(Base):
     __tablename__ = "team"
     

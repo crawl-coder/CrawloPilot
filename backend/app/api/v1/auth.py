@@ -4,10 +4,11 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from app.core.database import get_db
+from app.core.time_utils import cn_now
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_current_user_optional
-from app.models import User
+from app.models import User, LoginLog
 from app.schemas.user import UserCreate, UserInDB, Token, GitCredentialPayload, GitCredentialInfo
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -23,6 +24,25 @@ def _get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _record_login(db: Session, user_id, username: str, ip: str, user_agent: str,
+                  success: bool, detail: str = None):
+    """写入一条登录日志（成功/失败均记录）"""
+    try:
+        db.add(LoginLog(
+            user_id=user_id,
+            username=username or "",
+            ip=(ip or "")[:64],
+            user_agent=(user_agent or "")[:256],
+            success=success,
+            detail=detail,
+            login_at=cn_now(),
+        ))
+        db.commit()
+    except Exception as e:
+        logger.warning(f"写入登录日志失败: {e}")
+        db.rollback()
+
+
 @router.post("/login", response_model=Token)
 def login(
     request: Request,
@@ -30,9 +50,14 @@ def login(
     db: Session = Depends(get_db)
 ):
     ip = _get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "")
 
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.password_hash):
+        _record_login(
+            db, user.id if user else None, form_data.username, ip, user_agent,
+            success=False, detail="用户名或密码错误",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -40,6 +65,7 @@ def login(
         )
 
     if not user.is_active:
+        _record_login(db, user.id, user.username, ip, user_agent, success=False, detail="账号已停用")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
@@ -51,7 +77,50 @@ def login(
     )
 
     logger.info(f"User {user.username} logged in from IP {ip}")
+    _record_login(db, user.id, user.username, ip, user_agent, success=True)
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.get("/login-logs")
+def list_login_logs(
+    skip: int = 0,
+    limit: int = 20,
+    username: str = None,
+    success: bool = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """登录日志：admin 看全部，普通用户只看自己"""
+    from app.core.pagination import clamp_pagination
+    skip, limit = clamp_pagination(skip, limit, default_limit=20)
+    query = db.query(LoginLog)
+    is_admin = any(r.name == "admin" for r in current_user.roles)
+    if not is_admin:
+        query = query.filter(LoginLog.user_id == current_user.id)
+    if username:
+        query = query.filter(LoginLog.username.like(f"%{username}%"))
+    if success is not None:
+        query = query.filter(LoginLog.success == success)
+    total = query.count()
+    items = query.order_by(LoginLog.login_at.desc()).offset(skip).limit(limit).all()
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": log.id,
+                "user_id": log.user_id,
+                "username": log.username,
+                "ip": log.ip,
+                "user_agent": log.user_agent,
+                "success": log.success,
+                "detail": log.detail,
+                "login_at": log.login_at.isoformat() if log.login_at else None,
+            }
+            for log in items
+        ],
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 @router.post("/register", response_model=UserInDB)
