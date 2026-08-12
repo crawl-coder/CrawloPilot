@@ -45,13 +45,13 @@ const routes = [
       {
         path: 'nodes',
         name: 'Nodes',
-        meta: { title: '节点管理' },
+        meta: { title: '节点管理', requiresAdmin: true },
         component: () => import('@/views/Nodes.vue')
       },
       {
         path: 'servers/:id',
         name: 'ServerDetail',
-        meta: { title: '服务器详情' },
+        meta: { title: '服务器详情', requiresAdmin: true },
         component: () => import('@/views/ServerDetail.vue')
       },
       {

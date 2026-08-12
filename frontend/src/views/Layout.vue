@@ -37,7 +37,7 @@
           <span>定时任务</span>
         </el-menu-item>
 
-        <el-menu-item index="/nodes">
+        <el-menu-item v-if="userStore.isAdmin" index="/nodes">
           <el-icon><Monitor /></el-icon>
           <span>节点管理</span>
         </el-menu-item>

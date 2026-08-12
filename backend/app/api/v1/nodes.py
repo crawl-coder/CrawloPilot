@@ -8,7 +8,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_admin
 from app.models import User, Node, NodeStatus
 from app.services.node_service import NodeService
 import logging
@@ -102,7 +102,7 @@ class NodeTestResult(BaseModel):
 async def create_node(
     node_data: NodeCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     创建节点
@@ -142,7 +142,7 @@ async def update_node(
     node_id: int,
     node_data: NodeUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     更新节点信息
@@ -230,7 +230,7 @@ async def get_node(
 async def test_node_connection(
     node_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     测试节点连接
@@ -250,7 +250,7 @@ async def test_node_connection(
 @router.post("/health-check")
 async def check_all_nodes_health(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """检查所有节点健康状态"""
     try:
@@ -265,7 +265,7 @@ async def check_all_nodes_health(
 async def drain_node(
     node_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     排空节点（停止所有容器，准备维护）
@@ -290,7 +290,7 @@ async def drain_node(
 async def activate_node(
     node_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     激活节点
@@ -316,7 +316,7 @@ async def activate_node(
 async def delete_node(
     node_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     删除节点（需要先排空）

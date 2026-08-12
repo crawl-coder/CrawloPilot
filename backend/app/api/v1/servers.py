@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_admin
 from app.models import User
 from app.services.server_service import ServerService
 
@@ -58,7 +58,7 @@ class AgentBatchDeployRequest(BaseModel):
 async def batch_deploy_agent(
     data: AgentBatchDeployRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """批量一键部署 Agent（复用各服务器 SSH 通道，逐台报告结果）"""
     from app.services.agent_deploy_service import batch_deploy_agents
@@ -74,7 +74,7 @@ async def batch_deploy_agent(
 async def create_server(
     data: ServerCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """创建服务器（创建后自动探测）"""
     try:
@@ -138,7 +138,7 @@ async def update_server(
     server_id: int,
     data: ServerUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """更新服务器基本信息"""
     try:
@@ -161,7 +161,7 @@ async def update_server(
 async def delete_server(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """删除服务器（无在线通道时）"""
     try:
@@ -177,7 +177,7 @@ async def delete_server(
 async def probe_server(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """重新探测服务器"""
     try:
@@ -191,7 +191,7 @@ async def probe_server(
 async def enter_maintenance(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """服务器进入维护（先排空 Docker 通道）"""
     service = ServerService(db)
@@ -204,7 +204,7 @@ async def enter_maintenance(
 async def exit_maintenance(
     server_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """服务器退出维护（重新探测通道并聚合状态）"""
     service = ServerService(db)
@@ -250,7 +250,7 @@ async def create_server_node(
     server_id: int,
     data: ServerChannelCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """在服务器下创建执行通道"""
     service = ServerService(db)
