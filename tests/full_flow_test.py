@@ -185,9 +185,9 @@ def main():
     status, d = http("POST", f"/spiders/{sid}/files/create?path=extra.txt&is_directory=false", token=token)
     check("POST /spiders/{id}/files/create", status == 200, f"({status})")
 
-    # 保存文件内容（前端 saveSpiderFileContent 用 query 传 content）
-    status, d = http("POST", f"/spiders/{sid}/files/content?path=extra.txt&content=hello%3Dworld",
-                     token=token)
+    # 保存文件内容（cf97469 起改为 body 传输，避免大文件 431 错误）
+    status, d = http("POST", f"/spiders/{sid}/files/content", token=token,
+                     json_body={"path": "extra.txt", "content": "hello=world"})
     check("POST /spiders/{id}/files/content 保存", status == 200, f"({status})")
 
     # 删除文件
