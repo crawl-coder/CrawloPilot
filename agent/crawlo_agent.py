@@ -350,6 +350,10 @@ class AgentClient:
 
     def _ensure_crawlo(self, python: str):
         """确保 venv 内可导入 crawlo（缺失则自动 pip 安装）"""
+        # 测试/开发逃生阀：跳过 crawlo 安装（e2e 回归用纯标准库爬虫，无需框架）
+        if os.environ.get("CRAWLO_AGENT_SKIP_CRAWLO_INSTALL", "").lower() in ("1", "true", "yes"):
+            log("跳过 crawlo 安装（CRAWLO_AGENT_SKIP_CRAWLO_INSTALL 已设置）")
+            return
         check = subprocess.run(
             [python, "-c", "import crawlo"],
             capture_output=True,

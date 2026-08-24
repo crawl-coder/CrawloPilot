@@ -424,8 +424,8 @@ class NodeService:
                 status = "offline"
 
             node.status = NodeStatus.ONLINE if status == "online" else NodeStatus.OFFLINE
-            if status == "online":
-                node.last_heartbeat = now
+            # 不要回写 last_heartbeat：agent 节点的心跳只能来自 Agent 真实上报。
+            # 此处回写会让健康检查"自我续命"（<90s 即刷新为 now），死节点永远无法离线。
             results.append({
                 "node_id": node.id,
                 "name": node.name,

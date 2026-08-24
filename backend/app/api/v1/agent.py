@@ -65,7 +65,6 @@ class AgentHeartbeat(BaseModel):
 
 class AgentTaskReport(BaseModel):
     node_id: int
-    token: str
     status: str
     pages_crawled: Optional[int] = 0
     items_scraped: Optional[int] = 0
@@ -76,7 +75,6 @@ class AgentTaskReport(BaseModel):
 
 class AgentLogs(BaseModel):
     node_id: int
-    token: str
     logs: str
 
 
