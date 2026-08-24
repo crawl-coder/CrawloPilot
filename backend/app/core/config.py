@@ -1,7 +1,10 @@
 import os
+import logging
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_env_file() -> Optional[str]:
@@ -86,27 +89,42 @@ class Settings(BaseSettings):
         生产环境（DEBUG=False）要求：
         1. JWT 签名密钥与凭据加密密钥均不得为源码默认值；
         2. 两者必须不同（密钥分离），避免 JWT 与凭据加密共用同一密钥。
+
+        开发环境（DEBUG=True）：仅发 WARNING，不阻断启动。
         """
         default = "your-secret-key-change-in-production"
-        if self.DEBUG:
-            return
-
         jwt_key = self.jwt_secret
         cred_key = self.credential_secret
 
         if jwt_key == default or cred_key == default:
-            raise RuntimeError(
-                "安全密钥仍为默认值，拒绝启动。生产环境必须设置 "
-                "JWT_SECRET_KEY（JWT 签名）与 CREDENTIAL_ENCRYPTION_KEY（凭据加密），"
-                "生成方式：openssl rand -hex 32"
-            )
+            msg = ("安全密钥仍为默认值。生产环境必须设置 JWT_SECRET_KEY 与 "
+                   "CREDENTIAL_ENCRYPTION_KEY（openssl rand -hex 32）。")
+            if not self.DEBUG:
+                raise RuntimeError(msg)
+            logger.warning(f"[开发模式] {msg}")
 
         if jwt_key == cred_key:
-            raise RuntimeError(
-                "JWT 签名密钥与凭据加密密钥相同，拒绝启动（存在密钥共用风险）。"
-                "请为 JWT_SECRET_KEY 与 CREDENTIAL_ENCRYPTION_KEY 分别设置不同的随机值，"
-                "生成方式：openssl rand -hex 32"
-            )
+            msg = ("JWT 签名密钥与凭据加密密钥相同（存在密钥共用风险），"
+                   "建议分别为两者设置不同随机值。")
+            if not self.DEBUG:
+                raise RuntimeError(msg)
+            logger.warning(f"[开发模式] {msg}")
+
+    def secret_warnings(self) -> list[str]:
+        """返回当前密钥配置的警告列表（供 /health 等端点展示）"""
+        warnings = []
+        default = "your-secret-key-change-in-production"
+        if self.jwt_secret == default:
+            warnings.append("JWT_SECRET_KEY 仍为源码默认值")
+        if self.credential_secret == default:
+            warnings.append("CREDENTIAL_ENCRYPTION_KEY 仍为源码默认值")
+        if self.jwt_secret == self.credential_secret:
+            warnings.append("JWT 与凭据加密共用同一密钥（建议分离）")
+        if not self.JWT_SECRET_KEY:
+            warnings.append("JWT_SECRET_KEY 未设置，回退 SECRET_KEY（建议独立设置）")
+        if not self.CREDENTIAL_ENCRYPTION_KEY:
+            warnings.append("CREDENTIAL_ENCRYPTION_KEY 未设置，回退 SECRET_KEY（建议独立设置）")
+        return warnings
 
     # 开放注册：False 时 /auth/register 仅 admin 可用（内部平台建议关闭）
     ALLOW_OPEN_REGISTER: bool = False

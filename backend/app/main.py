@@ -100,6 +100,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"启动建表检查失败: {e}")
 
+    # 密钥配置体检（A4）：开发模式 WARNING，生产模式硬拒绝
+    try:
+        settings.validate_secrets()
+    except RuntimeError as e:
+        logger.error(f"安全密钥校验失败: {e}")
+        raise SystemExit(1)
+
+    # 启动任务对账：扫描遗留 PENDING/RUNNING 任务，收敛僵尸（A1+A2）
+    try:
+        from app.core.database import SessionLocal
+        from app.services.task_reconciler import reconcile_tasks
+        recon_db = SessionLocal()
+        try:
+            reconcile_tasks(recon_db)
+        finally:
+            recon_db.close()
+    except Exception as e:
+        logger.warning(f"任务对账失败（不影响正常启动）: {e}")
+
     # 启动节点健康检查后台任务
     health_task = asyncio.create_task(_node_health_monitor_loop())
     logger.info("Node health monitor started")
@@ -274,6 +293,11 @@ async def health_check():
     except Exception as e:
         health_info["services"]["database"] = f"error: {str(e)}"
         health_info["status"] = "degraded"
+
+    # 密钥配置体检（A4）
+    secret_warns = settings.secret_warnings()
+    if secret_warns:
+        health_info["warnings"] = secret_warns
 
     return health_info
 
