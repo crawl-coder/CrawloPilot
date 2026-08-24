@@ -60,6 +60,9 @@ def create_and_run_task(
     timeout=None,
     task_args: Optional[str] = None,
     task_env: Optional[Dict[str, str]] = None,
+    distribution_mode: str = "standalone",
+    shared_redis_url: Optional[str] = None,
+    worker_count: int = 1,
 ):
     """
     创建任务并按节点分发
@@ -116,6 +119,29 @@ def create_and_run_task(
             if server and server.status == ServerStatus.MAINTENANCE:
                 raise ValueError(f"服务器 {server.name} 处于维护模式，暂不能分配任务")
 
+    # D4：分布式模式适配（默认 standalone，不影响 V1 行为）
+    dist_adapter_result = {}
+    if distribution_mode != "standalone":
+        from app.services.crawlo_distributed_adapter import get_distributed_adapter
+        from app.models import Project
+        project = db.query(Project).get(spider.project_id)
+        project_name = project.name if project else "default"
+        dist_adapter_result = get_distributed_adapter().prepare_task(
+            task_id=None,  # task 尚未创建
+            spider_name=spider_name,
+            project_name=project_name,
+            distribution_mode=distribution_mode,
+            shared_redis_url=shared_redis_url,
+            worker_count=worker_count,
+        )
+        # 合并分布式参数到 task_env 和 task_args
+        task_env = dict(task_env) if task_env else {}
+        task_env.update(dist_adapter_result.get("extra_env", {}))
+        extra_args = dist_adapter_result.get("extra_args", [])
+        if extra_args:
+            task_args = (task_args or "").split() + extra_args
+            task_args = " ".join(task_args).strip()
+
     # 按节点类型确定部署模式，供 executor_registry 分发 stop/status/logs
     deploy_mode = DeployMode.from_connect_type(node.connect_type if node else None)
     task = TaskInstance(
@@ -129,6 +155,10 @@ def create_and_run_task(
         memory_limit=memory_limit,
         cpu_limit=cpu_limit,
         stats={"args": task_args, "env": task_env} if (task_args or task_env) else None,
+        distribution_mode=distribution_mode,
+        shared_redis_url=shared_redis_url,
+        worker_count=worker_count,
+        redis_namespace=dist_adapter_result.get("redis_namespace"),
     )
     db.add(task)
     db.commit()

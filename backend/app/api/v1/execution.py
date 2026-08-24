@@ -140,6 +140,9 @@ async def create_and_execute_task(
             memory_limit=task_data.memory_limit,
             cpu_limit=task_data.cpu_limit,
             timeout=task_data.timeout,
+            distribution_mode=task_data.distribution_mode or "standalone",
+            shared_redis_url=task_data.shared_redis_url,
+            worker_count=task_data.worker_count or 1,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

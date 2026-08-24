@@ -16,6 +16,10 @@ class TaskCreate(BaseModel):
     memory_limit: Optional[str] = Field("512m", description="内存限制")
     cpu_limit: Optional[float] = Field(1.0, description="CPU 限制")
     timeout: Optional[int] = Field(3600, description="超时时间(秒)")
+    # D4：分布式模式（默认 standalone，不影响 V1 行为）
+    distribution_mode: Optional[str] = Field("standalone", description="standalone / single_node_distributed / multi_node_distributed")
+    shared_redis_url: Optional[str] = Field(None, description="模式 C 共享 Redis 地址")
+    worker_count: Optional[int] = Field(1, description="模式 B/C 每节点 Worker 进程数")
 
 
 class TaskResponse(BaseModel):

@@ -328,6 +328,11 @@ class TaskInstance(Base):
     container_id = Column(String(64))
     process_id = Column(Integer)  # 本地进程 PID (非Docker模式)
     deploy_mode = Column(Enum(DeployMode), default=DeployMode.LOCAL)  # local / ssh / docker / agent
+    # D4：Crawlo 分布式模式字段
+    distribution_mode = Column(String(32), default="standalone")  # standalone / single_node_distributed / multi_node_distributed
+    shared_redis_url = Column(String(256))  # 模式 C 共享 Redis 地址
+    worker_count = Column(Integer, default=1)  # 模式 B/C 每节点 Worker 进程数
+    redis_namespace = Column(String(128))  # Crawlo Redis Key 命名空间（{project}:{spider}）
     memory_limit = Column(String(16), nullable=True)  # Docker 内存限制，如 "512m" / "1g"
     cpu_limit = Column(Float, nullable=True)  # Docker CPU 配额（核数）
     workspace = Column(String(512))  # SSH模式服务器工作目录
