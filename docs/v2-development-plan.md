@@ -89,13 +89,15 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 | A7 | **Agent 版本握手与漂移检测**：✅ Node model 新增 `protocol_version` 列（alembic 迁移 a7b8c9d0e1f2，幂等）；Agent register 上报 `protocol_version`（当前=1）；NodeResponse 新增 `agent_compatible`（protocol_version >= REQUIRED=1 → True，否则 False）；旧 agent（NULL/0）→ 不兼容，前端可标黄 | `agent.py`、`nodes.py`、`agent_service.py`、`models`、`agent/crawlo_agent.py` | P1 | 1d | 无 | 旧版 agent 节点 agent_compatible=False；新版 = True | ✅ `7e3d8f1` |
 | A8 | **Agent 并发扩展**：✅ `run()` 主循环改为并发提交（`threading.Thread` + `_running_tasks` dict + `_lock`），poll_task 领到任务后立即提交为独立线程返回继续领取；`execute_task` 生命周期内注册/注销 proc 到 `_running_tasks`，停止指令精确找到对应子进程并终止；`--max-workers` 参数 + `CRAWLO_AGENT_MAX_WORKERS` 环境变量（默认 2）；满载时 sleep 1s 防忙等 | `agent/crawlo_agent.py` | P1 | 2d | A6 | 3 个任务同时派发到同一 agent 节点 → 3 个并发 running；单任务失败不影响其他；停止指令精确杀对进程 | ✅ `358edbe` |
 
-### Wave B：调度与运维增强收尾（预计 3 天，P1）
+### Wave B：调度与运维增强收尾（✅ **B1–B3 全部完成（2026-08-24）**）
 
-| # | 任务 | 改动点 | 优先级 | 工作量 | 依赖 | 验收标准 |
-|---|------|--------|--------|--------|------|----------|
-| B1 | **一爬虫多调度**：`POST /schedules` 从 upsert 改纯 create；前端调度表单去掉一对一约束；列表支持同爬虫多条规则 | `api/v1/schedules.py`、`Schedules.vue` | P1 | 1d | 无 | 同一爬虫创建 cron+interval 两条规则互不影响；删除一条不影响另一条；`schedule_test.py` 扩展用例全绿 |
-| B2 | **爬虫级防并行守卫**：`create_and_run_task` 入口统一校验（手动 + 调度 + run-now 共用），同爬虫活跃任务 ≥ `max_parallel`(spider 级, 默认 1) 时拒绝/跳过；返回明确错误码 | `task_service.py`、`spiders.py` run 接口 | P1 | 1d | 无 | 并发双击运行只产生一个任务；调度触发被守卫跳过时有日志与告警事件 |
-| B3 | **调度软删除/历史保留**：删除调度改为 `deleted_at` 软删（或归档表），任务 `schedule_id` 不再 SET NULL；历史页可按"已删除调度"过滤 | `models`、alembic 迁移、API、前端确认弹窗文案 | P1 | 1d | 无 | 删除调度后其历史任务的 schedule_id/schedule_name 可追溯；旧数据兼容（存量 NULL 不可恢复，接受并注明） |
+> 实际工作量：1 天。B1 已完成（代码已改纯 create + 前端支持多条）；B2 新增 max_concurrent 守卫；B3 改为软删除保留历史。回归全绿。
+
+| # | 任务 | 改动点 | 优先级 | 工作量 | 依赖 | 验收标准 | 状态 |
+|---|------|--------|--------|--------|------|----------|------|
+| B1 | **一爬虫多调度**：✅ POST /schedules 已是纯 create（V1 早期 upsert 无残留），前端 `Schedules.vue` 已支持多条规则（注释"一个爬虫可配置多条定时任务"），docstring 已清理 | `schedules.py` 注释 | P1 | — | 无 | 同一爬虫创建 cron+interval 两条规则互不影响 | ✅ `e08429f` |
+| B2 | **爬虫级防并行守卫**：✅ Spider model 新增 `max_concurrent` 列（alembic 迁移 b2c3d4e5f6g7，幂等，默认 1，0=不限）；`create_and_run_task` 入口统一校验（手动+调度+run-now 共用），活跃任务 ≥ 上限时返回明确错误码；SpiderCreate/SpiderUpdate schema 暴露 max_concurrent 供用户配置 | `models`、`task_service.py`、`schemas/spider.py` | P1 | 1d | 无 | 双击运行只产生一个任务；超限返回"爬虫并发守卫：当前活跃任务 N ≥ 上限 M" | ✅ `e08429f` |
+| B3 | **调度软删除/历史保留**：✅ Schedule model 新增 `deleted_at` 列（alembic 迁移 b3d4e5f6g7h8，幂等）；DELETE 改为 `deleted_at=now()` + `enabled=false`，不删行、不置空 `task_instance.schedule_id`，任务历史完整保留调度关联；列表默认过滤已删除，`include_deleted=true` 可查看（含历史追溯）；enable/disable/run-now/put 对已 deleted 返回 410 | `models`、`schedules.py` | P1 | 1d | 无 | 删除调度后任务 schedule_id 保持；列表过滤正确；history 可查 | ✅ `93af9ce` |
 
 ### Wave C：监控告警完整版（预计 7 天，P1，可与 Wave B 并行）
 
@@ -135,7 +137,7 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 
 | 里程碑 | 内容 | 出口条件 | 当前进度 |
 |---|---|---|---|
-| **M1（+1 周）** | Wave A + B 全部 | 四套官方测试 + 走查脚本全绿；重启对账演练通过；发布 V1.1 | **Wave A：A1–A8 全部完成 ✅**；Wave B 未开始 |
+| **M1（+1 周）** | Wave A + B 全部 | 四套官方测试 + 走查脚本全绿；重启对账演练通过；发布 V1.1 | **Wave A + B 全部完成 ✅**（A1–A8 + B1–B3） |
 | **M2（+3 周）** | Wave C 完整版 | 7 类告警规则上线演练；发布 V1.2（运营可用） | 未开始 |
 | **M3（+6 周）** | Wave D（D1–D6） | 设计稿 §12.1 三种 distribution_mode 功能验收逐项打勾；发布 V2.0 | 未开始 |
 | **M4（+8 周）** | D7/D8 + Wave E 选做 | 多实例压测通过；发布 V2.1 | 未开始 |
