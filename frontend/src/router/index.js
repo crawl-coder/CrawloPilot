@@ -85,6 +85,18 @@ const routes = [
         component: () => import('@/views/LoginLogs.vue')
       },
       {
+        path: 'alerts/rules',
+        name: 'AlertRules',
+        meta: { title: '告警规则', requiresAdmin: true },
+        component: () => import('@/views/AlertRules.vue')
+      },
+      {
+        path: 'alerts/records',
+        name: 'AlertRecords',
+        meta: { title: '告警记录' },
+        component: () => import('@/views/AlertRecords.vue')
+      },
+      {
         path: 'profile',
         name: 'Profile',
         meta: { title: '个人中心' },

@@ -516,3 +516,80 @@ class Container(Base):
     node = relationship("Node", back_populates="containers")
     project = relationship("Project")
     version = relationship("ProjectVersion")
+
+
+# ==================== 告警（Wave C） ====================
+
+class AlertRuleType(str, enum.Enum):
+    TASK_FAILED = "task_failed"
+    TASK_TIMEOUT = "task_timeout"
+    CONSECUTIVE_FAILURES = "consecutive_failures"
+    SUCCESS_RATE = "success_rate"
+    NODE_OFFLINE = "node_offline"
+    ZOMBIE_CONVERGED = "zombie_converged"
+
+
+class AlertSeverity(str, enum.Enum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class AlertRule(Base):
+    __tablename__ = "alert_rule"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False)
+    rule_type = Column(Enum(AlertRuleType), nullable=False)
+    # 作用范围（NULL=全局，指定=仅该爬虫/项目）
+    spider_id = Column(BigInteger, ForeignKey("spider.id"), nullable=True)
+    project_id = Column(BigInteger, ForeignKey("project.id"), nullable=True)
+    # 规则参数
+    threshold = Column(Integer, default=1)  # 阈值（失败次数/成功率百分比等）
+    window_minutes = Column(Integer, default=60)  # 统计窗口（分钟）
+    cooldown_minutes = Column(Integer, default=30)  # 同规则冷却期（分钟内不重复触发）
+    severity = Column(Enum(AlertSeverity), default=AlertSeverity.WARNING)
+    enabled = Column(Boolean, default=True)
+    created_by = Column(BigInteger, ForeignKey("user.id"), nullable=True)
+    created_at = Column(DateTime, default=cn_now)
+    updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
+
+    # Relationships
+    records = relationship("AlertRecord", back_populates="rule", cascade="all, delete-orphan")
+
+
+class AlertRecord(Base):
+    __tablename__ = "alert_record"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    rule_id = Column(BigInteger, ForeignKey("alert_rule.id"), nullable=False)
+    event_type = Column(String(32), nullable=False)  # 对应 rule_type 值
+    target_id = Column(BigInteger)  # 任务 ID / 节点 ID 等
+    target_name = Column(String(128))  # 爬虫名 / 节点名等
+    message = Column(Text, nullable=False)
+    severity = Column(Enum(AlertSeverity), default=AlertSeverity.WARNING)
+    acknowledged = Column(Boolean, default=False)
+    acknowledged_by = Column(BigInteger, ForeignKey("user.id"), nullable=True)
+    acknowledged_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=cn_now)
+
+    # Relationships
+    rule = relationship("AlertRule", back_populates="records")
+
+
+class AlertChannelType(str, enum.Enum):
+    DINGTALK = "dingtalk"
+    WECHAT = "wechat"
+    FEISHU = "feishu"
+    CUSTOM = "custom"
+
+
+class AlertChannel(Base):
+    __tablename__ = "alert_channel"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False)
+    channel_type = Column(Enum(AlertChannelType), nullable=False)
+    webhook_url = Column(String(512), nullable=False)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=cn_now)

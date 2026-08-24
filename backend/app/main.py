@@ -134,6 +134,13 @@ async def lifespan(app: FastAPI):
     scheduler_service = get_scheduler_service()
     scheduler_service.start()
 
+    # 启动告警引擎（Wave C）
+    try:
+        from app.services.alert_engine import init_alert_engine
+        init_alert_engine()
+    except Exception as e:
+        logger.warning(f"告警引擎启动失败（不影响正常运行）: {e}")
+
     yield
 
     # 关闭时清理执行器
@@ -236,6 +243,10 @@ app.include_router(execution.router, prefix=settings.API_PREFIX)
 # 定时任务
 from app.api.v1 import schedules
 app.include_router(schedules.router, prefix=settings.API_PREFIX)
+
+# 告警（Wave C）
+from app.api.v1 import alerts
+app.include_router(alerts.router, prefix=settings.API_PREFIX)
 
 # 监控（仪表盘与健康检查）
 from app.api.v1 import monitoring

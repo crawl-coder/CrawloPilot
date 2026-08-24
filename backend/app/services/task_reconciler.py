@@ -202,10 +202,22 @@ def _decrypt_field(value: str | None) -> str | None:
 
 
 def _mark_failed(db: Session, task: TaskInstance, reason: str):
-    """标记任务为 FAILED 并记录原因"""
+    """标记任务为 FAILED 并记录原因；发布僵尸收敛告警事件"""
     task.status = TaskStatus.FAILED
     task.finished_at = cn_now()
     task.error_message = reason[:512]  # 限长防溢出
     if task.started_at and task.finished_at:
         task.duration = round((task.finished_at - task.started_at).total_seconds(), 2)
     logger.warning(f"对账：任务 #{task.id} ({task.deploy_mode}) → FAILED: {reason}")
+    # 发布僵尸收敛告警事件（Wave C）
+    try:
+        from app.services.alert_engine import publish
+        publish("zombie_converged", {
+            "target_id": task.id,
+            "target_name": task.spider_name or "",
+            "spider_id": task.spider_id,
+            "project_id": task.spider.project_id if task.spider else None,
+            "error_message": reason,
+        })
+    except Exception:
+        pass

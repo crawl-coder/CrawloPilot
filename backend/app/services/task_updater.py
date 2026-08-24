@@ -93,23 +93,32 @@ def update_task_completion(
                     sched.fail_count = (sched.fail_count or 0) + 1
                 db.commit()
 
-        # 失败/超时告警（Webhook）
+        # 告警事件发布（Wave C 引擎 + 兼容旧 webhook）
         if status in (TaskStatus.FAILED, TaskStatus.TIMEOUT):
+            try:
+                from app.services.alert_engine import publish
+                publish(status.value, {
+                    "target_id": task.id,
+                    "target_name": task.spider_name or "",
+                    "spider_id": task.spider_id,
+                    "project_id": task.spider.project_id if task.spider else None,
+                    "error_message": error_message,
+                    "duration": task.duration,
+                    "started_at": task.started_at,
+                    "finished_at": finished_at,
+                })
+            except Exception as e:
+                logger.warning(f"[{task_id}] 触发告警事件异常: {e}")
+            # 兼容旧版 ALERT_WEBHOOK_URL 单点通知
             try:
                 from app.services.alert_service import notify_task_failed
                 spider_name = task.spider_name or (task.spider.name if task.spider else "")
                 project_name = task.spider.project.name if task.spider and task.spider.project else ""
                 node_name = task.node.name if task.node else ""
                 notify_task_failed(
-                    task.id,
-                    spider_name,
-                    project_name,
-                    node_name,
-                    status.value,
-                    error_message,
-                    task.duration,
-                    task.started_at,
-                    finished_at,
+                    task.id, spider_name, project_name, node_name,
+                    status.value, error_message, task.duration,
+                    task.started_at, finished_at,
                 )
             except Exception as e:
                 logger.warning(f"[{task_id}] 触发失败告警异常: {e}")

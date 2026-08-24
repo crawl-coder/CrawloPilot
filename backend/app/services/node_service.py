@@ -411,6 +411,7 @@ class NodeService:
 
         for node in nodes:
             status = "offline"
+            prev_status = node.status.value if node.status else "offline"
             try:
                 if node.connect_type == "agent":
                     if node.last_heartbeat and (now - node.last_heartbeat).total_seconds() < 90:
@@ -426,6 +427,17 @@ class NodeService:
             node.status = NodeStatus.ONLINE if status == "online" else NodeStatus.OFFLINE
             # 不要回写 last_heartbeat：agent 节点的心跳只能来自 Agent 真实上报。
             # 此处回写会让健康检查"自我续命"（<90s 即刷新为 now），死节点永远无法离线。
+
+            # 节点状态变更告警事件（Wave C）
+            if status == "offline" and prev_status == "online":
+                try:
+                    from app.services.alert_engine import publish
+                    publish("node_offline", {
+                        "target_id": node.id,
+                        "target_name": node.name,
+                    })
+                except Exception:
+                    pass
             results.append({
                 "node_id": node.id,
                 "name": node.name,
