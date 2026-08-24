@@ -657,20 +657,13 @@ class DockerExecutor:
         logs: str = None,
         error_message: str = None,
     ):
-        """更新任务完成信息（原子终态保护，复用公共实现）"""
-        from app.services.task_updater import update_task_completion
-        updated = update_task_completion(
-            task_id,
-            status,
-            finished_at,
-            pages_crawled=pages_crawled,
-            items_scraped=items_scraped,
-            errors_count=errors_count,
-            error_message=error_message,
+        """更新任务完成信息（统一经 TaskStateStore，原子终态保护）"""
+        from app.services.task_state_store import get_task_state_store
+        updated = get_task_state_store().complete_task(
+            task_id, status, finished_at,
+            pages_crawled, items_scraped, errors_count, error_message,
             deploy_mode=DeployMode.DOCKER,
-            container_id=container_id,
-            logs=logs,
-            log_dir=LOGS_DIR,
+            container_id=container_id, logs=logs, log_dir=LOGS_DIR,
         )
         if updated:
             from app.core.database import SessionLocal as _SL

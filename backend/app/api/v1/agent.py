@@ -409,19 +409,13 @@ async def agent_report_task(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"无效的任务状态: {data.status}")
 
-    # 终态原子更新：若任务已被取消/超时等进入终态，不覆盖（防 stop 后 agent 回报改写）
-    from app.services.task_updater import update_task_completion
-    updated = update_task_completion(
-        task_id,
-        status=status,
-        finished_at=cn_now(),
-        pages_crawled=data.pages_crawled or 0,
-        items_scraped=data.items_scraped or 0,
-        errors_count=data.errors_count or 0,
-        error_message=data.error_message,
-        deploy_mode="agent",
-        logs=data.logs,
-        log_dir=LOGS_DIR,
+    # 终态原子更新（统一经 TaskStateStore）
+    from app.services.task_state_store import get_task_state_store
+    updated = get_task_state_store().complete_task(
+        task_id, status, cn_now(),
+        data.pages_crawled or 0, data.items_scraped or 0, data.errors_count or 0,
+        data.error_message, deploy_mode="agent",
+        logs=data.logs, log_dir=LOGS_DIR,
     )
 
     if not updated:

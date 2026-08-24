@@ -35,6 +35,31 @@ TERMINAL_STATUSES = {TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED
 class TaskStateStore:
     """任务级状态变更的唯一入口"""
 
+    def complete_task(
+        self,
+        task_id,
+        status: TaskStatus,
+        finished_at,
+        pages_crawled: int = 0,
+        items_scraped: int = 0,
+        errors_count: int = 0,
+        error_message=None,
+        deploy_mode=None,
+        container_id=None,
+        logs=None,
+        log_dir=None,
+    ) -> bool:
+        """终态更新（委托 task_updater 实现，保持所有业务逻辑不变）。
+
+        执行器统一通过此方法写入终态，不直接写 DB。
+        """
+        from app.services.task_updater import update_task_completion
+        return update_task_completion(
+            task_id, status, finished_at,
+            pages_crawled, items_scraped, errors_count,
+            error_message, deploy_mode, container_id, logs, log_dir,
+        )
+
     def transition(
         self,
         db: Session,

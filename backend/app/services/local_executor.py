@@ -844,16 +844,11 @@ class LocalExecutor:
         errors_count: int = 0,
         error_message: str = None
     ):
-        """更新任务完成信息（原子终态保护，复用公共实现）"""
-        from app.services.task_updater import update_task_completion
-        return update_task_completion(
-            task_id,
-            status,
-            finished_at,
-            pages_crawled=pages_crawled,
-            items_scraped=items_scraped,
-            errors_count=errors_count,
-            error_message=error_message,
+        """更新任务完成信息（统一经 TaskStateStore，原子终态保护）"""
+        from app.services.task_state_store import get_task_state_store
+        return get_task_state_store().complete_task(
+            task_id, status, finished_at,
+            pages_crawled, items_scraped, errors_count, error_message,
         )
 
     async def cleanup(self):
