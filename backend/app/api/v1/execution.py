@@ -162,6 +162,29 @@ async def create_and_execute_task(
     )
 
 
+@router.post("/tasks/distributed")
+async def create_distributed_tasks(
+    spider_id: int,
+    node_ids: list,
+    shared_redis_url: str = None,
+    worker_count: int = 1,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """模式 C：同时部署到多个节点，共享 Redis 队列（Crawlo Consumer Group 负载均衡）"""
+    from app.services.task_service import create_distributed_task
+    try:
+        result = create_distributed_task(
+            db, spider_id, node_ids,
+            distribution_mode="multi_node_distributed",
+            shared_redis_url=shared_redis_url,
+            worker_count=worker_count,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/tasks/{task_id}/pause")
 async def pause_task(
     task_id: str,

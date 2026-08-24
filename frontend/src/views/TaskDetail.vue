@@ -9,6 +9,10 @@
         <el-tag v-if="task?.deploy_mode" size="small" type="info" effect="plain" style="margin-left: 6px">
           {{ modeText }}
         </el-tag>
+        <el-tag v-if="task?.distribution_mode && task.distribution_mode !== 'standalone'"
+                size="small" type="warning" effect="plain" style="margin-left: 4px">
+          {{ distModeText }}
+        </el-tag>
       </template>
       <template #extra>
         <div class="header-actions">
@@ -60,6 +64,11 @@
             </el-descriptions-item>
             <el-descriptions-item label="所属项目">{{ task?.project_name || '-' }}</el-descriptions-item>
             <el-descriptions-item label="部署模式">{{ modeText }}</el-descriptions-item>
+            <el-descriptions-item v-if="task?.distribution_mode !== 'standalone'" label="分布式模式">
+              {{ distModeText }}
+              <span v-if="task?.worker_count > 1">（{{ task.worker_count }} Worker）</span>
+              <span v-if="task?.redis_namespace" style="color:#999; margin-left:8px">ns: {{ task.redis_namespace }}</span>
+            </el-descriptions-item>
             <el-descriptions-item label="执行节点">{{ task?.node_name || '本机 (local)' }}</el-descriptions-item>
             <el-descriptions-item label="进程 PID">{{ task?.process_id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="开始时间">{{ formatTime(task?.started_at || task?.created_at) }}</el-descriptions-item>
@@ -162,6 +171,14 @@ const isTimeout = computed(() => status.value === 'timeout')
 const modeText = computed(() => {
   const map = { local: '本地进程', ssh: 'SSH 节点', docker: 'Docker', agent: 'Agent' }
   return map[task.value?.deploy_mode] || task.value?.deploy_mode || '-'
+})
+const distModeText = computed(() => {
+  const map = {
+    standalone: '单机',
+    single_node_distributed: '单机分布式',
+    multi_node_distributed: '多机分布式',
+  }
+  return map[task.value?.distribution_mode] || task.value?.distribution_mode || '-'
 })
 const durationText = computed(() => {
   const d = task.value?.duration ?? liveStatus.value?.duration

@@ -390,9 +390,9 @@ CrawloPilot/
 
 **V1（已完成）**：项目 / 爬虫 / 四种执行模式 / 任务与日志 / Server 实体 / 定时调度 / Git 工作流与凭据体系
 
-**V2（规划）**：调度管理增强、监控告警、代理池 / API 管理、操作审计
+**V2（已完成）**：任务状态对账 / 僵尸任务治理 / 密钥体检 / Agent 并发扩展 / Agent venv 缓存与代码分发优化 / 版本握手 / 爬虫级并发守卫 / 调度软删除 / 告警规则引擎（6 类规则 + 多通道通知 + 前端页面）/ Redis 基础设施 / TaskStateStore / CrawloDistributedAdapter（三种分布模式）/ 多机联合深爬 / 调度器多实例 DB 选主锁
 
-详见 [docs/remaining-work.md](docs/remaining-work.md)。
+详见 [docs/v2-development-plan.md](docs/v2-development-plan.md)。
 
 ## 🤝 贡献
 

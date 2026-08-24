@@ -198,6 +198,65 @@ def create_and_run_task(
     return result
 
 
+def create_distributed_task(
+    db,
+    spider_id: int,
+    node_ids: list,
+    distribution_mode: str = "multi_node_distributed",
+    shared_redis_url: str = None,
+    worker_count: int = 1,
+    schedule_id: int = None,
+    background_tasks=None,
+    task_args: str = None,
+    task_env: dict = None,
+) -> dict:
+    """模式 C：同时部署到多个节点，共享 Redis 队列。
+
+    每个节点创建一个独立任务，共享同一个 redis_namespace。
+    Crawlo Consumer Group 自动在多个 Worker 间负载均衡。
+    """
+    if not node_ids:
+        raise ValueError("模式 C 至少需要一个节点")
+    if distribution_mode != "multi_node_distributed":
+        raise ValueError("create_distributed_task 仅支持 multi_node_distributed 模式")
+
+    from app.services.crawlo_distributed_adapter import get_distributed_adapter, DistributionMode
+    from app.models import Project
+
+    spider = db.query(Spider).filter(Spider.id == spider_id).first()
+    if not spider:
+        raise ValueError("爬虫不存在")
+    project = db.query(Project).get(spider.project_id)
+    project_name = project.name if project else "default"
+    spider_name = spider.spider_name or spider.name
+
+    adapter = get_distributed_adapter()
+    redis_ns = adapter._redis_url and build_redis_namespace(project_name, spider_name)
+
+    results = []
+    for node_id in node_ids:
+        try:
+            r = create_and_run_task(
+                db, spider_id, node_id=node_id,
+                schedule_id=schedule_id,
+                background_tasks=background_tasks,
+                task_args=task_args, task_env=task_env,
+                distribution_mode=distribution_mode,
+                shared_redis_url=shared_redis_url or adapter._redis_url,
+                worker_count=worker_count,
+            )
+            results.append(r)
+        except Exception as e:
+            results.append({"error": str(e), "node_id": node_id})
+
+    return {
+        "mode": distribution_mode,
+        "node_count": len(node_ids),
+        "redis_namespace": redis_ns,
+        "tasks": results,
+    }
+
+
 def _dispatch_local(spider, task, code_dir, spider_name, background_tasks, timeout=None,
                     memory_limit=None, cpu_limit=None, task_args=None, task_env=None):
     """本地模式：子进程运行"""
