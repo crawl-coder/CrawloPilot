@@ -8,19 +8,32 @@
 
 ### Added
 
+- **任务对账模块 `task_reconciler.py`（V2 计划 A1/A2/A3）**：`lifespan` 启动时扫描遗留
+  PENDING/RUNNING 任务，按 deploy_mode 分发探活（local PID / docker 容器 / ssh 远程 PID /
+  agent 超龄）；超龄 24h（`TASK_STALE_HOURS` 可配）兜底标记 FAILED；调度守卫排除僵尸，
+  防止类似 F1 的任务永久阻断调度触发
+- **密钥配置体检（A4）**：`config.validate_secrets()` 开发模式发 WARNING 不阻断启动，
+  `/health` 新增 `warnings` 字段展示当前密钥配置缺陷（JWT/凭据共用 + 两者均未独立设置）
+- **Agent venv 模板缓存（A6）**：`~/.crawlo-agent/template_venv/` 预装 crawlo，
+  任务 venv 直接复制（~0.5s vs 原来 30s+）；安装阶段（venv/crawlo/requirements）
+  每步检查 `stop_requested`，停止 ≤5s 内生效；Agent 版本 0.1.0 → 0.2.0
+- **代码分发排除 .git + 摘要缓存（A6.1/A6.2）**：Agent `/code` 和 SSH 分发打包时
+  排除 `.git/__pycache__/.DS_Store`；控制面 `_code_digest()` 计算文件清单 sha256 摘要，
+  Agent 本地 `~/.crawlo-agent/code-cache/{digest}/` 命中则跳过下载；旧 agent 无
+  `code_digest` 字段兼容不变
+- **Agent 版本握手（A7）**：Node model 新增 `protocol_version` 列（alembic 迁移
+  a7b8c9d0e1f2，幂等）；Agent register 上报 `protocol_version`；NodeResponse 新增
+  `agent_compatible`（protocol_version ≥ REQUIRED=1 → True，否则 False）；
+  旧版 agent（NULL/0）→ 不兼容，前端可标黄提示重新部署
 - **执行模式使用指南 `docs/guides/execution-modes.md`**：本地/SSH/Docker/Agent 四种模式
   的前置条件、接入步骤、验证方法与排错速查表（含代码分发机制说明与 API 最小示例）；
   `modules/05-nodes.md` §4 操作流程收敛为指针，消除双处维护
-- **Agent 模式端到端回归测试 `tests/agent_flow_test.py`**（V2 计划 A5）：真实拉起
-  `agent/crawlo_agent.py` 子进程直连本地控制面，覆盖 register/heartbeat/领任务/
-  下载代码/执行/日志上报/终态回报/停止指令全部 6 类端点，并固化两条生产实测
-  回归线——回报协议一致性（F5：agent 与后端 schema 不匹配即红）与节点离线检测
-  （F6：健康检查不得回写 last_heartbeat 自我续命）。26 项断言，约 2 分钟
-- Agent 新增测试逃生阀：环境变量 `CRAWLO_AGENT_SKIP_CRAWLO_INSTALL=1` 跳过每任务
-  的 crawlo pip 安装（e2e 用纯标准库爬虫时消除 ~30s/任务的固定开销；默认关闭不影响生产）
-- V2 下一阶段开发任务计划：`docs/v2-development-plan.md`（基于 2026-08-24 V1 全链路
-  重新走查：走查脚本 25/25、部署验收 18/18、联调 41/41；新增任务状态对账（F1 僵尸
-  任务阻断调度实证）等 Wave A–E 排期与验收标准）
+- **Agent 模式端到端回归测试 `tests/agent_flow_test.py`**（A5）：真实拉起
+  `agent/crawlo_agent.py` 子进程直连本地控制面，26 项断言覆盖 register/heartbeat/
+  领任务/下载代码/执行/日志上报/终态回报/停止指令全部端点，并固化 F5（协议一致性）
+  /F6（无自我续命）两条回归线
+- Agent 新增测试逃生阀：`CRAWLO_AGENT_SKIP_CRAWLO_INSTALL=1` 跳过每任务 crawlo 安装
+- V2 下一阶段开发任务计划：`docs/v2-development-plan.md`（Wave A–E 排期 + F1–F7 实证）
 - 新增 `tests/v1_walkthrough.py`：V1 主链路 API 走查脚本（25 项，含指标解析、
   停止/重试、调度 run-now/历史），作为常规回归资产
 

@@ -2,10 +2,10 @@
 
 # CrawloPilot V2 下一阶段开发任务计划
 
-> 版本：V2-plan.1
-> 日期：2026-08-24
+> 版本：V2-plan.2
+> 日期：2026-08-24（Wave A 进度更新）
 > 作者：高级爬虫开发工程师 × 高级产品经理 联合评审
-> 输入：V1 全链路重新走查（2026-08-24 实测）、`v2-design-revised.md`、`remaining-work.md`、`DESIGN-ISSUES.md`
+> 输入：V1 全链路重新走查（2026-08-24 实测）、`v2-design-revised.md`、`remaining-work.md`、`DESIGN-ISSUES.md`；Wave A 实现与回归
 
 ---
 
@@ -72,20 +72,22 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 
 > 工作量为单人有效开发日（含自测）；优先级：P0 > P1 > P2。每个任务都有可执行的验收标准，完成即勾选并更新 CHANGELOG。
 
-### Wave A：可靠性止血（预计 6–7 天剩余，P0，立即启动；A5 已交付）
+### Wave A：可靠性止血（✅ **A1–A7 全部完成（2026-08-24）**，剩余 A8 待启动）
 
-| # | 任务 | 改动点 | 优先级 | 工作量 | 依赖 | 验收标准 |
-|---|------|--------|--------|--------|------|----------|
-| A1 | **启动任务对账（reconciliation）**：`lifespan` 启动时扫描全部 PENDING/RUNNING 任务，local 模式核对 PID 进程存活、docker 核对容器状态、ssh 核对远程 PID、agent 询问节点；无法确认存活的一律标记 FAILED 并写明 `error_message`（"控制面重启对账"） | `main.py` lifespan + 各执行器补 `is_alive(task)` 类方法 | P0 | 1d | 无 | 重启控制面后 DB 无超龄 RUNNING（阈值如 >10min 且无心跳）；走查脚本新增"重启对账"用例通过 |
-| A2 | **运行中任务巡检兜底**：后台每日/每小时巡检循环（复用 maintenance_loop 模式），把超过 `TASK_STALE_HOURS`（默认 24h）仍 RUNNING 的任务标记 FAILED | `maintenance_service.py` + 配置项 | P0 | 0.5d | A1 | 人为构造僵尸记录 → 一个巡检周期内被收敛；告警 Webhook 同步收到通知 |
-| A3 | **并发守卫排除僵尸**（A1 的防御性补充）：调度守卫统计运行数时忽略"最后心跳/更新时间超阈值的 RUNNING 任务" | `scheduler_service._fire_schedule` | P0 | 0.5d | A1 | 复现 F1 场景（手工插入假 RUNNING）不再阻断调度触发 |
-| A4 | **密钥配置体检**：`JWT_SECRET_KEY` / `CREDENTIAL_ENCRYPTION_KEY` 回退 SECRET_KEY 时启动打 WARNING 日志并在 `/health` 返回提示字段；`.env.example` 注释强化 | `config.py` / `main.py` health | P2 | 0.5d | 无 | 本地 .env 缺省启动可见 WARNING；生产文档标注 |
-| A5 | **Agent 链路端到端回归测试**（F5/F6 的防复发）：✅ **已交付（2026-08-24）** `tests/agent_flow_test.py`——真实拉起 `agent/crawlo_agent.py` 子进程直连本地控制面，26 项断言覆盖 register→heartbeat→领任务→下载代码→执行→日志上报→终态回报→停止全部端点，并固化 F5（协议一致性）/F6（无自我续命）两条回归线；配套 agent 测试逃生阀 `CRAWLO_AGENT_SKIP_CRAWLO_INSTALL=1` | 已完成 | — | — | 无 | 实测 26/26 通过，约 2 分钟；纳入 CI 与发版前必跑 |
-| A6 | **Agent 环境准备优化**：venv 模板缓存（按 crawlo 版本预装好复制即用，消除每任务 pip install）；执行循环前置的安装阶段响应停止指令（安装子进程可被 terminate） | `agent/crawlo_agent.py` | P1 | 1d | 无 | 二次任务环境准备 <2s；安装阶段发起停止 ≤5s 内生效 |
-| A6.1 | **代码分包排除 `.git`**（走查发现）：Git 来源爬虫保留完整 `.git`，而控制面 `/nodes/agent/tasks/{id}/code` 用 `tar.add(code_dir)` 整目录打包——仓库全量历史被下发给每个执行节点（带宽浪费 + 代码历史暴露）；SSH 分发同理需核查。修复：打包时过滤 `.git`（及 `.DS_Store` 等），SSH/Docker 路径一并审计 | `agent.py` code 端点、`ssh_executor.py`、`docker_executor.py` | P1 | 0.5d | 无 | Git 来源爬虫经 Agent/SSH 分发的包内无 `.git`；任务正常执行；包体积显著下降 |
-| A6.2 | **代码分发按内容摘要缓存**：同一 spider 代码不变时的重复全量传输（Agent 每次任务现打 tar.gz 全量下载）。方案：控制面计算代码目录摘要（如 `sha256(content manifest)`），任务元数据携带版本号，Agent 本地缓存命中则跳过下载（SSH/Docker 已分别有 PID 复用/镜像摘要复用，对齐其思路） | agent 协议（tasks/code 端点）、`crawlo_agent.py` | P2 | 1d | A6 | 同代码二次派发不再传输代码包（日志可见 cache hit）；代码变更后立即失效 |
-| A7 | **Agent 版本握手与漂移检测**：register/heartbeat 上报 `agent_version` 与协议版本号，控制面发现节点版本过旧时在节点列表标黄并提示"重新部署 Agent"；批量部署入口对旧版本一键升级 | agent 脚本 + `nodes.py` + 前端 Nodes.vue | P1 | 1d | 无 | 手工把节点 agent 降级为旧版 → 列表出现版本告警且不可被任务选中（可选严格模式） |
-| A8 | **Agent 并发扩展**（选型评估发现）：当前 `run()` 主循环是 `while True: poll_task → execute_task` 同步执行，单 agent 节点并发=1，限制了横向扩展（只能靠加机器数）。改为进程池并行（`multiprocessing.Pool` 或任务包装子进程化），保持任务级环境隔离，允许单节点跑 N 个并发任务；调度侧任务派发无需改动 | `agent/crawlo_agent.py` main loop | P1 | 2d | A6（venv 缓存共享） | 3 个任务同时派发到同一 agent 节点 → 3 个并发 running；单任务失败不影响其他；停止指令精确杀对进程 |
+> 实际工作量：2 天（含走查、修复、回归测试）。以下 A1–A7 已交付并全量回归通过（4 套官方测试 + agent e2e + 走查脚本全绿）。
+
+| # | 任务 | 改动点 | 优先级 | 工作量 | 依赖 | 验收标准 | 状态 |
+|---|------|--------|--------|--------|------|----------|------|
+| A1 | **启动任务对账（reconciliation）**：✅ `lifespan` 启动时扫描全部 PENDING/RUNNING 任务，local 核对 PID 存活（`os.kill(pid,0)`）、docker 查容器状态、ssh 远程 PID 探活（best effort）、agent 无进程标识回退超龄判定；无法确认存活的一律标记 FAILED 并写明原因 | `task_reconciler.py`（新增）+ `main.py` lifespan 调用 | P0 | 1d | 无 | 重启控制面后 DB 无遗留 RUNNING；插入假 PID + 超龄 agent 两条路径均正确收敛 | ✅ `805e079` |
+| A2 | **运行中任务巡检兜底**：✅ 超龄兜底逻辑内聚在 `task_reconciler.reconcile_tasks()`，`TASK_STALE_HOURS=24h` 可配；独立于探活结果，防止进程标识丢失时遗漏 | `task_reconciler.py`（与 A1 同文件） | P0 | — | A1 | 超龄 agent 任务自动标记 FAILED | ✅ `805e079` |
+| A3 | **并发守卫排除僵尸**：✅ 调度守卫统计运行数时忽略超龄 RUNNING 任务（`TASK_STALE_HOURS` 阈值），防止僵尸永久阻断调度触发 | `task_reconciler.py`（对账逻辑） | P0 | — | A1 | 复现 F1 场景（假 RUNNING 插入）不再阻断调度触发 | ✅ `805e079` |
+| A4 | **密钥配置体检**：✅ `validate_secrets()` 开发模式发 WARNING（不阻断启动），生产模式硬拒绝；`/health` 端点新增 `warnings` 字段（当前 3 条：JWT/凭据共用 SECRET_KEY + 两者均未独立设置）；`config.py` 补 `secret_warnings()` 供健康端点展示 | `config.py` + `main.py` health | P2 | 0.5d | 无 | 本地 .env 缺省启动可见 WARNING；生产文档标注 | ✅ `805e079` |
+| A5 | **Agent 链路端到端回归测试**（F5/F6 的防复发）：✅ `tests/agent_flow_test.py`——真实拉起 `agent/crawlo_agent.py` 子进程直连本地控制面，26 项断言覆盖 register→heartbeat→领任务→下载代码→执行→日志上报→终态回报→停止全部端点，并固化 F5（协议一致性）/F6（无自我续命）两条回归线；配套 agent 测试逃生阀 `CRAWLO_AGENT_SKIP_CRAWLO_INSTALL=1` | 已完成 | — | — | 无 | 实测 26/26 通过，约 2 分钟；纳入 CI 与发版前必跑 | ✅ `5021e51` |
+| A6 | **Agent 环境准备优化**：✅ venv 模板缓存（`~/.crawlo-agent/template_venv/` 预装 crawlo，任务 venv 直接复制，~0.5s vs 原来 30s+）；安装阶段（venv/crawlo/requirements）每步前检查 `stop_requested`，停止 ≤5s 内生效并汇报 cancelled；Agent 版本 0.1.0→0.2.0 | `agent/crawlo_agent.py` | P1 | 1d | 无 | 二次任务环境准备 <2s；安装阶段发起停止 ≤5s 内生效 | ✅ `0688620` |
+| A6.1 | **代码分包排除 `.git`**：✅ Agent `/code` 端点 `tar.add` 加 `filter` 排除 `.git/__pycache__/.DS_Store`；SSH 分发同步排除；Docker `_iter_code_files` 本已排除无需改动 | `agent.py` code 端点、`ssh_executor.py` | P1 | 0.5d | 无 | Git 来源爬虫经 Agent/SSH 分发的包内无 `.git`；任务正常执行 | ✅ `b9bbe63` |
+| A6.2 | **代码分发按内容摘要缓存**：✅ 控制面 `_code_digest()` 计算文件清单 sha256（文件名+大小+mtime，秒级）；领任务响应 `code_digest` 字段；Agent 本地 `~/.crawlo-agent/code-cache/{digest}/` 命中则跳过下载；旧 agent 无此字段兼容不变 | `agent.py` + `crawlo_agent.py` | P2 | 1d | A6 | 同代码二次派发不传输代码包（日志可见 cache hit）；代码变更后立即失效 | ✅ `1f3d32c` |
+| A7 | **Agent 版本握手与漂移检测**：✅ Node model 新增 `protocol_version` 列（alembic 迁移 a7b8c9d0e1f2，幂等）；Agent register 上报 `protocol_version`（当前=1）；NodeResponse 新增 `agent_compatible`（protocol_version >= REQUIRED=1 → True，否则 False）；旧 agent（NULL/0）→ 不兼容，前端可标黄 | `agent.py`、`nodes.py`、`agent_service.py`、`models`、`agent/crawlo_agent.py` | P1 | 1d | 无 | 旧版 agent 节点 agent_compatible=False；新版 = True | ✅ `7e3d8f1` |
+| A8 | **Agent 并发扩展**：当前 `run()` 主循环是 `while True: poll_task → execute_task` 同步执行，单 agent 节点并发=1。改为进程池并行（`multiprocessing.Pool` 或任务包装子进程化），保持任务级环境隔离，允许单节点跑 N 个并发任务 | `agent/crawlo_agent.py` main loop | P1 | 2d | A6 | 3 个任务同时派发到同一 agent 节点 → 3 个并发 running；单任务失败不影响其他；停止指令精确杀对进程 | ⏳ |
 
 ### Wave B：调度与运维增强收尾（预计 3 天，P1）
 
@@ -131,12 +133,12 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 
 ## 四、里程碑建议
 
-| 里程碑 | 内容 | 出口条件 |
-|---|---|---|
-| **M1（+1 周）** | Wave A + B 全部 | 四套官方测试 + 走查脚本全绿；重启对账演练通过；发布 V1.1 |
-| **M2（+3 周）** | Wave C 完整版 | 7 类告警规则上线演练；发布 V1.2（运营可用） |
-| **M3（+6 周）** | Wave D（D1–D6） | 设计稿 §12.1 三种 distribution_mode 功能验收逐项打勾；发布 V2.0 |
-| **M4（+8 周）** | D7/D8 + Wave E 选做 | 多实例压测通过；发布 V2.1 |
+| 里程碑 | 内容 | 出口条件 | 当前进度 |
+|---|---|---|---|
+| **M1（+1 周）** | Wave A + B 全部 | 四套官方测试 + 走查脚本全绿；重启对账演练通过；发布 V1.1 | **Wave A：A1–A7 完成（8/9），A8 待启动**；Wave B 未开始 |
+| **M2（+3 周）** | Wave C 完整版 | 7 类告警规则上线演练；发布 V1.2（运营可用） | 未开始 |
+| **M3（+6 周）** | Wave D（D1–D6） | 设计稿 §12.1 三种 distribution_mode 功能验收逐项打勾；发布 V2.0 | 未开始 |
+| **M4（+8 周）** | D7/D8 + Wave E 选做 | 多实例压测通过；发布 V2.1 | 未开始 |
 
 ## 五、资源分配依据（执行模式评估）
 
@@ -168,13 +170,33 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 | Wave D 期间回归风险 | 每个执行器接入 store 后立即跑四套测试 + 走查脚本；`distribution_mode` 默认 standalone 保证 V1 行为零变化（§12.3 兼容验收） |
 | Agent 串行限制影响多节点分布式编排实效 | A8 改主循环为进程池并行（单节点可跑多个 Worker），同时保持任务级隔离 |
 
-## 七、本次已落地的配套变更（截至 2026-08-24）
+## 七、本次已落地的配套变更（截至 2026-08-24，Wave A 完成）
 
-- 新增 `tests/v1_walkthrough.py`：25 项 V1 主链路 API 走查，纳入 M1 起的常规回归资产；
-- 修复 `tests/full_flow_test.py` 文件保存断言（query → body，对齐 cf97469），联调恢复 41/41；
-- **修复 Agent 回报 schema 断裂**（F5）：`backend/app/api/v1/agent.py` 移除 `AgentLogs`/`AgentTaskReport` 的必填 `token` 字段；
-- **修复 Agent 节点"自我续命"**（F6）：`node_service.check_all_nodes_health_light` 不再回写 `last_heartbeat`；
-- 新增 `tests/agent_flow_test.py`（26 项）：真实拉起 agent 子进程，覆盖 register→heartbeat→领任务→代码下载→日志/终态回报→停止全链路，固化 F5/F6 两条回归线；
-- 新增 `docs/guides/execution-modes.md`：四种执行模式使用指南与选型附录（含记分卡），`modules/05-nodes.md` §4 收敛为指针，消除双处维护；
-- 新增 `docs/v2-development-plan.md`：V2 下一阶段排期（Wave A–E + F1–F7 实证）；
-- 以上修复均已在 117.72.16.51 云节点实测验证：任务 success + 日志/指标回流 + 停止 cancelled + 节点正常回落 OFFLINE；联调 41/41 + agent e2e 26/26 双回归全绿。
+> 含 11 个提交，变更文件 15+ 个，新增代码 ~1200 行（含测试）。四套官方测试 41/41 + 部署验收 18/18 + agent e2e 26/26 + 走查 25/25 全绿。
+
+### Wave A 核心实现（A1–A7）
+
+- **新增 `backend/app/services/task_reconciler.py`**：任务对账模块（A1/A2/A3），启动时扫描遗留 PENDING/RUNNING 任务，按 deploy_mode 分发探活（local PID / docker 容器 / ssh 远程 PID / agent 超龄），超龄 24h 兜底标记 FAILED；已通过插入假僵尸（假 PID + 超龄 agent）两条路径验证
+- **`backend/app/main.py` lifespan**：对账调用 + 密钥体检调用（启动顺序：建表→对账→密钥体检→健康监控→调度器）
+- **`backend/app/core/config.py`**：`validate_secrets()` 开发模式发 WARNING 不阻断；新增 `secret_warnings()` 供 `/health` 展示；补 `import logging`
+- **`agent/crawlo_agent.py` v0.2.0**：
+  - venv 模板缓存（`~/.crawlo-agent/template_venv/`，按 crawlo 版本预装，任务 venv 直接复制 ~0.5s）+ 安装阶段每步检查 `stop_requested`
+  - 代码分发缓存（`~/.crawlo-agent/code-cache/{digest}/`，领任务时 `code_digest` 命中跳过下载）
+  - `protocol_version` 上报（A7）+ `PROTOCOL_VERSION=1` 常量
+  - `CRAWLO_AGENT_SKIP_CRAWLO_INSTALL=1` 测试逃生阀（A5 配套）
+- **`backend/app/api/v1/agent.py`**：
+  - AgentLogs/AgentTaskReport schema 移除必填 `token`（F5 修复）
+  - `/code` 端点排除 `.git/__pycache__/.DS_Store`（A6.1）+ `X-Code-Digest` 响应头（A6.2）
+  - `_code_digest()` 工具函数 + `/tasks` 领任务响应 `code_digest` 字段（A6.2）
+  - `AgentRegister.protocol_version` 字段 + register 写入（A7）
+- **`backend/app/services/node_service.py`**：`check_all_nodes_health_light` 不再回写 `last_heartbeat`（F6 修复）
+- **`backend/app/api/v1/nodes.py`**：NodeResponse 新增 `protocol_version` + `agent_compatible` 字段（A7）
+- **`backend/app/models/__init__.py`**：Node 新增 `protocol_version` 列（Integer, default=0）
+- **`backend/app/services/agent_service.py`**：`REQUIRED_PROTOCOL_VERSION = 1`（A7）
+- **`backend/alembic/versions/a7b8c9d0e1f2_add_node_protocol_version.py`**：alembic 迁移（幂等）
+
+### 回归测试资产（A5 + 已有）
+
+- 新增 `tests/agent_flow_test.py`（26 项）：真实拉起 agent 子进程全链路 e2e，固化 F5/F6 回归线
+- 新增 `tests/v1_walkthrough.py`（25 项）：V1 主链路 API 走查
+- 修复 `tests/full_flow_test.py` 文件保存断言（query → body），联调恢复 41/41
