@@ -1,9 +1,8 @@
 """
 定时任务调度 API
 
-V2：一爬虫可配置多条调度。POST /schedules 始终新增（不再对同一爬虫 upsert），
-    修改走 PUT /schedules/{id}，启停走 enable/disable。
-独立列表页（V2）复用同一套接口。
+一爬虫可配置多条调度。POST /schedules 始终新增，修改走 PUT /schedules/{id}，
+启停走 enable/disable。列表页复用同一套接口。
 """
 from datetime import datetime, timedelta
 from app.core.time_utils import cn_now
@@ -298,7 +297,7 @@ async def create_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建调度（V2：一爬虫可多条，始终新增；修改走 PUT /schedules/{id}）"""
+    """创建调度（一爬虫可多条，始终新增；修改走 PUT /schedules/{id}）"""
     spider = db.query(Spider).filter(Spider.id == data.spider_id).first()
     if not spider:
         raise HTTPException(status_code=404, detail="爬虫不存在")

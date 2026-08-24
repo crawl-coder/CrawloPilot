@@ -220,6 +220,7 @@ class Spider(Base):
     # 配置
     config = Column(JSON)  # 爬虫配置
     schedule_config = Column(JSON)  # 调度配置
+    max_concurrent = Column(Integer, default=1)  # 爬虫级并发上限（0=不限，默认 1）
     
     # 统计
     last_run_at = Column(DateTime)

@@ -32,6 +32,7 @@ class SpiderBase(BaseModel):
     entry_file: Optional[str] = None  # 入口文件 (如 run.py)
     spider_name: Optional[str] = None  # 爬虫名称 (用于 crawlo run)
     config: Optional[Dict[str, Any]] = None  # 运行配置 (超时/重试等)
+    max_concurrent: int = 1  # 爬虫级并发上限（0=不限，默认 1）
 
     # Git相关
     git_url: Optional[str] = None
@@ -60,6 +61,7 @@ class SpiderUpdate(BaseModel):
     entry_file: Optional[str] = None
     spider_name: Optional[str] = None  # 运行名称 (用于 crawlo run)
     config: Optional[Dict[str, Any]] = None
+    max_concurrent: Optional[int] = None  # 爬虫级并发上限（不传=不修改）
     git_credential_id: Optional[int] = None  # 更新引用的共享凭据（不传=不修改；显式传 null=清除引用）
 
 

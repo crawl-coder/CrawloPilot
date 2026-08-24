@@ -81,6 +81,23 @@ def create_and_run_task(
     if spider.status == SpiderStatus.DISABLED:
         raise ValueError("爬虫已禁用，无法运行")
 
+    # B2：爬虫级并发守卫（手动 + 调度 + run-now 统一入口）
+    max_concurrent = spider.max_concurrent or 0  # 0=不限
+    if max_concurrent > 0:
+        active_count = (
+            db.query(TaskInstance)
+            .filter(
+                TaskInstance.spider_id == spider_id,
+                TaskInstance.status.in_([TaskStatus.PENDING, TaskStatus.RUNNING]),
+            )
+            .count()
+        )
+        if active_count >= max_concurrent:
+            raise ValueError(
+                f"爬虫并发守卫：当前活跃任务 {active_count} ≥ 上限 {max_concurrent}，"
+                f"请等待现有任务完成或调高 max_concurrent"
+            )
+
     upload_service = UploadService()
     code_dir = upload_service.get_spider_code_dir(spider.project_id, spider.id)
     if not code_dir or not os.path.exists(code_dir):

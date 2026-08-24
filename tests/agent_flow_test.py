@@ -158,7 +158,7 @@ def main():
     def make_spider(name):
         c, s = http("POST", "/spiders", token, {
             "name": name, "project_id": proj["id"], "spider_type": "custom",
-            "entry_file": "run.py"})
+            "entry_file": "run.py", "max_concurrent": 2})  # B2: 允许并发 2 个任务
         check(f"创建爬虫 {name}", c == 201 and s.get("id"), s)
         CLEANUP["spiders"].append(s.get("id"))
         c2, up = multipart_upload(f"/spiders/{s['id']}/upload", "code.zip", make_zip(src), token)
