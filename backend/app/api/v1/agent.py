@@ -14,6 +14,7 @@ Agent 节点控制端 API
 """
 
 import io
+import os
 import tarfile
 import logging
 from pathlib import Path
@@ -105,6 +106,32 @@ def _validate_agent(db: Session, node_id: int, token: str) -> Node:
 
 def _task_log_path(task_id) -> Path:
     return LOGS_DIR / f"task_{task_id}.log"
+
+
+def _code_digest(code_dir: str) -> str:
+    """计算代码目录内容摘要（文件名+大小+mtime 的 sha256，排除 .git 等）。
+
+    不读文件内容，保证秒级响应；同一目录内容（路径+大小+修改时间）不变则摘要不变。
+    """
+    if not code_dir or not os.path.isdir(code_dir):
+        return ""
+    import hashlib
+    h = hashlib.sha256()
+    code_path = Path(code_dir)
+    skip = {".git", "__pycache__", ".DS_Store"}
+    for root, dirs, files in os.walk(code_dir):
+        dirs[:] = [d for d in dirs if d not in skip]
+        for f in sorted(files):
+            if f == ".DS_Store":
+                continue
+            fp = Path(root) / f
+            rel = fp.relative_to(code_path)
+            try:
+                st = fp.stat()
+                h.update(f"{rel}\0{st.st_size}\0{int(st.st_mtime)}\n".encode())
+            except OSError:
+                continue
+    return h.hexdigest()[:16]
 
 
 def _write_task_logs(task_id, logs: str):
@@ -269,6 +296,10 @@ async def agent_get_tasks(
                     "entry_file": task.spider.entry_file if task.spider else None,
                     "args": (task.stats or {}).get("args"),
                     "env": (task.stats or {}).get("env"),
+                    "code_digest": _code_digest(
+                        UploadService().get_spider_code_dir(task.spider.project_id, task.spider_id)
+                        or ""
+                    ),
                 }
             }
 
@@ -331,11 +362,15 @@ async def agent_get_task_code(
             return info
         tar.add(code_dir, arcname="code", filter=_exclude_git)
 
+    digest = _code_digest(code_dir)
     buf.seek(0)
     return StreamingResponse(
         buf,
         media_type="application/gzip",
-        headers={"Content-Disposition": f'attachment; filename="task_{task_id}.tar.gz"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="task_{task_id}.tar.gz"',
+            "X-Code-Digest": digest,
+        },
     )
 
 

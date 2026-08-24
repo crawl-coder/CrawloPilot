@@ -39,6 +39,9 @@ PIP_INDEX = os.environ.get("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/s
 # venv 模板缓存目录（按 crawlo 版本，一次安装多任务复用）
 _TEMPLATE_VENV_DIR = Path(os.environ.get(
     "CRAWLO_AGENT_TEMPLATE_VENV", str(Path.home() / ".crawlo-agent" / "template_venv")))
+# 代码包缓存目录（按 code_digest，同代码多任务免下载）
+_CODE_CACHE_DIR = Path(os.environ.get(
+    "CRAWLO_AGENT_CODE_CACHE", str(Path.home() / ".crawlo-agent" / "code-cache")))
 
 
 def log(msg: str):
@@ -196,26 +199,49 @@ class AgentClient:
         code_archive = workspace / "code.tar.gz"
 
         try:
-            # 1. 下载代码
-            self._download(
-                f"/api/v1/nodes/agent/tasks/{task_id}/code"
-                f"?node_id={self.node_id}",
-                code_archive,
-            )
-            with tarfile.open(code_archive, "r:gz") as tar:
-                # 安全校验：拒绝路径穿越（.. / 绝对路径 / 符号链接逃逸），
-                # 所有 Python 版本统一手工校验，避免 3.10/3.11 fallback 漏洞
-                for member in tar.getmembers():
-                    name = member.name.replace("\\", "/")
-                    if name.startswith("/") or ".." in name.split("/"):
-                        raise ValueError(f"代码包包含非法路径: {member.name}")
-                    if member.issym() or member.islnk():
-                        raise ValueError(f"代码包包含链接文件: {member.name}")
-                try:
-                    tar.extractall(workspace, filter="data")
-                except TypeError:
-                    # Python < 3.12 无 filter 参数：已手工校验成员，安全调用
-                    tar.extractall(workspace)
+            # 1. 下载代码（支持摘要缓存：同代码任务免下载，直接复用缓存副本）
+            code_digest = task.get("code_digest")
+            cache_hit = False
+            if code_digest:
+                cache_dir = _CODE_CACHE_DIR / code_digest
+                if cache_dir.is_dir():
+                    try:
+                        shutil.copytree(str(cache_dir), str(workspace / "code"), symlinks=True)
+                        cache_hit = True
+                        log(f"代码缓存命中（digest={code_digest}），跳过下载")
+                    except Exception as e:
+                        log(f"缓存复制失败，回退下载: {e}")
+
+            if not cache_hit:
+                self._download(
+                    f"/api/v1/nodes/agent/tasks/{task_id}/code"
+                    f"?node_id={self.node_id}",
+                    code_archive,
+                )
+                with tarfile.open(code_archive, "r:gz") as tar:
+                    # 安全校验：拒绝路径穿越（.. / 绝对路径 / 符号链接逃逸），
+                    # 所有 Python 版本统一手工校验，避免 3.10/3.11 fallback 漏洞
+                    for member in tar.getmembers():
+                        name = member.name.replace("\\", "/")
+                        if name.startswith("/") or ".." in name.split("/"):
+                            raise ValueError(f"代码包包含非法路径: {member.name}")
+                        if member.issym() or member.islnk():
+                            raise ValueError(f"代码包包含链接文件: {member.name}")
+                    try:
+                        tar.extractall(workspace, filter="data")
+                    except TypeError:
+                        # Python < 3.12 无 filter 参数：已手工校验成员，安全调用
+                        tar.extractall(workspace)
+
+                # 写入缓存（下次同 digest 任务可复用）
+                if code_digest:
+                    cache_dir = _CODE_CACHE_DIR / code_digest
+                    cache_dir.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        shutil.copytree(str(workspace / "code"), str(cache_dir), symlinks=True)
+                        log(f"代码已缓存（digest={code_digest}）")
+                    except Exception:
+                        pass  # 缓存写入失败不影响任务执行
             code_dir = workspace / "code"
             log(f"代码已下载: {code_dir}")
 
