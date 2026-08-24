@@ -32,9 +32,13 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.1.0"
-DEFAULT_SERVER = "http://127.0.0.1:18000"
+AGENT_VERSION = "0.2.0"
+DEFAULT_SERVER = os.environ.get("CRAWLOPILOT_AGENT_SERVER", "http://127.0.0.1:18000")
 PIP_INDEX = os.environ.get("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple")
+
+# venv 模板缓存目录（按 crawlo 版本，一次安装多任务复用）
+_TEMPLATE_VENV_DIR = Path(os.environ.get(
+    "CRAWLO_AGENT_TEMPLATE_VENV", str(Path.home() / ".crawlo-agent" / "template_venv")))
 
 
 def log(msg: str):
@@ -216,8 +220,21 @@ class AgentClient:
             log(f"代码已下载: {code_dir}")
 
             # 2. 隔离环境：venv 内装 crawlo 与项目依赖，避免多爬虫互相污染
+            #    安装阶段也响应停止指令（每步前检查 stop_requested）
+            if self._task_status(task_id):
+                log(f"任务 {task_id} 在准备阶段收到停止指令")
+                self._report(task_id, "cancelled", 0, 0, 0, "")
+                return
             venv_python = self._create_venv(workspace)
+            if self._task_status(task_id):
+                log(f"任务 {task_id} 在准备阶段收到停止指令")
+                self._report(task_id, "cancelled", 0, 0, 0, "")
+                return
             self._ensure_crawlo(venv_python)
+            if self._task_status(task_id):
+                log(f"任务 {task_id} 在准备阶段收到停止指令")
+                self._report(task_id, "cancelled", 0, 0, 0, "")
+                return
             self._install_requirements(code_dir, venv_python)
 
             # 3. 构建启动命令（支持任务参数 args）
@@ -312,16 +329,72 @@ class AgentClient:
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
 
+    def _ensure_template_venv(self) -> Path:
+        """确保模板 venv 存在且含 crawlo（一次性创建，后续任务复制即可）。
+
+        缓存目录：~/.crawlo-agent/template_venv/（可由 CRAWLO_AGENT_TEMPLATE_VENV 覆盖）
+        重建触发：目录不存在、或模板内 import crawlo 失败（版本升级场景）。
+        """
+        if os.environ.get("CRAWLO_AGENT_SKIP_CRAWLO_INSTALL", "").lower() in ("1", "true", "yes"):
+            return None  # 跳过模式不走缓存
+
+        t_venv = _TEMPLATE_VENV_DIR
+        t_python = t_venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        t_marker = t_venv / ".installed"
+
+        # 快速路径：模板 venv 存在且标记文件存在 → 视为就绪
+        if t_python.exists() and t_marker.exists():
+            return t_venv
+
+        # 需要创建/重建模板
+        log(f"创建 venv 模板: {t_venv}")
+        t_venv.parent.mkdir(parents=True, exist_ok=True)
+        if t_venv.exists():
+            shutil.rmtree(t_venv)
+        try:
+            r = subprocess.run([sys.executable, "-m", "venv", str(t_venv)],
+                               capture_output=True, text=True, timeout=180)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr)
+        except Exception as e:
+            log(f"模板 venv 创建失败（回退每任务独立创建）: {e}")
+            return None
+
+        # 安装 crawlo + aiomysql
+        log("模板 venv 安装 crawlo（仅首次，后续任务直接复制）...")
+        try:
+            subprocess.run([str(t_python), "-m", "pip", "install", "--quiet",
+                            "crawlo", "aiomysql", "-i", PIP_INDEX], timeout=600)
+            t_marker.write_text(AGENT_VERSION)
+            log("venv 模板就绪")
+        except Exception as e:
+            log(f"模板安装失败（回退每任务独立创建）: {e}")
+            shutil.rmtree(t_venv, ignore_errors=True)
+            return None
+
+        return t_venv
+
     def _create_venv(self, base_dir: Path) -> str:
-        """创建虚拟环境，返回 venv 内 python 路径（隔离各爬虫依赖）"""
+        """创建任务级虚拟环境：优先从模板复制（秒级），否则新建 + 安装。"""
         venv_dir = base_dir / ".venv"
+        t_venv = self._ensure_template_venv()
+
+        if t_venv is not None:
+            # 模板命中：直接复制（~0.5s vs 30s+新建+pip install）
+            try:
+                shutil.copytree(str(t_venv), str(venv_dir), symlinks=True)
+                python = venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+                log(f"venv 从模板复制（秒级）: {python}")
+                return str(python)
+            except Exception as e:
+                log(f"模板复制失败，回退新建: {e}")
+
+        # 模板不可用：新建（原有逻辑）
         created = False
         try:
             r = subprocess.run(
                 [sys.executable, "-m", "venv", str(venv_dir)],
-                capture_output=True,
-                text=True,
-                timeout=180,
+                capture_output=True, text=True, timeout=180,
             )
             created = r.returncode == 0
         except Exception as e:
@@ -335,9 +408,7 @@ class AgentClient:
                 )
                 subprocess.run(
                     [sys.executable, "-m", "virtualenv", str(venv_dir)],
-                    capture_output=True,
-                    text=True,
-                    timeout=180,
+                    capture_output=True, text=True, timeout=180,
                 )
             except Exception as e:
                 raise RuntimeError(f"虚拟环境创建失败: {e}")

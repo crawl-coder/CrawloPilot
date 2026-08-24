@@ -243,7 +243,9 @@ def main():
     st = wait_task_status(token, tid2, {"cancelled", "stopped", "failed"}, 25)
     check("任务收敛 cancelled（stop_requested 下发+回报）", st in ("cancelled", "stopped"),
           f"{st}\n{agent_log()[-300:]}")
-    check("agent 日志确认收到停止指令", f"任务 {tid2} 收到停止指令" in agent_log())
+    check("agent 日志确认收到停止指令",
+          f"任务 {tid2} 收到停止指令" in agent_log() or
+          f"任务 {tid2} 在准备阶段收到停止指令" in agent_log())
 
     # ---------- [6] 离线检测（F6 回归：无自我续命）----------
     print("\n[6] 离线检测（杀掉 Agent，约需 70 秒观察窗口）")
