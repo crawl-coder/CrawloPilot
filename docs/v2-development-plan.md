@@ -72,9 +72,9 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 
 > 工作量为单人有效开发日（含自测）；优先级：P0 > P1 > P2。每个任务都有可执行的验收标准，完成即勾选并更新 CHANGELOG。
 
-### Wave A：可靠性止血（✅ **A1–A7 全部完成（2026-08-24）**，剩余 A8 待启动）
+### Wave A：可靠性止血（✅ **A1–A8 全部完成（2026-08-24）**）
 
-> 实际工作量：2 天（含走查、修复、回归测试）。以下 A1–A7 已交付并全量回归通过（4 套官方测试 + agent e2e + 走查脚本全绿）。
+> 实际工作量：2 天（含走查、修复、回归测试）。A1–A8 全量回归通过（联调 41/41 + 部署验收 18/18 + agent e2e 32/32 + 走查 25/25 全绿）。
 
 | # | 任务 | 改动点 | 优先级 | 工作量 | 依赖 | 验收标准 | 状态 |
 |---|------|--------|--------|--------|------|----------|------|
@@ -87,7 +87,7 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 | A6.1 | **代码分包排除 `.git`**：✅ Agent `/code` 端点 `tar.add` 加 `filter` 排除 `.git/__pycache__/.DS_Store`；SSH 分发同步排除；Docker `_iter_code_files` 本已排除无需改动 | `agent.py` code 端点、`ssh_executor.py` | P1 | 0.5d | 无 | Git 来源爬虫经 Agent/SSH 分发的包内无 `.git`；任务正常执行 | ✅ `b9bbe63` |
 | A6.2 | **代码分发按内容摘要缓存**：✅ 控制面 `_code_digest()` 计算文件清单 sha256（文件名+大小+mtime，秒级）；领任务响应 `code_digest` 字段；Agent 本地 `~/.crawlo-agent/code-cache/{digest}/` 命中则跳过下载；旧 agent 无此字段兼容不变 | `agent.py` + `crawlo_agent.py` | P2 | 1d | A6 | 同代码二次派发不传输代码包（日志可见 cache hit）；代码变更后立即失效 | ✅ `1f3d32c` |
 | A7 | **Agent 版本握手与漂移检测**：✅ Node model 新增 `protocol_version` 列（alembic 迁移 a7b8c9d0e1f2，幂等）；Agent register 上报 `protocol_version`（当前=1）；NodeResponse 新增 `agent_compatible`（protocol_version >= REQUIRED=1 → True，否则 False）；旧 agent（NULL/0）→ 不兼容，前端可标黄 | `agent.py`、`nodes.py`、`agent_service.py`、`models`、`agent/crawlo_agent.py` | P1 | 1d | 无 | 旧版 agent 节点 agent_compatible=False；新版 = True | ✅ `7e3d8f1` |
-| A8 | **Agent 并发扩展**：当前 `run()` 主循环是 `while True: poll_task → execute_task` 同步执行，单 agent 节点并发=1。改为进程池并行（`multiprocessing.Pool` 或任务包装子进程化），保持任务级环境隔离，允许单节点跑 N 个并发任务 | `agent/crawlo_agent.py` main loop | P1 | 2d | A6 | 3 个任务同时派发到同一 agent 节点 → 3 个并发 running；单任务失败不影响其他；停止指令精确杀对进程 | ⏳ |
+| A8 | **Agent 并发扩展**：✅ `run()` 主循环改为并发提交（`threading.Thread` + `_running_tasks` dict + `_lock`），poll_task 领到任务后立即提交为独立线程返回继续领取；`execute_task` 生命周期内注册/注销 proc 到 `_running_tasks`，停止指令精确找到对应子进程并终止；`--max-workers` 参数 + `CRAWLO_AGENT_MAX_WORKERS` 环境变量（默认 2）；满载时 sleep 1s 防忙等 | `agent/crawlo_agent.py` | P1 | 2d | A6 | 3 个任务同时派发到同一 agent 节点 → 3 个并发 running；单任务失败不影响其他；停止指令精确杀对进程 | ✅ `358edbe` |
 
 ### Wave B：调度与运维增强收尾（预计 3 天，P1）
 
@@ -135,7 +135,7 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 
 | 里程碑 | 内容 | 出口条件 | 当前进度 |
 |---|---|---|---|
-| **M1（+1 周）** | Wave A + B 全部 | 四套官方测试 + 走查脚本全绿；重启对账演练通过；发布 V1.1 | **Wave A：A1–A7 完成（8/9），A8 待启动**；Wave B 未开始 |
+| **M1（+1 周）** | Wave A + B 全部 | 四套官方测试 + 走查脚本全绿；重启对账演练通过；发布 V1.1 | **Wave A：A1–A8 全部完成 ✅**；Wave B 未开始 |
 | **M2（+3 周）** | Wave C 完整版 | 7 类告警规则上线演练；发布 V1.2（运营可用） | 未开始 |
 | **M3（+6 周）** | Wave D（D1–D6） | 设计稿 §12.1 三种 distribution_mode 功能验收逐项打勾；发布 V2.0 | 未开始 |
 | **M4（+8 周）** | D7/D8 + Wave E 选做 | 多实例压测通过；发布 V2.1 | 未开始 |
@@ -183,6 +183,7 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
   - venv 模板缓存（`~/.crawlo-agent/template_venv/`，按 crawlo 版本预装，任务 venv 直接复制 ~0.5s）+ 安装阶段每步检查 `stop_requested`
   - 代码分发缓存（`~/.crawlo-agent/code-cache/{digest}/`，领任务时 `code_digest` 命中跳过下载）
   - `protocol_version` 上报（A7）+ `PROTOCOL_VERSION=1` 常量
+  - 并发执行（A8）：`run()` 改为 `threading.Thread` 并发提交 + `_running_tasks` 追踪运行中任务 + `--max-workers` 参数（默认 2）+ 满载防忙等
   - `CRAWLO_AGENT_SKIP_CRAWLO_INSTALL=1` 测试逃生阀（A5 配套）
 - **`backend/app/api/v1/agent.py`**：
   - AgentLogs/AgentTaskReport schema 移除必填 `token`（F5 修复）
