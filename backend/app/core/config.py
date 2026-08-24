@@ -128,6 +128,10 @@ class Settings(BaseSettings):
 
     # 开放注册：False 时 /auth/register 仅 admin 可用（内部平台建议关闭）
     ALLOW_OPEN_REGISTER: bool = False
+
+    # Redis（Wave D：分布式模式基础设施；TaskStateStore 心跳、Crawlo 分布式队列）
+    REDIS_URL: Optional[str] = None  # e.g. redis://127.0.0.1:6379/0
+    REDIS_ENABLED: bool = False  # 由启动时根据 REDIS_URL 自动判断
     
     # MinIO
     MINIO_ENDPOINT: str = "minio:9000"

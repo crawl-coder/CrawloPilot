@@ -35,6 +35,19 @@ def _run_node_health_check():
         db.close()
 
 
+async def _task_state_reaper_loop():
+    """后台 TaskStateStore 心跳 reaper：每 90s 检查心跳过期的 running 任务"""
+    while True:
+        try:
+            from app.core.redis import is_redis_available
+            if is_redis_available():
+                from app.services.task_state_store import get_task_state_store
+                await asyncio.to_thread(get_task_state_store().check_stale_tasks)
+        except Exception as e:
+            logger.warning(f"TaskStateStore reaper 失败: {e}")
+        await asyncio.sleep(90)
+
+
 async def _node_health_monitor_loop():
     """后台节点健康检查：每 60 秒轻量探活一次"""
     while True:
@@ -134,6 +147,13 @@ async def lifespan(app: FastAPI):
     scheduler_service = get_scheduler_service()
     scheduler_service.start()
 
+    # 初始化 Redis（Wave D：分布式模式基础设施，连接失败不阻断启动）
+    from app.core.redis import init_redis
+    init_redis()
+
+    # 启动 TaskStateStore 心跳 reaper（Wave D：定期检查心跳过期的 running 任务）
+    reaper_task = asyncio.create_task(_task_state_reaper_loop())
+
     # 启动告警引擎（Wave C）
     try:
         from app.services.alert_engine import init_alert_engine
@@ -147,6 +167,7 @@ async def lifespan(app: FastAPI):
     try:
         health_task.cancel()
         log_cleanup_task.cancel()
+        reaper_task.cancel()
         scheduler_service.shutdown()
     except Exception as e:
         logger.warning(f"cleanup was interrupted: {e}")
@@ -304,6 +325,10 @@ async def health_check():
     except Exception as e:
         health_info["services"]["database"] = f"error: {str(e)}"
         health_info["status"] = "degraded"
+
+    # 检查 Redis（Wave D）
+    from app.core.redis import redis_health
+    health_info["services"]["redis"] = redis_health()
 
     # 密钥配置体检（A4）
     secret_warns = settings.secret_warnings()
