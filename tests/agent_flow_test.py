@@ -125,6 +125,14 @@ for i in range(30):
 print("[INFO] never reached", flush=True)
 '''
 
+MEDIUM_SPIDER = '''import time
+print("agent-e2e medium spider start", flush=True)
+for i in range(8):
+    print(f"[INFO] Crawled {i} pages, 0 items tick{i}", flush=True)
+    time.sleep(2)
+print("[INFO] Crawled 16 pages, 8 items final", flush=True)
+'''
+
 
 def main():
     # ---------- [1] 前置 ----------
@@ -161,6 +169,8 @@ def main():
     sid_short = make_spider("agent_e2e_short")
     src = LONG_SPIDER
     sid_long = make_spider("agent_e2e_long")
+    src = MEDIUM_SPIDER
+    sid_medium = make_spider("agent_e2e_medium")
 
     # ---------- [3] 创建 Agent 节点并启动真实 agent 进程 ----------
     print("\n[3] 创建 Agent 节点，拉起 crawlo_agent.py")
@@ -246,6 +256,38 @@ def main():
     check("agent 日志确认收到停止指令",
           f"任务 {tid2} 收到停止指令" in agent_log() or
           f"任务 {tid2} 在准备阶段收到停止指令" in agent_log())
+
+    # ---------- [5b] 并发执行（A8）：两个中等任务同时派发到同一节点 ----------
+    print("\n[5b] 并发执行（A8：单 agent 多任务并行）")
+    code, tc1 = http("POST", "/execution/tasks", token,
+                     {"spider_id": str(sid_medium), "node_id": str(nid)})
+    code2, tc2 = http("POST", "/execution/tasks", token,
+                      {"spider_id": str(sid_medium), "node_id": str(nid)})
+    tid_c1 = tc1.get("id") if isinstance(tc1, dict) else None
+    tid_c2 = tc2.get("id") if isinstance(tc2, dict) else None
+    CLEANUP["tasks"].extend(filter(None, [tid_c1, tid_c2]))
+    check("并发派发两个任务均成功", code == 200 and code2 == 200 and tid_c1 and tid_c2,
+          f"task1={tid_c1}, task2={tid_c2}")
+
+    # 等两个任务都进入 running（并发执行）
+    for _ in range(15):
+        _, s1 = http("GET", f"/execution/tasks/{tid_c1}/status", token)
+        _, s2 = http("GET", f"/execution/tasks/{tid_c2}/status", token)
+        if s1.get("db_status") == "running" and s2.get("db_status") == "running":
+            break
+        time.sleep(2)
+    both_running = (s1.get("db_status") == "running" and s2.get("db_status") == "running")
+    check("两个任务同时处于 running（并发验证）", both_running,
+          f"task1={s1.get('db_status')}, task2={s2.get('db_status')}")
+    check("agent 日志显示并发提交",
+          "已提交（当前并发" in agent_log(),
+          agent_log()[-200:])
+
+    # 等两个任务都结束
+    f1 = wait_task_status(token, tid_c1, {"success", "failed"}, 40)
+    f2 = wait_task_status(token, tid_c2, {"success", "failed"}, 40)
+    check("两个并发任务均 success", f1 == "success" and f2 == "success",
+          f"task1={f1}, task2={f2}")
 
     # ---------- [6] 离线检测（F6 回归：无自我续命）----------
     print("\n[6] 离线检测（杀掉 Agent，约需 70 秒观察窗口）")

@@ -50,12 +50,15 @@ def log(msg: str):
 
 
 class AgentClient:
-    def __init__(self, server: str, token: str, poll_interval: int = 5):
+    def __init__(self, server: str, token: str, poll_interval: int = 5, max_workers: int = 2):
         self.server = server.rstrip("/")
         self.token = token
         self.node_id = None
         self.poll_interval = poll_interval
-        self._running_tasks = {}
+        self.max_workers = max_workers
+        # task_id -> {"thread": Thread, "proc": Popen|None, "workspace": Path}
+        self._running_tasks: Dict[str, dict] = {}
+        self._lock = threading.Lock()
 
     # ============ HTTP 工具 ============
 
@@ -198,6 +201,9 @@ class AgentClient:
         log(f"开始执行任务 {task_id}: {spider_name}")
 
         workspace = Path(tempfile.mkdtemp(prefix=f"crawlo-agent-{task_id}-"))
+        # 注册到运行中任务表（供停止指令查找）
+        with self._lock:
+            self._running_tasks[task_id] = {"proc": None, "workspace": workspace}
         code_archive = workspace / "code.tar.gz"
 
         try:
@@ -292,6 +298,10 @@ class AgentClient:
                 errors="replace",
                 bufsize=1,
             )
+            # 注册子进程（停止指令需要找到它）
+            with self._lock:
+                if task_id in self._running_tasks:
+                    self._running_tasks[task_id]["proc"] = proc
 
             log_lines = []
             stopped = False
@@ -356,6 +366,8 @@ class AgentClient:
             self._report(task_id, "failed", 0, 0, 0, "", str(e))
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
+            with self._lock:
+                self._running_tasks.pop(task_id, None)
 
     def _ensure_template_venv(self) -> Path:
         """确保模板 venv 存在且含 crawlo（一次性创建，后续任务复制即可）。
@@ -488,17 +500,28 @@ class AgentClient:
     # ============ 主循环 ============
 
     def run(self):
-        log(f"CrawloPilot Agent v{AGENT_VERSION} 启动, server={self.server}")
+        log(f"CrawloPilot Agent v{AGENT_VERSION} 启动, server={self.server}, max_workers={self.max_workers}")
         while not self.register():
             time.sleep(5)
 
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
 
         while True:
+            # 有空闲槽位时才领取新任务（避免长轮询阻塞导致已运行任务无法管理）
+            with self._lock:
+                running_count = len(self._running_tasks)
+            if running_count >= self.max_workers:
+                time.sleep(1)  # 满载，等一下再检查
+                continue
+
             task = self.poll_task()
             if task:
-                self.execute_task(task)
-            # 长轮询：空载由服务端挂起最多 25s，无需本地 sleep 兜底
+                task_id = task["task_id"]
+                t = threading.Thread(
+                    target=self.execute_task, args=(task,),
+                    daemon=True, name=f"task-{task_id}")
+                t.start()
+                log(f"任务 {task_id} 已提交（当前并发 {running_count + 1}/{self.max_workers}）")
 
 
 def parse_metrics(log_text: str):
@@ -545,9 +568,11 @@ def main():
     parser.add_argument("--server", default=DEFAULT_SERVER, help="管理服务器地址，如 http://127.0.0.1:18000")
     parser.add_argument("--token", required=True, help="节点注册令牌")
     parser.add_argument("--poll-interval", type=int, default=5, help="任务轮询间隔（秒）")
+    parser.add_argument("--max-workers", type=int, default=int(os.environ.get("CRAWLO_AGENT_MAX_WORKERS", "2")),
+                        help="最大并发任务数（默认 2，可由 CRAWLO_AGENT_MAX_WORKERS 环境变量覆盖）")
     args = parser.parse_args()
 
-    client = AgentClient(args.server, args.token, args.poll_interval)
+    client = AgentClient(args.server, args.token, args.poll_interval, args.max_workers)
     client.run()
 
 
