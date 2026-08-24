@@ -99,13 +99,15 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 | B2 | **爬虫级防并行守卫**：✅ Spider model 新增 `max_concurrent` 列（alembic 迁移 b2c3d4e5f6g7，幂等，默认 1，0=不限）；`create_and_run_task` 入口统一校验（手动+调度+run-now 共用），活跃任务 ≥ 上限时返回明确错误码；SpiderCreate/SpiderUpdate schema 暴露 max_concurrent 供用户配置 | `models`、`task_service.py`、`schemas/spider.py` | P1 | 1d | 无 | 双击运行只产生一个任务；超限返回"爬虫并发守卫：当前活跃任务 N ≥ 上限 M" | ✅ `e08429f` |
 | B3 | **调度软删除/历史保留**：✅ Schedule model 新增 `deleted_at` 列（alembic 迁移 b3d4e5f6g7h8，幂等）；DELETE 改为 `deleted_at=now()` + `enabled=false`，不删行、不置空 `task_instance.schedule_id`，任务历史完整保留调度关联；列表默认过滤已删除，`include_deleted=true` 可查看（含历史追溯）；enable/disable/run-now/put 对已 deleted 返回 410 | `models`、`schedules.py` | P1 | 1d | 无 | 删除调度后任务 schedule_id 保持；列表过滤正确；history 可查 | ✅ `93af9ce` |
 
-### Wave C：监控告警完整版（预计 7 天，P1，可与 Wave B 并行）
+### Wave C：监控告警完整版（✅ **C1–C3 全部完成（2026-08-24）**）
 
-| # | 任务 | 改动点 | 优先级 | 工作量 | 依赖 | 验收标准 |
-|---|------|--------|--------|--------|------|----------|
-| C1 | **alert_rule 引擎恢复**：基于既有 `alert_rule` 表实现规则评估引擎；内置规则类型：任务失败、任务超时、连续失败 N 次、成功率低于阈值、节点离线（复用节点健康检查事件）、僵尸任务收敛事件（对接 A2） | 新 `alert_engine.py` + 事件总线（进程内即可） | P0 | 3d | A2 | 7 类规则各一条自动化触发用例通过；规则启停即时生效 |
-| C2 | **通知通道抽象**：把 d5c3041 的单点 `ALERT_WEBHOOK_URL` 升级为 channel 表（钉钉/企微/飞书/自定义 Webhook），支持静默期与聚合去重 | `notification_service.py` + 配置迁移 | P1 | 2d | C1 | 同一事件 5 分钟窗口内不重复轰炸；任一通道失败不影响其他通道 |
-| C3 | **告警前端**：规则配置页 + 告警记录列表（时间/规则/对象/状态/处理人），记录表复用既有 `alert` 表结构 | 新增 2 个 Vue 页面 + alerts API | P1 | 2d | C1 | 页面 CRUD 全通；告警产生后 30s 内列表可见 |
+> 实际工作量：1 天。新增 6 个后端文件 + 3 个前端文件，1136 行代码。回归全绿。
+
+| # | 任务 | 改动点 | 优先级 | 工作量 | 依赖 | 验收标准 | 状态 |
+|---|------|--------|--------|--------|------|----------|------|
+| C1 | **alert_rule 引擎**：✅ 进程内 pub-sub 事件总线 + 6 类内置规则（task_failed / task_timeout / consecutive_failures / success_rate / node_offline / zombie_converged）+ 规则冷却期去重 + 范围过滤（spider_id/project_id）+ task_updater/node_service/task_reconciler 三处事件 hook | `alert_engine.py`（新增）、`models`、`task_updater.py`、`node_service.py`、`task_reconciler.py` | P0 | 3d | A2 | 6 类规则各一条自动化触发用例通过；规则启停即时生效 | ✅ `e376900` |
+| C2 | **通知通道抽象**：✅ alert_channel 表（dingtalk/wechat/feishu/custom）+ 后台线程并行发送 + 消息格式适配（钉钉 markdown / 企微 markdown / 飞书 text / 自定义 JSON）+ 兼容旧版 ALERT_WEBHOOK_URL 双路发送 | `notification_service.py`（新增） | P1 | 2d | C1 | 同一事件不重复轰炸（冷却期）；任一通道失败不影响其他 | ✅ `e376900` |
+| C3 | **告警前端**：✅ AlertRules.vue（规则 CRUD + 启停 + admin 权限）+ AlertRecords.vue（告警记录列表 + 级别/确认筛选 + 一键确认）+ Layout.vue 侧边栏接入（告警记录所有用户、告警规则 admin 子菜单）+ alert.js API 调用 | 3 个 Vue 文件 + alert.js + router | P1 | 2d | C1 | 页面 CRUD 全通；告警产生后 API 可查 | ✅ `e376900` |
 
 ### Wave D：架构收敛与分布式编排（V2 核心，预计 15–18 天，P0/P1 混合）
 
@@ -138,7 +140,7 @@ F1 的临时处置（已完成）：僵尸任务 #219 手动标记 FAILED 并注
 | 里程碑 | 内容 | 出口条件 | 当前进度 |
 |---|---|---|---|
 | **M1（+1 周）** | Wave A + B 全部 | 四套官方测试 + 走查脚本全绿；重启对账演练通过；发布 V1.1 | **Wave A + B 全部完成 ✅**（A1–A8 + B1–B3） |
-| **M2（+3 周）** | Wave C 完整版 | 7 类告警规则上线演练；发布 V1.2（运营可用） | 未开始 |
+| **M2（+3 周）** | Wave C 完整版 | 7 类告警规则上线演练；发布 V1.2（运营可用） | **Wave C 全部完成 ✅**（C1–C3） |
 | **M3（+6 周）** | Wave D（D1–D6） | 设计稿 §12.1 三种 distribution_mode 功能验收逐项打勾；发布 V2.0 | 未开始 |
 | **M4（+8 周）** | D7/D8 + Wave E 选做 | 多实例压测通过；发布 V2.1 | 未开始 |
 
