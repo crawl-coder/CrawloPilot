@@ -275,6 +275,7 @@ class Schedule(Base):
     created_by = Column(BigInteger, ForeignKey("user.id"))
     created_at = Column(DateTime, default=cn_now)
     updated_at = Column(DateTime, default=cn_now, onupdate=cn_now)
+    deleted_at = Column(DateTime, nullable=True)  # B3：软删除，非空表示已删除
     
     # Relationships
     project = relationship("Project", back_populates="schedules")

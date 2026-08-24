@@ -229,15 +229,18 @@ async def list_schedules(
     project_id: Optional[int] = None,
     spider_id: Optional[int] = None,
     enabled: Optional[bool] = None,
+    include_deleted: bool = False,
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """调度列表（可按项目/爬虫/状态筛选）"""
+    """调度列表（可按项目/爬虫/状态筛选；默认不显示已软删除的调度）"""
     from app.core.pagination import clamp_pagination
     skip, limit = clamp_pagination(skip, limit, default_limit=50)
     query = db.query(Schedule)
+    if not include_deleted:
+        query = query.filter(Schedule.deleted_at.is_(None))
     if project_id:
         query = query.filter(Schedule.project_id == project_id)
     if spider_id:
@@ -353,6 +356,8 @@ async def update_schedule(
     current_user: User = Depends(get_current_user),
 ):
     sched = _get_schedule_or_404(db, schedule_id)
+    if sched.deleted_at:
+        raise HTTPException(status_code=410, detail="调度已删除，不可修改")
     payload = data.dict(exclude_unset=True)
     _apply_payload(sched, payload)
     if "args" in payload or "env" in payload:
@@ -392,14 +397,16 @@ async def delete_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """软删除调度（设置 deleted_at，保留任务历史关联，不删行）"""
     sched = _get_schedule_or_404(db, schedule_id)
+    if sched.deleted_at:
+        raise HTTPException(status_code=410, detail="调度已删除")
     from app.services.scheduler_service import get_scheduler_service
     get_scheduler_service().remove_schedule(sched.id)
-    # 任务历史保留：解除外键引用后再删调度（task_instance.schedule_id 无 ON DELETE 行为）
-    db.query(TaskInstance).filter(TaskInstance.schedule_id == schedule_id).update(
-        {"schedule_id": None}, synchronize_session=False
-    )
-    db.delete(sched)
+    # B3：软删除（设置 deleted_at），不再置空 task_instance.schedule_id
+    # 任务历史完整保留调度关联，调度 history 接口仍可查询
+    sched.deleted_at = cn_now()
+    sched.enabled = False
     db.commit()
     return {"message": "调度已删除"}
 
@@ -411,6 +418,8 @@ async def enable_schedule(
     current_user: User = Depends(get_current_user),
 ):
     sched = _get_schedule_or_404(db, schedule_id)
+    if sched.deleted_at:
+        raise HTTPException(status_code=410, detail="调度已删除，不可启停")
     sched.enabled = True
     db.commit()
     from app.services.scheduler_service import get_scheduler_service
@@ -426,6 +435,8 @@ async def disable_schedule(
 ):
     """停用：保留行、置 enabled=false、移除 job（不删配置）"""
     sched = _get_schedule_or_404(db, schedule_id)
+    if sched.deleted_at:
+        raise HTTPException(status_code=410, detail="调度已删除，不可启停")
     sched.enabled = False
     sched.next_run_time = None
     db.commit()
@@ -443,6 +454,8 @@ async def run_schedule_now(
 ):
     """立即执行一次（不改变周期）"""
     sched = _get_schedule_or_404(db, schedule_id)
+    if sched.deleted_at:
+        raise HTTPException(status_code=410, detail="调度已删除，不可运行")
     from app.services.scheduler_service import get_scheduler_service
     get_scheduler_service().run_now(sched.id)
     return {"message": "已触发立即执行", "schedule_id": sched.id}
