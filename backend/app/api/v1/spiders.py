@@ -260,17 +260,16 @@ async def delete_spider(
     if not spider:
         raise HTTPException(status_code=404, detail="爬虫不存在")
 
-    # 生命周期同步：删除爬虫 → 级联删除其调度并移除 job（任务历史保留）
+    # 生命周期同步：删除爬虫 → 软删除其调度并移除 job（任务历史保留）
     from app.models import Schedule, TaskInstance
     from app.services.scheduler_service import get_scheduler_service
     scheduler = get_scheduler_service()
     for sched in db.query(Schedule).filter(Schedule.spider_id == spider.id).all():
         scheduler.remove_schedule(sched.id)
-        # 解除任务历史对调度的外键引用（历史保留，仅断开关联）
-        db.query(TaskInstance).filter(TaskInstance.schedule_id == sched.id).update(
-            {"schedule_id": None}, synchronize_session=False
-        )
-        db.delete(sched)
+        # B3：软删除调度（保留行 + schedule_id 关联），不置空 task_instance.schedule_id
+        from app.core.time_utils import cn_now
+        sched.deleted_at = cn_now()
+        sched.enabled = False
     db.flush()
 
     # 解除任务历史对爬虫的外键引用（历史保留，仅断开关联）

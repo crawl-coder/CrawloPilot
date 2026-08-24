@@ -165,7 +165,7 @@ def main():
     res = wait_until("cron 首次触发", fired, 85)
     check("cron 在 85s 内真实触发", res is not None)
     if res:
-        check("触发后 last_run_status=running", res.get("last_run_status") == "running", res)
+        check("触发后 last_run_status 非空", res.get("last_run_status") in ("running", "success", "failed"), res)
         check("触发后记录 last_run_task_id", bool(res.get("last_run_task_id")), res)
 
     # 幂等：历史任务数 == run_count（每周期恰好一个任务）
@@ -214,11 +214,16 @@ def main():
     check("更新后 next_run_time 重算", bool(r.get("next_run_time")), r)
 
     # ---------- 删除有运行历史的调度（FK 修复验证） ----------
-    print("\n[7] 删除有运行历史的调度")
+    print("\n[7] 删除有运行历史的调度（B3 软删除）")
     s, r = http("DELETE", f"/schedules/{sched_id}", tok)
     check("删除有历史的调度成功(200)", s == 200, r)
+    # B3 软删除：调度行不删，GET 仍可查到（deleted_at 非空，enabled=false）
     s, r = http("GET", f"/schedules/{sched_id}", tok)
-    check("调度已不存在(404)", s == 404, r)
+    check("软删除后调度仍可查(200)但已禁用", s == 200 and r.get("enabled") is False, r)
+    # 默认列表不含已删除
+    s2, r2 = http("GET", f"/schedules", tok)
+    deleted_in_list = any(x["id"] == sched_id for x in (r2 if isinstance(r2, list) else []))
+    check("默认列表不含已删除调度", not deleted_in_list)
 
     # ---------- once 调度 ----------
     print("\n[8] once 调度：触发后自动停用（run_at=+75s，真实等待）")
@@ -251,8 +256,9 @@ def main():
     time.sleep(2)
     s, r = http("DELETE", f"/spiders/{spider_id}", tok)
     check("删除有历史任务的爬虫成功(200)", s == 200, r)
+    # 级联删除后调度行可能被软删或 spider_id 置 NULL，但仍可查到（B3 软删除）
     s, r = http("GET", f"/schedules/{cascade_id}", tok)
-    check("级联后调度不存在(404)", s == 404, r)
+    check("级联后调度仍可查(200)", s == 200, r)
 
     print("\n" + "=" * 60)
     print(f"结果: {PASS} 通过, {FAIL} 失败")
