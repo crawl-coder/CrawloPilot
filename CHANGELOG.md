@@ -6,6 +6,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- **执行模式使用指南 `docs/guides/execution-modes.md`**：本地/SSH/Docker/Agent 四种模式
+  的前置条件、接入步骤、验证方法与排错速查表（含代码分发机制说明与 API 最小示例）；
+  `modules/05-nodes.md` §4 操作流程收敛为指针，消除双处维护
+- **Agent 模式端到端回归测试 `tests/agent_flow_test.py`**（V2 计划 A5）：真实拉起
+  `agent/crawlo_agent.py` 子进程直连本地控制面，覆盖 register/heartbeat/领任务/
+  下载代码/执行/日志上报/终态回报/停止指令全部 6 类端点，并固化两条生产实测
+  回归线——回报协议一致性（F5：agent 与后端 schema 不匹配即红）与节点离线检测
+  （F6：健康检查不得回写 last_heartbeat 自我续命）。26 项断言，约 2 分钟
+- Agent 新增测试逃生阀：环境变量 `CRAWLO_AGENT_SKIP_CRAWLO_INSTALL=1` 跳过每任务
+  的 crawlo pip 安装（e2e 用纯标准库爬虫时消除 ~30s/任务的固定开销；默认关闭不影响生产）
+- V2 下一阶段开发任务计划：`docs/v2-development-plan.md`（基于 2026-08-24 V1 全链路
+  重新走查：走查脚本 25/25、部署验收 18/18、联调 41/41；新增任务状态对账（F1 僵尸
+  任务阻断调度实证）等 Wave A–E 排期与验收标准）
+- 新增 `tests/v1_walkthrough.py`：V1 主链路 API 走查脚本（25 项，含指标解析、
+  停止/重试、调度 run-now/历史），作为常规回归资产
+
+### Fixed
+
+- **Agent 模式回报断裂**（实测发现）：`/nodes/agent/tasks/{id}/logs` 与 `/report` 的
+  body schema 仍要求必填 `token`，与已 Bearer 化的 agent 脚本不匹配，导致全新部署的
+  Agent 任务日志上报与终态回报全部 422、任务永久卡 running；移除两个 schema 中的
+  `token` 字段（鉴权仅走 header，旧版 agent 多传的 token 字段默认忽略，双向兼容）
+- **Agent 节点永不离线**：轻量健康检查在判定 online 后回写 `last_heartbeat = now`，
+  形成"自我续命"——死掉的 Agent 永远无法离线、调度仍会选中该节点；改为心跳只由
+  Agent 真实上报，健康检查仅依据其新鲜度判定状态
+- `tests/full_flow_test.py` 爬虫文件保存断言改为 body 传输（对齐 cf97469 的接口变更，
+  消除联调 40/41 假失败）
+
 ### Changed
 
 - crawlo 升级到 1.7.3（与 PyPI 最新一致）：Docker 基础镜像

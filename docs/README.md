@@ -18,7 +18,8 @@ CrawloPilot 是爬虫管理平台：在**管理服务器**上管理爬虫项目�
 3. [认证与权限](modules/01-auth.md) —— 登录与账号权限
 4. [项目管理](modules/02-projects.md) —— 创建项目
 5. [爬虫管理](modules/03-spiders.md) —— 上传代码、Git、运行爬虫
-6. [任务管理与日志](modules/06-tasks.md) —— 查看任务、实时日志
+6. **[执行模式使用指南](guides/execution-modes.md)** —— 把爬虫跑到本地/SSH/Docker/Agent 节点
+7. [任务管理与日志](modules/06-tasks.md) —— 查看任务、实时日志
 
 ### 🧑💻 开发者（参与开发）
 
@@ -38,15 +39,18 @@ CrawloPilot 是爬虫管理平台：在**管理服务器**上管理爬虫项目�
    - [服务器管理](designs/server-management.md)
    - [定时任务调度](designs/scheduling.md)
 4. [remaining-work.md](remaining-work.md) —— 版本状态与后续规划
+5. [v2-development-plan.md](v2-development-plan.md) —— V2 下一阶段开发任务计划（走查结论 + Wave A–E 排期）
+6. [v2-design-revised.md](v2-design-revised.md) / [v2-design.md](v2-design.md) —— V2 架构设计（修订版/原版）
 
 ### 🚀 部署运维（上线和维护）
 
 关注部署架构与节点接入。
 
-1. [生产环境部署架构](designs/production-deployment.md) —— 全云服务器部署
-2. [开发调试环境方案](designs/dev-hybrid-deployment.md) —— Mac + 云服务器调试
-3. [Agent 使用说明](../agent/README.md) —— 节点 Agent 部署手册
-4. [版本发布管理](releases/README.md) —— 发版流程与版本索引
+1. [执行模式使用指南](guides/execution-modes.md) —— 节点接入与任务分发实操（含排错表）
+2. [生产环境部署架构](designs/production-deployment.md) —— 全云服务器部署
+3. [开发调试环境方案](designs/dev-hybrid-deployment.md) —— Mac + 云服务器调试
+4. [Agent 使用说明](../agent/README.md) —— 节点 Agent 部署手册
+5. [版本发布管理](releases/README.md) —— 发版流程与版本索引
 
 ---
 
@@ -60,6 +64,8 @@ docs/
 ├── design-philosophy.md          设计哲学与关键决策
 ├── product-design.md             产品设计（历史愿景稿，以当前实现为准）
 ├── remaining-work.md             V1 状态与 V2 规划
+├── guides/                       任务导向的使用指南
+│   └── execution-modes.md        四种执行模式使用指南（本地/SSH/Docker/Agent）
 ├── modules/                      按模块的功能与实现文档
 │   ├── README.md                 ← 模块导读
 │   ├── 01-auth.md                认证与权限

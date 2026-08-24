@@ -278,6 +278,8 @@ flowchart LR
 | Docker | `DockerExecutor` | 有 Docker 的服务器 | 直连节点 Docker API，构建任务镜像后运行容器 |
 | Agent | `AgentTaskService` | NAT 之后 / 横向扩展 | 节点 agent 反向连接控制面领取任务，无需入站端口 |
 
+> 📘 各模式的接入步骤、验证方法与排错表见 **[执行模式使用指南](docs/guides/execution-modes.md)**。
+
 ### 5. 定时调度
 
 - 在爬虫创建/编辑表单中配置，支持 **cron / 固定间隔 / 一次性**三种触发；
@@ -338,6 +340,9 @@ python tests/schedule_test.py
 
 # Git 凭据体系端到端（34 项）
 python tests/git_credentials_test.py
+
+# Agent 模式端到端（26 项，真实拉起 agent 子进程，约 2 分钟）
+python tests/agent_flow_test.py
 ```
 
 完整测试说明见 [docs/modules/08-testing.md](docs/modules/08-testing.md)。
