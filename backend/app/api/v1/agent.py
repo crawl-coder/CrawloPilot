@@ -51,6 +51,7 @@ class AgentRegister(BaseModel):
     cpu_cores: Optional[int] = None
     memory_total: Optional[int] = None
     agent_version: Optional[str] = None
+    protocol_version: Optional[int] = None  # A7：协议版本号（递增整数）
     public_ip: Optional[str] = None
     private_ip: Optional[str] = None
 
@@ -189,6 +190,7 @@ async def agent_register(
     node.status = NodeStatus.ONLINE
     node.last_heartbeat = cn_now()
     node.agent_version = data.agent_version or node.agent_version
+    node.protocol_version = data.protocol_version if data.protocol_version is not None else node.protocol_version
     if data.hostname:
         # 节点名以创建时用户指定为准；hostname 仅记录到 labels，
         # 避免多个 agent 同主机名时撞 node.name 唯一索引（500 IntegrityError）

@@ -75,6 +75,8 @@ class NodeResponse(BaseModel):
     memory_usage: float = 0.0
     disk_usage: float = 0.0
     agent_version: Optional[str] = None
+    protocol_version: Optional[int] = None
+    agent_compatible: Optional[bool] = None  # A7：协议版本是否兼容（protocol_version >= REQUIRED）
     agent_status: str = "offline"
     agent_token: Optional[str] = None
     public_ip: Optional[str] = None
@@ -197,9 +199,12 @@ async def list_nodes(
             limit=limit,
             offset=offset
         )
-        # 列表不暴露令牌
+        # 列表不暴露令牌；计算版本兼容性
+        from app.services.agent_service import REQUIRED_PROTOCOL_VERSION
         for n in nodes:
             n.agent_token = None
+            if n.connect_type == "agent" and n.protocol_version is not None:
+                n.agent_compatible = n.protocol_version >= REQUIRED_PROTOCOL_VERSION
         return nodes
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取节点列表失败: {str(e)}")
@@ -218,7 +223,9 @@ async def get_node(
         
         if not node:
             raise HTTPException(status_code=404, detail="节点不存在")
-
+        from app.services.agent_service import REQUIRED_PROTOCOL_VERSION
+        if node.connect_type == "agent" and node.protocol_version is not None:
+            node.agent_compatible = node.protocol_version >= REQUIRED_PROTOCOL_VERSION
         return node
     except HTTPException:
         raise

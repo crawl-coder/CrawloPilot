@@ -39,7 +39,8 @@ PIP_INDEX = os.environ.get("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/s
 # venv 模板缓存目录（按 crawlo 版本，一次安装多任务复用）
 _TEMPLATE_VENV_DIR = Path(os.environ.get(
     "CRAWLO_AGENT_TEMPLATE_VENV", str(Path.home() / ".crawlo-agent" / "template_venv")))
-# 代码包缓存目录（按 code_digest，同代码多任务免下载）
+# A7：协议版本号（递增整数，每次 agent↔控制面 API 协议变更时递增）
+PROTOCOL_VERSION = 1
 _CODE_CACHE_DIR = Path(os.environ.get(
     "CRAWLO_AGENT_CODE_CACHE", str(Path.home() / ".crawlo-agent" / "code-cache")))
 
@@ -101,6 +102,7 @@ class AgentClient:
             "os_version": platform.release(),
             "cpu_cores": os.cpu_count() or 0,
             "agent_version": AGENT_VERSION,
+            "protocol_version": PROTOCOL_VERSION,
         }
         try:
             res = self._request("POST", "/api/v1/nodes/agent/register", info, timeout=30)

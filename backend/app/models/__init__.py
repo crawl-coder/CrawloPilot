@@ -464,6 +464,7 @@ class Node(Base):
     memory_usage = Column(DECIMAL(5,2), default=0.00) # 内存使用率 %
     disk_usage = Column(DECIMAL(5,2), default=0.00)   # 磁盘使用率 %
     agent_version = Column(String(32))  # Agent 版本号
+    protocol_version = Column(Integer, default=0)  # Agent 协议版本号（递增整数）
     agent_status = Column(String(16), default="offline")  # agent 状态
     agent_token = Column(String(64), nullable=True, index=True)  # Agent 注册令牌
     server_id = Column(BigInteger, ForeignKey("server.id"), nullable=True, index=True)

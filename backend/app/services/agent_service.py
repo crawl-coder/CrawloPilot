@@ -17,6 +17,11 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# A7：控制面要求的最低协议版本（每变更 agent↔控制面 API 时递增，当前 = 1）
+# agent register 时上报 protocol_version，低于此值时节点 agent_compatible=False，
+# 前端可标黄提示重新部署；领任务端点不硬阻断（向后兼容旧 agent）
+REQUIRED_PROTOCOL_VERSION = 1
+
 LOGS_DIR = Path(settings.UPLOAD_DIR) / "_task_logs"
 
 
