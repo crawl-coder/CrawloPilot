@@ -227,10 +227,16 @@ class SshConnection:
                 tar_path = tmp.name
 
             try:
-                # 打包本地目录
+                # 打包本地目录（排除 .git、__pycache__、.DS_Store）
                 import tarfile
+                def _exclude_git(info):
+                    parts = info.name.split("/")
+                    for p in parts:
+                        if p in (".git", "__pycache__", ".DS_Store"):
+                            return None
+                    return info
                 with tarfile.open(tar_path, 'w:gz') as tar:
-                    tar.add(local_dir, arcname='.')
+                    tar.add(local_dir, arcname='.', filter=_exclude_git)
 
                 # 上传 tar 包
                 remote_tar = f"/tmp/{uuid.uuid4().hex}.tar.gz"

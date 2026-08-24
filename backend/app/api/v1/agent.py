@@ -322,7 +322,14 @@ async def agent_get_task_code(
 
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        tar.add(code_dir, arcname="code")
+        def _exclude_git(info):
+            parts = info.name.split("/")
+            # 排除 .git 目录及其内容、.DS_Store、__pycache__
+            for p in parts:
+                if p in (".git", "__pycache__", ".DS_Store"):
+                    return None
+            return info
+        tar.add(code_dir, arcname="code", filter=_exclude_git)
 
     buf.seek(0)
     return StreamingResponse(
