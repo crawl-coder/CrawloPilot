@@ -97,6 +97,12 @@ const routes = [
         component: () => import('@/views/AlertRecords.vue')
       },
       {
+        path: 'audit',
+        name: 'AuditLogs',
+        meta: { title: '操作审计', requiresAdmin: true },
+        component: () => import('@/views/AuditLogs.vue')
+      },
+      {
         path: 'profile',
         name: 'Profile',
         meta: { title: '个人中心' },

@@ -98,6 +98,10 @@ async def create_rule(
     db.add(rule)
     db.commit()
     db.refresh(rule)
+    from app.services.audit_service import record_audit
+    record_audit("POST", "/alerts/rules", user_id=current_user.id, username=current_user.username,
+                 resource_type="alert_rule", resource_id=str(rule.id), resource_name=rule.name,
+                 detail=f"type={rule.rule_type.value}, severity={rule.severity.value}")
     return _serialize_rule(rule)
 
 
@@ -129,8 +133,12 @@ async def delete_rule(
     rule = db.query(AlertRule).get(rule_id)
     if not rule:
         raise HTTPException(404, "规则不存在")
+    rule_name = rule.name
     db.delete(rule)
     db.commit()
+    from app.services.audit_service import record_audit
+    record_audit("DELETE", f"/alerts/rules/{rule_id}", user_id=current_user.id, username=current_user.username,
+                 resource_type="alert_rule", resource_id=str(rule_id), resource_name=rule_name)
     return {"message": "规则已删除"}
 
 

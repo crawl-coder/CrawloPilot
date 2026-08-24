@@ -60,6 +60,10 @@
             <el-icon><Bell /></el-icon>
             <span>告警规则</span>
           </el-menu-item>
+          <el-menu-item index="/audit">
+            <el-icon><Document /></el-icon>
+            <span>操作审计</span>
+          </el-menu-item>
           <el-menu-item index="/login-logs">
             <el-icon><Document /></el-icon>
             <span>登录日志</span>

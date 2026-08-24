@@ -598,3 +598,23 @@ class AlertChannel(Base):
     webhook_url = Column(String(512), nullable=False)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=cn_now)
+
+
+# ==================== 操作审计（Wave E） ====================
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=True)
+    username = Column(String(128))
+    action = Column(String(32), nullable=False)
+    resource_type = Column(String(32))
+    resource_id = Column(String(64))
+    resource_name = Column(String(256))
+    method = Column(String(8))
+    path = Column(String(512))
+    ip = Column(String(64))
+    user_agent = Column(String(256))
+    detail = Column(Text)
+    created_at = Column(DateTime, default=cn_now)

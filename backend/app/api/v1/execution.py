@@ -149,6 +149,10 @@ async def create_and_execute_task(
 
     task = db.query(TaskInstance).filter(TaskInstance.id == result["task_id"]).first()
     spider = db.query(Spider).filter(Spider.id == task.spider_id).first()
+    from app.services.audit_service import record_audit
+    record_audit("POST", "/execution/tasks", user_id=current_user.id, username=current_user.username,
+                 resource_type="task", resource_id=str(task.id), resource_name=spider.name if spider else "",
+                 detail=f"spider_id={task.spider_id}, deploy={task.deploy_mode}, dist={task.distribution_mode}")
     return TaskResponse(
         id=task.id,
         spider_id=task.spider_id,
@@ -273,6 +277,10 @@ async def stop_task(
             "task_id": task_id,
         }
     
+    from app.services.audit_service import record_audit
+    record_audit("POST", f"/execution/tasks/{task_id}/stop", user_id=current_user.id, username=current_user.username,
+                 resource_type="task", resource_id=str(task_id))
+
     return {
         "message": "Stop task requested",
         "task_id": task_id,

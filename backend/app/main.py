@@ -269,6 +269,10 @@ app.include_router(schedules.router, prefix=settings.API_PREFIX)
 from app.api.v1 import alerts
 app.include_router(alerts.router, prefix=settings.API_PREFIX)
 
+# 操作审计（Wave E）
+from app.api.v1 import audit
+app.include_router(audit.router, prefix=settings.API_PREFIX)
+
 # 监控（仪表盘与健康检查）
 from app.api.v1 import monitoring
 app.include_router(monitoring.router, prefix=settings.API_PREFIX)

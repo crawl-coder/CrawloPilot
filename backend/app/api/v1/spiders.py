@@ -201,7 +201,10 @@ async def create_spider(
     db.add(new_spider)
     db.commit()
     db.refresh(new_spider)
-    
+    from app.services.audit_service import record_audit
+    record_audit("POST", "/spiders", user_id=current_user.id, username=current_user.username,
+                 resource_type="spider", resource_id=str(new_spider.id), resource_name=new_spider.name,
+                 detail=f"project_id={new_spider.project_id}")
     return new_spider
 
 
@@ -275,9 +278,13 @@ async def delete_spider(
         {"spider_id": None}, synchronize_session=False
     )
 
+    spider_name = spider.name
+    spider_id = spider.id
     db.delete(spider)
     db.commit()
-    
+    from app.services.audit_service import record_audit
+    record_audit("DELETE", f"/spiders/{spider_id}", user_id=current_user.id, username=current_user.username,
+                 resource_type="spider", resource_id=str(spider_id), resource_name=spider_name)
     return {"message": "删除成功"}
 
 

@@ -336,6 +336,10 @@ async def create_schedule(
     db.commit()
     from app.services.scheduler_service import get_scheduler_service
     get_scheduler_service().sync_schedule(sched.id)
+    from app.services.audit_service import record_audit
+    record_audit("POST", "/schedules", user_id=current_user.id, username=current_user.username,
+                 resource_type="schedule", resource_id=str(sched.id), resource_name=sched.name,
+                 detail=f"spider_id={spider.id}, type={data.schedule_type}")
     return _reload_schedule(sched.id)
 
 
@@ -408,6 +412,9 @@ async def delete_schedule(
     sched.deleted_at = cn_now()
     sched.enabled = False
     db.commit()
+    from app.services.audit_service import record_audit
+    record_audit("DELETE", f"/schedules/{schedule_id}", user_id=current_user.id, username=current_user.username,
+                 resource_type="schedule", resource_id=str(schedule_id), resource_name=sched.name)
     return {"message": "调度已删除"}
 
 

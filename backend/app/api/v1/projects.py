@@ -46,6 +46,9 @@ def create_project(
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
+    from app.services.audit_service import record_audit
+    record_audit("POST", "/projects", user_id=current_user.id, username=current_user.username,
+                 resource_type="project", resource_id=str(new_project.id), resource_name=new_project.name)
     return new_project
 
 
@@ -102,6 +105,9 @@ def delete_project(
 
     project.status = ProjectStatus.DELETED
     db.commit()
+    from app.services.audit_service import record_audit
+    record_audit("DELETE", f"/projects/{project_id}", user_id=current_user.id, username=current_user.username,
+                 resource_type="project", resource_id=str(project_id), resource_name=project.name)
     return {"message": "删除成功", "id": project_id}
 
 
